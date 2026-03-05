@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Comic Viewer - PDF/CBZ/CBR/CB7</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; min-height: 100vh; }
+
+/* Header */
+.header { position: sticky; top: 0; z-index: 100; background: #16213e; border-bottom: 1px solid #0f3460; padding: 8px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.header h1 { font-size: 16px; font-weight: 600; white-space: nowrap; }
+.header .info { font-size: 13px; color: #888; }
+
+/* Controls */
+.controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+label.file-btn { display: inline-flex; align-items: center; gap: 4px; padding: 6px 14px; background: #0f3460; border: 1px solid #1a5276; border-radius: 6px; cursor: pointer; font-size: 13px; transition: background 0.2s; }
+label.file-btn:hover { background: #1a5276; }
+label.file-btn input { display: none; }
+button { padding: 6px 14px; border: 1px solid #333; border-radius: 6px; background: #2d2d44; color: #e0e0e0; font-size: 13px; cursor: pointer; transition: background 0.2s; }
+button:hover:not(:disabled) { background: #3d3d5c; }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+button.primary { background: #0f3460; border-color: #1a5276; }
+button.primary:hover:not(:disabled) { background: #1a5276; }
+button.danger { background: #6b1d1d; border-color: #8b2525; }
+button.danger:hover:not(:disabled) { background: #8b2525; }
+button.spread { background: #4a1a6b; border-color: #6b2d8b; }
+button.spread:hover:not(:disabled) { background: #6b2d8b; }
+select { padding: 5px 8px; border: 1px solid #333; border-radius: 6px; background: #2d2d44; color: #e0e0e0; font-size: 13px; }
+label.check { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer; user-select: none; }
+label.check input { cursor: pointer; }
+
+/* Navigation */
+.nav { display: flex; align-items: center; gap: 6px; }
+.nav input { width: 50px; text-align: center; padding: 5px; border: 1px solid #333; border-radius: 6px; background: #2d2d44; color: #e0e0e0; font-size: 13px; }
+
+/* Viewer */
+.viewer { display: flex; flex-direction: column; align-items: center; padding: 16px; gap: 8px; }
+.spread-container { display: flex; align-items: flex-start; gap: 2px; }
+.page-container { position: relative; background: #111; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+.page-container canvas { display: block; }
+.page-label { position: absolute; bottom: -24px; left: 50%; transform: translateX(-50%); font-size: 12px; color: #888; white-space: nowrap; }
+
+/* Thumbnails */
+.sidebar { position: fixed; left: 0; top: 49px; bottom: 0; width: 160px; background: #111; border-right: 1px solid #333; overflow-y: auto; padding: 8px; z-index: 50; transform: translateX(-100%); transition: transform 0.2s; }
+.sidebar.open { transform: translateX(0); }
+.sidebar .thumb { cursor: pointer; margin-bottom: 8px; border: 2px solid transparent; border-radius: 4px; overflow: hidden; position: relative; }
+.sidebar .thumb.active { border-color: #4a9eff; }
+.sidebar .thumb canvas { width: 100%; display: block; }
+.sidebar .thumb .num { position: absolute; bottom: 2px; right: 4px; font-size: 11px; background: rgba(0,0,0,0.7); padding: 1px 5px; border-radius: 3px; }
+
+/* Progress */
+.progress-bar { position: fixed; top: 49px; left: 0; right: 0; height: 3px; z-index: 200; }
+.progress-bar .fill { height: 100%; background: #4a9eff; transition: width 0.1s; width: 0%; }
+
+/* Drop zone */
+.dropzone { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: calc(100vh - 50px); gap: 16px; color: #666; }
+.dropzone.dragover { background: rgba(74, 158, 255, 0.05); }
+.dropzone .icon { font-size: 64px; }
+.dropzone p { font-size: 14px; }
+
+/* Toast */
+.toast { position: fixed; bottom: 20px; right: 20px; background: #16213e; border: 1px solid #0f3460; padding: 10px 18px; border-radius: 8px; font-size: 13px; z-index: 300; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+.toast.show { opacity: 1; }
+
+/* Loading overlay */
+.loading-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 400; }
+.loading-overlay .msg { background: #16213e; border: 1px solid #0f3460; padding: 20px 32px; border-radius: 10px; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Comic Viewer</h1>
+  <div class="controls">
+    <label class="file-btn">
+      Open
+      <input type="file" id="fileInput" accept=".pdf,.cbz,.cbr,.cb7,.zip,.rar,.7z">
+    </label>
+    <button id="thumbToggle" disabled>Thumbs</button>
+    <div class="nav">
+      <button id="prevBtn" disabled>&lt;</button>
+      <input type="number" id="pageInput" min="1" value="1" disabled>
+      <span class="info" id="pageCount">/ -</span>
+      <button id="nextBtn" disabled>&gt;</button>
+    </div>
+    <select id="viewMode">
+      <option value="single">Single</option>
+      <option value="spread">Spread</option>
+    </select>
+    <select id="bindDir">
+      <option value="R2L">Right (R2L)</option>
+      <option value="L2R">Left (L2R)</option>
+    </select>
+    <label class="check">
+      <input type="checkbox" id="coverCheck" checked>
+      Cover
+    </label>
+    <select id="scaleSelect">
+      <option value="0.5">50%</option>
+      <option value="0.75">75%</option>
+      <option value="1" selected>100%</option>
+      <option value="1.5">150%</option>
+      <option value="2">200%</option>
+      <option value="fit">Fit</option>
+    </select>
+    <select id="sortSelect" style="display:none">
+      <option value="natural">Sort: Natural</option>
+      <option value="lexical">Sort: Lexical</option>
+      <option value="timestamp">Sort: Timestamp</option>
+    </select>
+    <select id="formatSelect">
+      <option value="image/png">PNG</option>
+      <option value="image/jpeg">JPEG 95%</option>
+      <option value="image/webp">WebP 95%</option>
+    </select>
+    <button id="saveBtn" class="primary" disabled>Save Page</button>
+    <button id="spreadBtn" class="spread" disabled>Save 2P</button>
+    <button id="saveAllBtn" class="danger" disabled>Save All</button>
+  </div>
+  <span class="info" id="fileInfo"></span>
+</div>
+
+<div class="progress-bar"><div class="fill" id="progressFill"></div></div>
+
+<div class="sidebar" id="sidebar"></div>
+
+<div class="viewer" id="viewer">
+  <div class="dropzone" id="dropzone">
+    <div class="icon">COMIC</div>
+    <p>PDF / CBZ / CBR / CB7 をドラッグ&ドロップ、または「Open」で選択</p>
+    <p style="font-size:12px; color:#555">対応形式: PDF, CBZ(ZIP), CBR(RAR), CB7(7z)</p>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import * as pdfjsModule from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min.mjs';
+
+const pdfjsLib = pdfjsModule;
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.mjs';
+
+// ---- libarchive.js dynamic loading ----
+let Archive = null;
+const LIBARCHIVE_BASE = 'https://cdn.jsdelivr.net/npm/libarchive.js@2.0.2/dist/';
+
+async function ensureLibArchive() {
+  if (Archive) return;
+  const mod = await import(LIBARCHIVE_BASE + 'libarchive.js');
+  Archive = mod.Archive;
+
+  // Cross-origin module Workers fail in most browsers even with CORS.
+  // Workaround: fetch worker-bundle.js, replace import.meta.url with
+  // the real CDN URL so WASM resolution works, then create a blob Worker.
+  const workerResp = await fetch(LIBARCHIVE_BASE + 'worker-bundle.js');
+  let workerCode = await workerResp.text();
+  // Replace import.meta.url with the actual worker URL so WASM path resolves correctly
+  const workerRealUrl = LIBARCHIVE_BASE + 'worker-bundle.js';
+  workerCode = workerCode.replace(/import\.meta\.url/g, JSON.stringify(workerRealUrl));
+  const blob = new Blob([workerCode], { type: 'application/javascript' });
+  const blobUrl = URL.createObjectURL(blob);
+  Archive.init({
+    getWorker: () => new Worker(blobUrl, { type: 'module' })
+  });
+}
+
+// ---- State ----
+let docType = null; // 'pdf' | 'archive'
+let pdfDoc = null;
+let archiveImages = []; // [{name, blob, img, width, height, lastModified}]
+let archiveImagesUnsorted = []; // original extracted order, for re-sorting
+let currentPage = 1;
+let totalPages = 0;
+let fileName = '';
+let rendering = false;
+
+// ---- DOM ----
+const fileInput = document.getElementById('fileInput');
+const viewer = document.getElementById('viewer');
+const pageInput = document.getElementById('pageInput');
+const pageCount = document.getElementById('pageCount');
+const prevBtn = document.getElementById('prevBtn');
+const nextBtn = document.getElementById('nextBtn');
+const viewMode = document.getElementById('viewMode');
+const bindDir = document.getElementById('bindDir');
+const coverCheck = document.getElementById('coverCheck');
+const scaleSelect = document.getElementById('scaleSelect');
+const formatSelect = document.getElementById('formatSelect');
+const sortSelect = document.getElementById('sortSelect');
+const saveBtn = document.getElementById('saveBtn');
+const spreadBtn = document.getElementById('spreadBtn');
+const saveAllBtn = document.getElementById('saveAllBtn');
+const thumbToggle = document.getElementById('thumbToggle');
+const sidebar = document.getElementById('sidebar');
+const fileInfo = document.getElementById('fileInfo');
+const progressFill = document.getElementById('progressFill');
+const toast = document.getElementById('toast');
+
+function showToast(msg, ms = 2000) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), ms);
+}
+
+function setProgress(pct) {
+  progressFill.style.width = pct + '%';
+}
+
+function showLoading(msg) {
+  const el = document.createElement('div');
+  el.className = 'loading-overlay';
+  el.innerHTML = `<div class="msg">${msg}</div>`;
+  document.body.appendChild(el);
+  return el;
+}
+
+function hideLoading(el) {
+  if (el && el.parentNode) el.parentNode.removeChild(el);
+}
+
+// ---- Natural sort for archive filenames ----
+function naturalCompare(a, b) {
+  const re = /(\d+)|(\D+)/g;
+  const aParts = a.match(re) || [];
+  const bParts = b.match(re) || [];
+  for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+    if (i >= aParts.length) return -1;
+    if (i >= bParts.length) return 1;
+    const aP = aParts[i], bP = bParts[i];
+    const aN = parseInt(aP, 10), bN = parseInt(bP, 10);
+    if (!isNaN(aN) && !isNaN(bN)) {
+      if (aN !== bN) return aN - bN;
+    } else {
+      const cmp = aP.localeCompare(bP);
+      if (cmp !== 0) return cmp;
+    }
+  }
+  return 0;
+}
+
+// ---- Sort order for archive images ----
+function applySortOrder() {
+  const mode = sortSelect.value;
+  const arr = [...archiveImagesUnsorted];
+  if (mode === 'natural') {
+    arr.sort((a, b) => naturalCompare(a.name, b.name));
+  } else if (mode === 'lexical') {
+    arr.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+  } else if (mode === 'timestamp') {
+    arr.sort((a, b) => a.lastModified - b.lastModified || naturalCompare(a.name, b.name));
+  }
+  archiveImages = arr;
+}
+
+// ---- Image helpers ----
+const IMAGE_EXTS = /\.(jpe?g|png|webp|gif|bmp|avif|jxl|tiff?)$/i;
+const ARCHIVE_EXTS = /\.(cbz|zip|cbr|rar|cb7|7z)$/i;
+
+function loadImageFromBlob(blob) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = URL.createObjectURL(blob);
+  });
+}
+
+// ---- Spread / navigation logic ----
+function isSpread() { return viewMode.value === 'spread'; }
+function isR2L() { return bindDir.value === 'R2L'; }
+function hasCover() { return coverCheck.checked; }
+
+function getSpreadPages(pageNum) {
+  if (!isSpread()) return [pageNum];
+  if (hasCover() && pageNum === 1) return [1];
+  const offset = hasCover() ? 1 : 0;
+  const adjusted = pageNum - offset;
+  let pairStart = offset + (adjusted % 2 === 1 ? adjusted : adjusted - 1);
+  if (pairStart < 1) pairStart = 1;
+  const p1 = pairStart;
+  const p2 = pairStart + 1;
+  if (p2 > totalPages) return [p1];
+  return isR2L() ? [p2, p1] : [p1, p2];
+}
+
+function canonicalPage(pageNum) {
+  if (!isSpread()) return pageNum;
+  if (hasCover() && pageNum === 1) return 1;
+  const offset = hasCover() ? 1 : 0;
+  const adjusted = pageNum - offset;
+  return offset + (adjusted % 2 === 1 ? adjusted : adjusted - 1);
+}
+
+function prevPageNum(pageNum) {
+  if (!isSpread()) return pageNum - 1;
+  if (hasCover() && pageNum <= 2) return 1;
+  const step = (hasCover() && pageNum === 1) ? 1 : 2;
+  let prev = pageNum - step;
+  if (prev < 1) prev = 1;
+  return canonicalPage(prev);
+}
+
+function nextPageNum(pageNum) {
+  if (!isSpread()) return pageNum + 1;
+  const pages = getSpreadPages(pageNum);
+  const maxShown = Math.max(...pages);
+  return maxShown + 1 <= totalPages ? canonicalPage(maxShown + 1) : null;
+}
+
+// ---- Rendering: unified for PDF and archive images ----
+
+// Get natural dimensions for a page
+async function getPageDimensions(pageNum) {
+  if (docType === 'pdf') {
+    const page = await pdfDoc.getPage(pageNum);
+    const vp = page.getViewport({ scale: 1 });
+    return { width: vp.width, height: vp.height };
+  } else {
+    const entry = archiveImages[pageNum - 1];
+    return { width: entry.width, height: entry.height };
+  }
+}
+
+function getScale(dims, forSpread) {
+  const val = scaleSelect.value;
+  if (val === 'fit') {
+    const maxW = window.innerWidth - 200;
+    const maxH = window.innerHeight - 80;
+    const divisor = forSpread ? 2 : 1;
+    return Math.min((maxW / divisor) / dims.width, maxH / dims.height, 3);
+  }
+  return parseFloat(val);
+}
+
+async function renderPageToCanvas(pageNum, scale) {
+  if (docType === 'pdf') {
+    const page = await pdfDoc.getPage(pageNum);
+    const dims = { width: page.getViewport({ scale: 1 }).width, height: page.getViewport({ scale: 1 }).height };
+    const s = scale || getScale(dims, isSpread() && getSpreadPages(currentPage).length === 2);
+    const viewport = page.getViewport({ scale: s });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d');
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    return canvas;
+  } else {
+    const entry = archiveImages[pageNum - 1];
+    const dims = { width: entry.width, height: entry.height };
+    const s = scale || getScale(dims, isSpread() && getSpreadPages(currentPage).length === 2);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(dims.width * s);
+    canvas.height = Math.round(dims.height * s);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(entry.img, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
+}
+
+async function renderView(num) {
+  if (totalPages === 0 || rendering) return;
+  rendering = true;
+  currentPage = canonicalPage(num);
+  pageInput.value = currentPage;
+
+  const next = nextPageNum(currentPage);
+  prevBtn.disabled = currentPage <= 1;
+  nextBtn.disabled = next === null;
+
+  const pages = getSpreadPages(currentPage);
+  viewer.innerHTML = '';
+
+  if (pages.length === 2) {
+    const spreadWrap = document.createElement('div');
+    spreadWrap.className = 'spread-container';
+    const firstDims = await getPageDimensions(pages[0]);
+    const scale = getScale(firstDims, true);
+    for (const pn of pages) {
+      const container = document.createElement('div');
+      container.className = 'page-container';
+      const canvas = await renderPageToCanvas(pn, scale);
+      container.appendChild(canvas);
+      const label = document.createElement('div');
+      label.className = 'page-label';
+      label.textContent = `${pn}`;
+      container.appendChild(label);
+      spreadWrap.appendChild(container);
+    }
+    const sortedPages = [...pages].sort((a, b) => a - b);
+    const overallLabel = document.createElement('div');
+    overallLabel.style.cssText = 'text-align:center; font-size:12px; color:#888; margin-top:28px;';
+    overallLabel.textContent = `${sortedPages[0]}-${sortedPages[1]} / ${totalPages}`;
+    viewer.appendChild(spreadWrap);
+    viewer.appendChild(overallLabel);
+  } else {
+    const container = document.createElement('div');
+    container.className = 'page-container';
+    const canvas = await renderPageToCanvas(pages[0]);
+    container.appendChild(canvas);
+    const label = document.createElement('div');
+    label.className = 'page-label';
+    label.textContent = `${pages[0]} / ${totalPages}`;
+    container.appendChild(label);
+    viewer.appendChild(container);
+  }
+
+  const pagesSet = new Set(pages);
+  sidebar.querySelectorAll('.thumb').forEach((t, i) => {
+    t.classList.toggle('active', pagesSet.has(i + 1));
+  });
+  const active = sidebar.querySelector('.thumb.active');
+  if (active) active.scrollIntoView({ block: 'nearest' });
+
+  rendering = false;
+}
+
+async function renderThumbnails() {
+  sidebar.innerHTML = '';
+  for (let i = 1; i <= totalPages; i++) {
+    const dims = await getPageDimensions(i);
+    const scale = 140 / dims.width;
+    const canvas = await renderPageToCanvas(i, scale);
+
+    const div = document.createElement('div');
+    div.className = 'thumb' + (i === currentPage ? ' active' : '');
+    div.appendChild(canvas);
+    const numLabel = document.createElement('div');
+    numLabel.className = 'num';
+    numLabel.textContent = i;
+    div.appendChild(numLabel);
+    div.addEventListener('click', () => renderView(i));
+    sidebar.appendChild(div);
+  }
+}
+
+// ---- Export ----
+function getExt(mime) {
+  if (mime === 'image/png') return 'png';
+  if (mime === 'image/jpeg') return 'jpg';
+  return 'webp';
+}
+
+function getQuality(mime) {
+  return mime === 'image/png' ? undefined : 0.95;
+}
+
+function baseName() {
+  return fileName.replace(/\.(pdf|cbz|cbr|cb7|zip|rar|7z)$/i, '');
+}
+
+function saveCanvas(canvas, name) {
+  const mime = formatSelect.value;
+  const ext = getExt(mime);
+  const quality = getQuality(mime);
+  canvas.toBlob(blob => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${name}.${ext}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+  }, mime, quality);
+}
+
+async function exportPageCanvas(pageNum) {
+  if (docType === 'pdf') {
+    return renderPageToCanvas(pageNum, 2);
+  } else {
+    // For images, export at native resolution
+    return renderPageToCanvas(pageNum, 1);
+  }
+}
+
+async function saveCurrent() {
+  saveBtn.disabled = true;
+  const pages = getSpreadPages(currentPage);
+  const pad = String(totalPages).length;
+  if (pages.length === 2) {
+    const sorted = [...pages].sort((a, b) => a - b);
+    const [c1, c2] = await Promise.all(sorted.map(p => exportPageCanvas(p)));
+    const w = c1.width + c2.width;
+    const h = Math.max(c1.height, c2.height);
+    const merged = document.createElement('canvas');
+    merged.width = w;
+    merged.height = h;
+    const ctx = merged.getContext('2d');
+    if (isR2L()) {
+      ctx.drawImage(c2, 0, 0);
+      ctx.drawImage(c1, c2.width, 0);
+    } else {
+      ctx.drawImage(c1, 0, 0);
+      ctx.drawImage(c2, c1.width, 0);
+    }
+    const p1 = String(sorted[0]).padStart(pad, '0');
+    const p2 = String(sorted[1]).padStart(pad, '0');
+    saveCanvas(merged, `${baseName()}_${p1}-${p2}`);
+    showToast(`Pages ${sorted[0]}-${sorted[1]} saved`);
+  } else {
+    const canvas = await exportPageCanvas(pages[0]);
+    const num = String(pages[0]).padStart(pad, '0');
+    saveCanvas(canvas, `${baseName()}_${num}`);
+    showToast(`Page ${pages[0]} saved`);
+  }
+  saveBtn.disabled = false;
+}
+
+async function saveSpread() {
+  spreadBtn.disabled = true;
+  const pages = getSpreadPages(currentPage);
+  const sorted = [...pages].sort((a, b) => a - b);
+  const pad = String(totalPages).length;
+  let p1, p2;
+  if (pages.length === 1) {
+    p1 = pages[0];
+    p2 = p1 + 1;
+    if (p2 > totalPages) {
+      showToast('No next page for spread');
+      spreadBtn.disabled = false;
+      return;
+    }
+  } else {
+    p1 = sorted[0];
+    p2 = sorted[1];
+  }
+  const [c1, c2] = await Promise.all([exportPageCanvas(p1), exportPageCanvas(p2)]);
+  const w = c1.width + c2.width;
+  const h = Math.max(c1.height, c2.height);
+  const merged = document.createElement('canvas');
+  merged.width = w;
+  merged.height = h;
+  const ctx = merged.getContext('2d');
+  if (isR2L()) {
+    ctx.drawImage(c2, 0, 0);
+    ctx.drawImage(c1, c2.width, 0);
+  } else {
+    ctx.drawImage(c1, 0, 0);
+    ctx.drawImage(c2, c1.width, 0);
+  }
+  const s1 = String(p1).padStart(pad, '0');
+  const s2 = String(p2).padStart(pad, '0');
+  saveCanvas(merged, `${baseName()}_${s1}-${s2}`);
+  showToast(`Spread ${p1}-${p2} saved`);
+  spreadBtn.disabled = false;
+}
+
+async function saveAll() {
+  saveAllBtn.disabled = true;
+  const pad = String(totalPages).length;
+  for (let i = 1; i <= totalPages; i++) {
+    setProgress((i / totalPages) * 100);
+    const canvas = await exportPageCanvas(i);
+    const num = String(i).padStart(pad, '0');
+    saveCanvas(canvas, `${baseName()}_${num}`);
+    await new Promise(r => setTimeout(r, 100));
+  }
+  setProgress(0);
+  showToast(`All ${totalPages} pages saved`);
+  saveAllBtn.disabled = false;
+}
+
+// ---- Load PDF ----
+async function loadPDF(data, name) {
+  docType = 'pdf';
+  archiveImages = [];
+  archiveImagesUnsorted = [];
+  sortSelect.style.display = 'none';
+  pdfDoc = await pdfjsLib.getDocument({ data }).promise;
+  totalPages = pdfDoc.numPages;
+  fileName = name || 'document.pdf';
+  currentPage = 1;
+  onDocLoaded();
+}
+
+// ---- Load Archive (CBZ/CBR/CB7) ----
+
+// Flatten extracted object from libarchive.js into {name, file} entries
+function flattenExtracted(obj, prefix = '') {
+  const files = [];
+  for (const [key, value] of Object.entries(obj)) {
+    if (value instanceof File) {
+      files.push({ name: prefix + key, file: value });
+    } else if (typeof value === 'object' && value !== null) {
+      files.push(...flattenExtracted(value, prefix + key + '/'));
+    }
+  }
+  return files;
+}
+
+// Show a dialog to let the user pick which inner archive to open
+function showArchiveChooser(innerArchives, outerName) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'loading-overlay';
+    overlay.style.cursor = 'default';
+
+    const dialog = document.createElement('div');
+    dialog.style.cssText = 'background:#16213e; border:1px solid #0f3460; border-radius:10px; padding:20px 24px; max-width:500px; width:90%; max-height:70vh; display:flex; flex-direction:column;';
+
+    const title = document.createElement('div');
+    title.style.cssText = 'font-size:14px; font-weight:600; margin-bottom:12px;';
+    title.textContent = `${outerName} — 二重アーカイブ検出`;
+
+    const desc = document.createElement('div');
+    desc.style.cssText = 'font-size:12px; color:#888; margin-bottom:12px;';
+    desc.textContent = `${innerArchives.length} 個のアーカイブが含まれています。展開するファイルを選択してください:`;
+
+    const list = document.createElement('div');
+    list.style.cssText = 'overflow-y:auto; flex:1; margin-bottom:12px;';
+
+    for (const arc of innerArchives) {
+      const row = document.createElement('div');
+      row.style.cssText = 'padding:8px 12px; margin-bottom:4px; background:#1a2540; border:1px solid #333; border-radius:6px; cursor:pointer; font-size:13px; transition:background 0.15s;';
+      const sizeStr = arc.file.size >= 1024 * 1024
+        ? (arc.file.size / (1024 * 1024)).toFixed(1) + ' MB'
+        : (arc.file.size / 1024).toFixed(0) + ' KB';
+      row.textContent = `${arc.name}  (${sizeStr})`;
+      row.addEventListener('mouseenter', () => row.style.background = '#0f3460');
+      row.addEventListener('mouseleave', () => row.style.background = '#1a2540');
+      row.addEventListener('click', () => {
+        overlay.remove();
+        resolve(arc);
+      });
+      list.appendChild(row);
+    }
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'キャンセル';
+    cancelBtn.style.cssText = 'align-self:flex-end;';
+    cancelBtn.addEventListener('click', () => {
+      overlay.remove();
+      resolve(null);
+    });
+
+    dialog.append(title, desc, list, cancelBtn);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+  });
+}
+
+// Load image files into archiveImagesUnsorted and display
+async function loadImageEntries(imageFiles, archiveFileName) {
+  archiveImagesUnsorted = [];
+  for (let i = 0; i < imageFiles.length; i++) {
+    setProgress(((i + 1) / imageFiles.length) * 100);
+    const f = imageFiles[i];
+    const img = await loadImageFromBlob(f.file);
+    archiveImagesUnsorted.push({
+      name: f.name,
+      blob: f.file,
+      img,
+      width: img.naturalWidth,
+      height: img.naturalHeight,
+      lastModified: f.file.lastModified || 0,
+    });
+  }
+  setProgress(0);
+
+  applySortOrder();
+
+  docType = 'archive';
+  pdfDoc = null;
+  totalPages = archiveImages.length;
+  fileName = archiveFileName;
+  currentPage = 1;
+  sortSelect.style.display = '';
+  onDocLoaded();
+}
+
+async function loadArchive(file) {
+  const loading = showLoading(`${file.name} を展開中...`);
+  try {
+    await ensureLibArchive();
+    const archive = await Archive.open(file);
+    const extracted = await archive.extractFiles();
+    const allFiles = flattenExtracted(extracted);
+
+    const imageFiles = allFiles.filter(f => IMAGE_EXTS.test(f.name));
+    const innerArchives = allFiles.filter(f => ARCHIVE_EXTS.test(f.name));
+
+    // Nested archive detected: let user choose
+    if (innerArchives.length > 0) {
+      hideLoading(loading);
+
+      const chosen = await showArchiveChooser(innerArchives, file.name);
+      if (!chosen) return; // cancelled
+
+      const innerLoading = showLoading(`${chosen.name} を展開中...`);
+      try {
+        const innerArc = await Archive.open(chosen.file);
+        const innerExtracted = await innerArc.extractFiles();
+        const innerAllFiles = flattenExtracted(innerExtracted);
+        const innerImages = innerAllFiles.filter(f => IMAGE_EXTS.test(f.name));
+
+        if (innerImages.length === 0) {
+          showToast(`${chosen.name} に画像ファイルが見つかりません`, 3000);
+          return;
+        }
+        await loadImageEntries(innerImages, `${file.name} > ${chosen.name}`);
+      } finally {
+        hideLoading(innerLoading);
+      }
+      return;
+    }
+
+    // Normal archive with images
+    if (imageFiles.length === 0) {
+      showToast('画像ファイルが見つかりません', 3000);
+      return;
+    }
+    await loadImageEntries(imageFiles, file.name);
+  } catch (err) {
+    console.error('Archive load error:', err);
+    showToast(`展開エラー: ${err.message}`, 4000);
+  } finally {
+    hideLoading(loading);
+  }
+}
+
+function onDocLoaded() {
+  pageCount.textContent = `/ ${totalPages}`;
+  pageInput.max = totalPages;
+  pageInput.disabled = false;
+  fileInfo.textContent = `${fileName} (${totalPages}p)`;
+  [saveBtn, spreadBtn, saveAllBtn, thumbToggle].forEach(b => b.disabled = false);
+  renderView(1);
+  renderThumbnails();
+}
+
+// ---- Detect file type ----
+function getFileType(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (ext === 'pdf') return 'pdf';
+  if (['cbz', 'zip', 'cbr', 'rar', 'cb7', '7z'].includes(ext)) return 'archive';
+  // Fallback: check MIME
+  if (file.type === 'application/pdf') return 'pdf';
+  return 'archive'; // assume archive for unknown
+}
+
+async function openFile(file) {
+  if (!file) return;
+  const type = getFileType(file);
+  if (type === 'pdf') {
+    const buf = await file.arrayBuffer();
+    await loadPDF(buf, file.name);
+  } else {
+    await loadArchive(file);
+  }
+}
+
+// ---- File input ----
+fileInput.addEventListener('change', async e => {
+  const file = e.target.files[0];
+  await openFile(file);
+});
+
+// ---- Drag & drop ----
+document.addEventListener('dragover', e => {
+  e.preventDefault();
+  const dz = document.getElementById('dropzone');
+  if (dz) dz.classList.add('dragover');
+});
+document.addEventListener('dragleave', () => {
+  const dz = document.getElementById('dropzone');
+  if (dz) dz.classList.remove('dragover');
+});
+document.addEventListener('drop', async e => {
+  e.preventDefault();
+  const dz = document.getElementById('dropzone');
+  if (dz) dz.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  await openFile(file);
+});
+
+// ---- Navigation ----
+prevBtn.addEventListener('click', () => {
+  const p = prevPageNum(currentPage);
+  if (p >= 1) renderView(p);
+});
+nextBtn.addEventListener('click', () => {
+  const p = nextPageNum(currentPage);
+  if (p !== null) renderView(p);
+});
+pageInput.addEventListener('change', () => {
+  const n = parseInt(pageInput.value);
+  if (n >= 1 && n <= totalPages) renderView(n);
+  else pageInput.value = currentPage;
+});
+
+// ---- Keyboard ----
+document.addEventListener('keydown', e => {
+  if (totalPages === 0 || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    if (isR2L()) {
+      const p = nextPageNum(currentPage);
+      if (p !== null) renderView(p);
+    } else {
+      const p = prevPageNum(currentPage);
+      if (p >= 1) renderView(p);
+    }
+  }
+  if (e.key === 'ArrowRight') {
+    e.preventDefault();
+    if (isR2L()) {
+      const p = prevPageNum(currentPage);
+      if (p >= 1) renderView(p);
+    } else {
+      const p = nextPageNum(currentPage);
+      if (p !== null) renderView(p);
+    }
+  }
+  if (e.key === 'ArrowUp') { e.preventDefault(); const p = prevPageNum(currentPage); if (p >= 1) renderView(p); }
+  if (e.key === 'ArrowDown') { e.preventDefault(); const p = nextPageNum(currentPage); if (p !== null) renderView(p); }
+  if (e.key === 'Home') { e.preventDefault(); renderView(1); }
+  if (e.key === 'End') { e.preventDefault(); renderView(totalPages); }
+});
+
+// ---- View mode changes ----
+viewMode.addEventListener('change', () => { if (totalPages > 0) renderView(currentPage); });
+bindDir.addEventListener('change', () => { if (totalPages > 0) renderView(currentPage); });
+coverCheck.addEventListener('change', () => { if (totalPages > 0) renderView(currentPage); });
+scaleSelect.addEventListener('change', () => { if (totalPages > 0) renderView(currentPage); });
+sortSelect.addEventListener('change', () => {
+  if (docType !== 'archive' || archiveImagesUnsorted.length === 0) return;
+  applySortOrder();
+  totalPages = archiveImages.length;
+  renderView(1);
+  renderThumbnails();
+});
+
+// ---- Actions ----
+saveBtn.addEventListener('click', saveCurrent);
+spreadBtn.addEventListener('click', saveSpread);
+saveAllBtn.addEventListener('click', saveAll);
+
+// ---- Thumbnail sidebar ----
+thumbToggle.addEventListener('click', () => {
+  sidebar.classList.toggle('open');
+});
+</script>
+</body>
+</html>
