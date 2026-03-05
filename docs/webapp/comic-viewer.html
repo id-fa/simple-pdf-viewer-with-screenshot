@@ -255,6 +255,98 @@ function applySortOrder() {
   archiveImages = arr;
 }
 
+// ---- Filename encoding fix ----
+// ZIP archives created on Windows often store filenames in Shift-JIS (CP932).
+// libarchive.js (WASM) decodes them as UTF-8, replacing invalid bytes with U+FFFD.
+// Once bytes become U+FFFD they are unrecoverable, so we parse the ZIP central
+// directory directly to build a garbled→correct filename mapping.
+
+// Parse ZIP central directory and build a Map<garbled_segment, correct_segment>.
+function parseZipFilenameMap(buf) {
+  const map = new Map();
+  try {
+    const view = new DataView(buf);
+    const bytes = new Uint8Array(buf);
+
+    // Find EOCD (End of Central Directory Record) — scan backwards
+    let eocdOff = -1;
+    for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) {
+      if (view.getUint32(i, true) === 0x06054b50) { eocdOff = i; break; }
+    }
+    if (eocdOff === -1) return map;
+
+    const cdOffset = view.getUint32(eocdOff + 16, true);
+    const cdSize = view.getUint32(eocdOff + 12, true);
+    const utf8Lossy = new TextDecoder('utf-8', { fatal: false });
+    let sjis = null;
+    try { sjis = new TextDecoder('shift_jis', { fatal: true }); } catch {}
+
+    let pos = cdOffset;
+    const cdEnd = cdOffset + cdSize;
+
+    while (pos + 46 <= bytes.length && pos < cdEnd) {
+      if (view.getUint32(pos, true) !== 0x02014b50) break;
+      const flags = view.getUint16(pos + 8, true);
+      const fnLen = view.getUint16(pos + 28, true);
+      const extraLen = view.getUint16(pos + 30, true);
+      const commentLen = view.getUint16(pos + 32, true);
+      if (pos + 46 + fnLen > bytes.length) break;
+
+      const fnBytes = bytes.slice(pos + 46, pos + 46 + fnLen);
+      // Simulate what libarchive produces (UTF-8 lossy)
+      const garbled = utf8Lossy.decode(fnBytes);
+      let correct = garbled;
+      if (!(flags & 0x800) && sjis) {
+        // No UTF-8 flag — try Shift-JIS
+        try { correct = sjis.decode(fnBytes); } catch {}
+      }
+      if (garbled !== correct) {
+        const gParts = garbled.split('/');
+        const cParts = correct.split('/');
+        if (gParts.length === cParts.length) {
+          for (let j = 0; j < gParts.length; j++) {
+            if (gParts[j] && gParts[j] !== cParts[j]) map.set(gParts[j], cParts[j]);
+          }
+        }
+      }
+      pos += 46 + fnLen + extraLen + commentLen;
+    }
+  } catch (e) { console.warn('parseZipFilenameMap:', e); }
+  return map;
+}
+
+// Fallback for non-ZIP archives: fix Latin-1-misinterpreted Shift-JIS filenames.
+// (When bytes are preserved as code points 0x80–0xFF without U+FFFD replacement.)
+function tryFixFilename(name) {
+  if (/[\u3000-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/.test(name)) return name;
+  let hasHighByte = false;
+  for (let i = 0; i < name.length; i++) {
+    const c = name.charCodeAt(i);
+    if (c > 255) return name;
+    if (c > 127) hasHighByte = true;
+  }
+  if (!hasHighByte) return name;
+  const bytes = new Uint8Array(name.length);
+  for (let i = 0; i < name.length; i++) bytes[i] = name.charCodeAt(i);
+  try {
+    const decoded = new TextDecoder('shift_jis', { fatal: true }).decode(bytes);
+    if (/[\u3000-\u9FFF\uFF00-\uFFEF]/.test(decoded)) return decoded;
+  } catch {}
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch {}
+  return name;
+}
+
+// Build filename map for ZIP/CBZ files (async — reads arrayBuffer)
+async function buildFilenameMap(fileOrBlob, name) {
+  const ext = name.split('.').pop().toLowerCase();
+  if (ext !== 'cbz' && ext !== 'zip') return null;
+  try {
+    const buf = await fileOrBlob.arrayBuffer();
+    const map = parseZipFilenameMap(buf);
+    return map.size > 0 ? map : null;
+  } catch { return null; }
+}
+
 // ---- Image helpers ----
 const IMAGE_EXTS = /\.(jpe?g|png|webp|gif|bmp|avif|jxl|tiff?)$/i;
 const ARCHIVE_EXTS = /\.(cbz|zip|cbr|rar|cb7|7z)$/i;
@@ -577,13 +669,14 @@ async function loadPDF(data, name) {
 // ---- Load Archive (CBZ/CBR/CB7) ----
 
 // Flatten extracted object from libarchive.js into {name, file} entries
-function flattenExtracted(obj, prefix = '') {
+function flattenExtracted(obj, prefix = '', fnMap = null) {
   const files = [];
   for (const [key, value] of Object.entries(obj)) {
+    const fixedKey = (fnMap && fnMap.has(key)) ? fnMap.get(key) : tryFixFilename(key);
     if (value instanceof File) {
-      files.push({ name: prefix + key, file: value });
+      files.push({ name: prefix + fixedKey, file: value });
     } else if (typeof value === 'object' && value !== null) {
-      files.push(...flattenExtracted(value, prefix + key + '/'));
+      files.push(...flattenExtracted(value, prefix + fixedKey + '/', fnMap));
     }
   }
   return files;
@@ -673,9 +766,10 @@ async function loadArchive(file) {
   const loading = showLoading(`${file.name} を展開中...`);
   try {
     await ensureLibArchive();
+    const fnMap = await buildFilenameMap(file, file.name);
     const archive = await Archive.open(file);
     const extracted = await archive.extractFiles();
-    const allFiles = flattenExtracted(extracted);
+    const allFiles = flattenExtracted(extracted, '', fnMap);
 
     const imageFiles = allFiles.filter(f => IMAGE_EXTS.test(f.name));
     const innerArchives = allFiles.filter(f => ARCHIVE_EXTS.test(f.name));
@@ -689,9 +783,10 @@ async function loadArchive(file) {
 
       const innerLoading = showLoading(`${chosen.name} を展開中...`);
       try {
+        const innerFnMap = await buildFilenameMap(chosen.file, chosen.name);
         const innerArc = await Archive.open(chosen.file);
         const innerExtracted = await innerArc.extractFiles();
-        const innerAllFiles = flattenExtracted(innerExtracted);
+        const innerAllFiles = flattenExtracted(innerExtracted, '', innerFnMap);
         const innerImages = innerAllFiles.filter(f => IMAGE_EXTS.test(f.name));
 
         if (innerImages.length === 0) {
