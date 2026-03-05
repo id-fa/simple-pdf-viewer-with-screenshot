@@ -96,10 +96,10 @@ label.check input { cursor: pointer; }
     <select id="scaleSelect">
       <option value="0.5">50%</option>
       <option value="0.75">75%</option>
-      <option value="1" selected>100%</option>
+      <option value="1">100%</option>
       <option value="1.5">150%</option>
       <option value="2">200%</option>
-      <option value="fit">Fit</option>
+      <option value="fit" selected>Fit</option>
     </select>
     <select id="formatSelect">
       <option value="image/png">PNG</option>
@@ -581,6 +581,19 @@ scaleSelect.addEventListener('change', () => { if (pdfDoc) renderView(currentPag
 saveBtn.addEventListener('click', saveCurrent);
 spreadBtn.addEventListener('click', saveSpread);
 saveAllBtn.addEventListener('click', saveAll);
+
+// Mouse wheel navigation
+viewer.addEventListener('wheel', e => {
+  if (!pdfDoc || rendering) return;
+  e.preventDefault();
+  if (e.deltaY > 0) {
+    const p = nextPage(currentPage);
+    if (p !== null) renderView(p);
+  } else if (e.deltaY < 0) {
+    const p = prevPage(currentPage);
+    if (p >= 1) renderView(p);
+  }
+}, { passive: false });
 
 // Tap/click navigation on viewer area
 viewer.addEventListener('click', e => {

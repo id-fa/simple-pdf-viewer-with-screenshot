@@ -100,10 +100,10 @@ label.check input { cursor: pointer; }
     <select id="scaleSelect">
       <option value="0.5">50%</option>
       <option value="0.75">75%</option>
-      <option value="1" selected>100%</option>
+      <option value="1">100%</option>
       <option value="1.5">150%</option>
       <option value="2">200%</option>
-      <option value="fit">Fit</option>
+      <option value="fit" selected>Fit</option>
     </select>
     <select id="sortSelect" style="display:none">
       <option value="natural">Sort: Natural</option>
@@ -930,6 +930,19 @@ sortSelect.addEventListener('change', () => {
 saveBtn.addEventListener('click', saveCurrent);
 spreadBtn.addEventListener('click', saveSpread);
 saveAllBtn.addEventListener('click', saveAll);
+
+// ---- Mouse wheel navigation ----
+viewer.addEventListener('wheel', e => {
+  if (totalPages === 0 || rendering) return;
+  e.preventDefault();
+  if (e.deltaY > 0) {
+    const p = nextPageNum(currentPage);
+    if (p !== null) renderView(p);
+  } else if (e.deltaY < 0) {
+    const p = prevPageNum(currentPage);
+    if (p >= 1) renderView(p);
+  }
+}, { passive: false });
 
 // ---- Tap/click navigation on viewer area ----
 viewer.addEventListener('click', e => {
