@@ -455,58 +455,60 @@ async function renderPageToCanvas(pageNum, scale) {
 async function renderView(num) {
   if (totalPages === 0 || rendering) return;
   rendering = true;
-  currentPage = canonicalPage(num);
-  pageInput.value = currentPage;
+  try {
+    currentPage = canonicalPage(num);
+    pageInput.value = currentPage;
 
-  const next = nextPageNum(currentPage);
-  prevBtn.disabled = currentPage <= 1;
-  nextBtn.disabled = next === null;
+    const next = nextPageNum(currentPage);
+    prevBtn.disabled = currentPage <= 1;
+    nextBtn.disabled = next === null;
 
-  const pages = getSpreadPages(currentPage);
-  viewer.innerHTML = '';
+    const pages = getSpreadPages(currentPage);
+    viewer.innerHTML = '';
 
-  if (pages.length === 2) {
-    const spreadWrap = document.createElement('div');
-    spreadWrap.className = 'spread-container';
-    const firstDims = await getPageDimensions(pages[0]);
-    const scale = getScale(firstDims, true);
-    for (const pn of pages) {
+    if (pages.length === 2) {
+      const spreadWrap = document.createElement('div');
+      spreadWrap.className = 'spread-container';
+      const firstDims = await getPageDimensions(pages[0]);
+      const scale = getScale(firstDims, true);
+      for (const pn of pages) {
+        const container = document.createElement('div');
+        container.className = 'page-container';
+        const canvas = await renderPageToCanvas(pn, scale);
+        container.appendChild(canvas);
+        const label = document.createElement('div');
+        label.className = 'page-label';
+        label.textContent = `${pn}`;
+        container.appendChild(label);
+        spreadWrap.appendChild(container);
+      }
+      const sortedPages = [...pages].sort((a, b) => a - b);
+      const overallLabel = document.createElement('div');
+      overallLabel.style.cssText = 'text-align:center; font-size:12px; color:#888; margin-top:28px;';
+      overallLabel.textContent = `${sortedPages[0]}-${sortedPages[1]} / ${totalPages}`;
+      viewer.appendChild(spreadWrap);
+      viewer.appendChild(overallLabel);
+    } else {
       const container = document.createElement('div');
       container.className = 'page-container';
-      const canvas = await renderPageToCanvas(pn, scale);
+      const canvas = await renderPageToCanvas(pages[0]);
       container.appendChild(canvas);
       const label = document.createElement('div');
       label.className = 'page-label';
-      label.textContent = `${pn}`;
+      label.textContent = `${pages[0]} / ${totalPages}`;
       container.appendChild(label);
-      spreadWrap.appendChild(container);
+      viewer.appendChild(container);
     }
-    const sortedPages = [...pages].sort((a, b) => a - b);
-    const overallLabel = document.createElement('div');
-    overallLabel.style.cssText = 'text-align:center; font-size:12px; color:#888; margin-top:28px;';
-    overallLabel.textContent = `${sortedPages[0]}-${sortedPages[1]} / ${totalPages}`;
-    viewer.appendChild(spreadWrap);
-    viewer.appendChild(overallLabel);
-  } else {
-    const container = document.createElement('div');
-    container.className = 'page-container';
-    const canvas = await renderPageToCanvas(pages[0]);
-    container.appendChild(canvas);
-    const label = document.createElement('div');
-    label.className = 'page-label';
-    label.textContent = `${pages[0]} / ${totalPages}`;
-    container.appendChild(label);
-    viewer.appendChild(container);
+
+    const pagesSet = new Set(pages);
+    sidebar.querySelectorAll('.thumb').forEach((t, i) => {
+      t.classList.toggle('active', pagesSet.has(i + 1));
+    });
+    const active = sidebar.querySelector('.thumb.active');
+    if (active) active.scrollIntoView({ block: 'nearest' });
+  } finally {
+    rendering = false;
   }
-
-  const pagesSet = new Set(pages);
-  sidebar.querySelectorAll('.thumb').forEach((t, i) => {
-    t.classList.toggle('active', pagesSet.has(i + 1));
-  });
-  const active = sidebar.querySelector('.thumb.active');
-  if (active) active.scrollIntoView({ block: 'nearest' });
-
-  rendering = false;
 }
 
 async function renderThumbnails() {

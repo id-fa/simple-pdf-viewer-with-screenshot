@@ -267,68 +267,70 @@ async function renderPageToCanvas(pageNum, scale) {
 async function renderView(num) {
   if (!pdfDoc || rendering) return;
   rendering = true;
-  currentPage = canonicalPage(num);
-  pageInput.value = currentPage;
+  try {
+    currentPage = canonicalPage(num);
+    pageInput.value = currentPage;
 
-  const prev = prevPage(currentPage);
-  const next = nextPage(currentPage);
-  prevBtn.disabled = currentPage <= 1;
-  nextBtn.disabled = next === null;
+    const prev = prevPage(currentPage);
+    const next = nextPage(currentPage);
+    prevBtn.disabled = currentPage <= 1;
+    nextBtn.disabled = next === null;
 
-  const pages = getSpreadPages(currentPage);
-  viewer.innerHTML = '';
+    const pages = getSpreadPages(currentPage);
+    viewer.innerHTML = '';
 
-  if (pages.length === 2) {
-    // Spread view - two pages
-    const spreadWrap = document.createElement('div');
-    spreadWrap.className = 'spread-container';
+    if (pages.length === 2) {
+      // Spread view - two pages
+      const spreadWrap = document.createElement('div');
+      spreadWrap.className = 'spread-container';
 
-    // Determine scale from the first page, apply to both
-    const firstPage = await pdfDoc.getPage(pages[0]);
-    const scale = getScale(firstPage, true);
+      // Determine scale from the first page, apply to both
+      const firstPage = await pdfDoc.getPage(pages[0]);
+      const scale = getScale(firstPage, true);
 
-    for (const pn of pages) {
+      for (const pn of pages) {
+        const container = document.createElement('div');
+        container.className = 'page-container';
+        const canvas = await renderPageToCanvas(pn, scale);
+        container.appendChild(canvas);
+        const label = document.createElement('div');
+        label.className = 'page-label';
+        label.textContent = `${pn}`;
+        container.appendChild(label);
+        spreadWrap.appendChild(container);
+      }
+
+      // Overall label
+      const sortedPages = [...pages].sort((a, b) => a - b);
+      const overallLabel = document.createElement('div');
+      overallLabel.style.cssText = 'text-align:center; font-size:12px; color:#888; margin-top:28px;';
+      overallLabel.textContent = `${sortedPages[0]}-${sortedPages[1]} / ${totalPages}`;
+
+      viewer.appendChild(spreadWrap);
+      viewer.appendChild(overallLabel);
+    } else {
+      // Single page
       const container = document.createElement('div');
       container.className = 'page-container';
-      const canvas = await renderPageToCanvas(pn, scale);
+      const canvas = await renderPageToCanvas(pages[0]);
       container.appendChild(canvas);
       const label = document.createElement('div');
       label.className = 'page-label';
-      label.textContent = `${pn}`;
+      label.textContent = `${pages[0]} / ${totalPages}`;
       container.appendChild(label);
-      spreadWrap.appendChild(container);
+      viewer.appendChild(container);
     }
 
-    // Overall label
-    const sortedPages = [...pages].sort((a, b) => a - b);
-    const overallLabel = document.createElement('div');
-    overallLabel.style.cssText = 'text-align:center; font-size:12px; color:#888; margin-top:28px;';
-    overallLabel.textContent = `${sortedPages[0]}-${sortedPages[1]} / ${totalPages}`;
-
-    viewer.appendChild(spreadWrap);
-    viewer.appendChild(overallLabel);
-  } else {
-    // Single page
-    const container = document.createElement('div');
-    container.className = 'page-container';
-    const canvas = await renderPageToCanvas(pages[0]);
-    container.appendChild(canvas);
-    const label = document.createElement('div');
-    label.className = 'page-label';
-    label.textContent = `${pages[0]} / ${totalPages}`;
-    container.appendChild(label);
-    viewer.appendChild(container);
+    // Update thumbnail highlights
+    const pagesSet = new Set(pages);
+    sidebar.querySelectorAll('.thumb').forEach((t, i) => {
+      t.classList.toggle('active', pagesSet.has(i + 1));
+    });
+    const active = sidebar.querySelector('.thumb.active');
+    if (active) active.scrollIntoView({ block: 'nearest' });
+  } finally {
+    rendering = false;
   }
-
-  // Update thumbnail highlights
-  const pagesSet = new Set(pages);
-  sidebar.querySelectorAll('.thumb').forEach((t, i) => {
-    t.classList.toggle('active', pagesSet.has(i + 1));
-  });
-  const active = sidebar.querySelector('.thumb.active');
-  if (active) active.scrollIntoView({ block: 'nearest' });
-
-  rendering = false;
 }
 
 async function renderThumbnails() {
