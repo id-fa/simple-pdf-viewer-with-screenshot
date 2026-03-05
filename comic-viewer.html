@@ -131,6 +131,7 @@ label.check input { cursor: pointer; }
     <div class="icon">COMIC</div>
     <p>PDF / CBZ / CBR / CB7 をドラッグ&ドロップ、または「Open」で選択</p>
     <p style="font-size:12px; color:#555">対応形式: PDF, CBZ(ZIP), CBR(RAR), CB7(7z)</p>
+    <p style="font-size:11px; color:#444; margin-top:16px">Created by id-fa, built with Claude Code</p>
   </div>
 </div>
 
@@ -834,6 +835,35 @@ sortSelect.addEventListener('change', () => {
 saveBtn.addEventListener('click', saveCurrent);
 spreadBtn.addEventListener('click', saveSpread);
 saveAllBtn.addEventListener('click', saveAll);
+
+// ---- Tap/click navigation on viewer area ----
+viewer.addEventListener('click', e => {
+  if (totalPages === 0) return;
+  // Ignore clicks on controls or links
+  if (e.target.closest('button, input, select, a, label')) return;
+  const rect = viewer.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const third = rect.width / 3;
+  if (x < third) {
+    // Left zone
+    if (isR2L()) {
+      const p = nextPageNum(currentPage);
+      if (p !== null) renderView(p);
+    } else {
+      const p = prevPageNum(currentPage);
+      if (p >= 1) renderView(p);
+    }
+  } else if (x > third * 2) {
+    // Right zone
+    if (isR2L()) {
+      const p = prevPageNum(currentPage);
+      if (p >= 1) renderView(p);
+    } else {
+      const p = nextPageNum(currentPage);
+      if (p !== null) renderView(p);
+    }
+  }
+});
 
 // ---- Thumbnail sidebar ----
 thumbToggle.addEventListener('click', () => {

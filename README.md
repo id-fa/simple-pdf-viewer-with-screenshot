@@ -4,7 +4,9 @@
 
 A browser-based PDF viewer and image export tool. Open local PDF files and save pages as images.
 
-[open viewer](https://id-fa.github.io/simple-pdf-viewer-with-screenshot/webapp/)
+[open pdf-viewer](https://id-fa.github.io/simple-pdf-viewer-with-screenshot/webapp/)
+
+[open archive-viewer (test)](https://id-fa.github.io/simple-pdf-viewer-with-screenshot/webapp/comic-viewer.html)
 
 ## 使い方 / Usage
 

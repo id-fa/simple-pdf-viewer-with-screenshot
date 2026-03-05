@@ -121,6 +121,7 @@ label.check input { cursor: pointer; }
   <div class="dropzone" id="dropzone">
     <div class="icon">PDF</div>
     <p>PDFファイルをドラッグ＆ドロップ、または「Open PDF」で選択</p>
+    <p style="font-size:11px; color:#444; margin-top:16px">Created by id-fa, built with Claude Code</p>
   </div>
 </div>
 
@@ -580,6 +581,32 @@ scaleSelect.addEventListener('change', () => { if (pdfDoc) renderView(currentPag
 saveBtn.addEventListener('click', saveCurrent);
 spreadBtn.addEventListener('click', saveSpread);
 saveAllBtn.addEventListener('click', saveAll);
+
+// Tap/click navigation on viewer area
+viewer.addEventListener('click', e => {
+  if (!pdfDoc) return;
+  if (e.target.closest('button, input, select, a, label')) return;
+  const rect = viewer.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const third = rect.width / 3;
+  if (x < third) {
+    if (isR2L()) {
+      const p = nextPage(currentPage);
+      if (p !== null) renderView(p);
+    } else {
+      const p = prevPage(currentPage);
+      if (p >= 1) renderView(p);
+    }
+  } else if (x > third * 2) {
+    if (isR2L()) {
+      const p = prevPage(currentPage);
+      if (p >= 1) renderView(p);
+    } else {
+      const p = nextPage(currentPage);
+      if (p !== null) renderView(p);
+    }
+  }
+});
 
 // Thumbnail sidebar toggle
 thumbToggle.addEventListener('click', () => {
