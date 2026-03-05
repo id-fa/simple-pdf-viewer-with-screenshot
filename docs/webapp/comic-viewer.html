@@ -396,7 +396,7 @@ function prevPageNum(pageNum) {
 }
 
 function nextPageNum(pageNum) {
-  if (!isSpread()) return pageNum + 1;
+  if (!isSpread()) return pageNum + 1 <= totalPages ? pageNum + 1 : null;
   const pages = getSpreadPages(pageNum);
   const maxShown = Math.max(...pages);
   return maxShown + 1 <= totalPages ? canonicalPage(maxShown + 1) : null;
