@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF Viewer - Image Exporter</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; min-height: 100vh; }
+
+/* Header */
+.header { position: sticky; top: 0; z-index: 100; background: #16213e; border-bottom: 1px solid #0f3460; padding: 8px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.header h1 { font-size: 16px; font-weight: 600; white-space: nowrap; }
+.header .info { font-size: 13px; color: #888; }
+
+/* Controls */
+.controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+label.file-btn { display: inline-flex; align-items: center; gap: 4px; padding: 6px 14px; background: #0f3460; border: 1px solid #1a5276; border-radius: 6px; cursor: pointer; font-size: 13px; transition: background 0.2s; }
+label.file-btn:hover { background: #1a5276; }
+label.file-btn input { display: none; }
+button { padding: 6px 14px; border: 1px solid #333; border-radius: 6px; background: #2d2d44; color: #e0e0e0; font-size: 13px; cursor: pointer; transition: background 0.2s; }
+button:hover:not(:disabled) { background: #3d3d5c; }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+button.primary { background: #0f3460; border-color: #1a5276; }
+button.primary:hover:not(:disabled) { background: #1a5276; }
+button.danger { background: #6b1d1d; border-color: #8b2525; }
+button.danger:hover:not(:disabled) { background: #8b2525; }
+button.spread { background: #4a1a6b; border-color: #6b2d8b; }
+button.spread:hover:not(:disabled) { background: #6b2d8b; }
+select { padding: 5px 8px; border: 1px solid #333; border-radius: 6px; background: #2d2d44; color: #e0e0e0; font-size: 13px; }
+label.check { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer; user-select: none; }
+label.check input { cursor: pointer; }
+
+/* Navigation */
+.nav { display: flex; align-items: center; gap: 6px; }
+.nav input { width: 50px; text-align: center; padding: 5px; border: 1px solid #333; border-radius: 6px; background: #2d2d44; color: #e0e0e0; font-size: 13px; }
+
+/* Viewer */
+.viewer { display: flex; flex-direction: column; align-items: center; padding: 16px; gap: 8px; }
+.spread-container { display: flex; align-items: flex-start; gap: 2px; }
+.page-container { position: relative; background: #111; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+.page-container canvas { display: block; }
+.page-label { position: absolute; bottom: -24px; left: 50%; transform: translateX(-50%); font-size: 12px; color: #888; white-space: nowrap; }
+
+/* Thumbnails */
+.sidebar { position: fixed; left: 0; top: 49px; bottom: 0; width: 160px; background: #111; border-right: 1px solid #333; overflow-y: auto; padding: 8px; z-index: 50; transform: translateX(-100%); transition: transform 0.2s; }
+.sidebar.open { transform: translateX(0); }
+.sidebar .thumb { cursor: pointer; margin-bottom: 8px; border: 2px solid transparent; border-radius: 4px; overflow: hidden; position: relative; }
+.sidebar .thumb.active { border-color: #4a9eff; }
+.sidebar .thumb canvas { width: 100%; display: block; }
+.sidebar .thumb .num { position: absolute; bottom: 2px; right: 4px; font-size: 11px; background: rgba(0,0,0,0.7); padding: 1px 5px; border-radius: 3px; }
+
+/* Progress */
+.progress-bar { position: fixed; top: 49px; left: 0; right: 0; height: 3px; z-index: 200; }
+.progress-bar .fill { height: 100%; background: #4a9eff; transition: width 0.1s; width: 0%; }
+
+/* Drop zone */
+.dropzone { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: calc(100vh - 50px); gap: 16px; color: #666; }
+.dropzone.dragover { background: rgba(74, 158, 255, 0.05); }
+.dropzone .icon { font-size: 64px; }
+.dropzone p { font-size: 14px; }
+
+/* Toast */
+.toast { position: fixed; bottom: 20px; right: 20px; background: #16213e; border: 1px solid #0f3460; padding: 10px 18px; border-radius: 8px; font-size: 13px; z-index: 300; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+.toast.show { opacity: 1; }
+</style>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-E05P3RLDS9"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-E05P3RLDS9');
+</script>
+</head>
+<body>
+
+<div class="header">
+  <h1>PDF Viewer</h1>
+  <div class="controls">
+    <label class="file-btn">
+      Open PDF
+      <input type="file" id="fileInput" accept=".pdf">
+    </label>
+    <button id="thumbToggle" disabled>Thumbs</button>
+    <div class="nav">
+      <button id="prevBtn" disabled>&lt;</button>
+      <input type="number" id="pageInput" min="1" value="1" disabled>
+      <span class="info" id="pageCount">/ -</span>
+      <button id="nextBtn" disabled>&gt;</button>
+    </div>
+    <select id="viewMode">
+      <option value="single">Single</option>
+      <option value="spread">Spread</option>
+    </select>
+    <select id="bindDir">
+      <option value="R2L">Right (R2L)</option>
+      <option value="L2R">Left (L2R)</option>
+    </select>
+    <label class="check">
+      <input type="checkbox" id="coverCheck" checked>
+      Cover
+    </label>
+    <select id="scaleSelect">
+      <option value="0.5">50%</option>
+      <option value="0.75">75%</option>
+      <option value="1">100%</option>
+      <option value="1.5">150%</option>
+      <option value="2">200%</option>
+      <option value="fit" selected>Fit</option>
+    </select>
+    <select id="formatSelect">
+      <option value="image/png">PNG</option>
+      <option value="image/jpeg">JPEG 95%</option>
+      <option value="image/webp">WebP 95%</option>
+    </select>
+    <button id="saveBtn" class="primary" disabled>Save Page</button>
+    <button id="spreadBtn" class="spread" disabled>Save 2P</button>
+    <button id="saveAllBtn" class="danger" disabled>Save All</button>
+  </div>
+  <span class="info" id="fileInfo"></span>
+</div>
+
+<div class="progress-bar"><div class="fill" id="progressFill"></div></div>
+
+<div class="sidebar" id="sidebar"></div>
+
+<div class="viewer" id="viewer">
+  <div class="dropzone" id="dropzone">
+    <div class="icon">PDF</div>
+    <p>PDFファイルをドラッグ＆ドロップ、または「Open PDF」で選択</p>
+    <p style="font-size:11px; color:#444; margin-top:16px">Created by id-fa, built with Claude Code</p>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import * as pdfjsModule from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min.mjs';
+
+const pdfjsLib = pdfjsModule;
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.mjs';
+
+// State
+let pdfDoc = null;
+let currentPage = 1;
+let totalPages = 0;
+let fileName = '';
+let rendering = false;
+
+// DOM
+const fileInput = document.getElementById('fileInput');
+const viewer = document.getElementById('viewer');
+const pageInput = document.getElementById('pageInput');
+const pageCount = document.getElementById('pageCount');
+const prevBtn = document.getElementById('prevBtn');
+const nextBtn = document.getElementById('nextBtn');
+const viewMode = document.getElementById('viewMode');
+const bindDir = document.getElementById('bindDir');
+const coverCheck = document.getElementById('coverCheck');
+const scaleSelect = document.getElementById('scaleSelect');
+const formatSelect = document.getElementById('formatSelect');
+const saveBtn = document.getElementById('saveBtn');
+const spreadBtn = document.getElementById('spreadBtn');
+const saveAllBtn = document.getElementById('saveAllBtn');
+const thumbToggle = document.getElementById('thumbToggle');
+const sidebar = document.getElementById('sidebar');
+const fileInfo = document.getElementById('fileInfo');
+const progressFill = document.getElementById('progressFill');
+const toast = document.getElementById('toast');
+
+function showToast(msg, ms = 2000) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), ms);
+}
+
+function setProgress(pct) {
+  progressFill.style.width = pct + '%';
+}
+
+function isSpread() { return viewMode.value === 'spread'; }
+function isR2L() { return bindDir.value === 'R2L'; }
+function hasCover() { return coverCheck.checked; }
+
+// Determine which pages are shown at a given "current page" position
+// Returns [pageNum] or [leftPageNum, rightPageNum]
+function getSpreadPages(pageNum) {
+  if (!isSpread()) return [pageNum];
+
+  // Cover mode: page 1 is always alone
+  if (hasCover() && pageNum === 1) return [1];
+
+  // Determine the pair start
+  const offset = hasCover() ? 1 : 0; // pages after cover start pairing from page 2
+  const adjusted = pageNum - offset;
+  // Pair start: ensure we land on an odd-numbered position within the paired region
+  let pairStart = offset + (adjusted % 2 === 1 ? adjusted : adjusted - 1);
+  if (pairStart < 1) pairStart = 1;
+
+  const p1 = pairStart;
+  const p2 = pairStart + 1;
+
+  if (p2 > totalPages) return [p1]; // last page alone if odd total
+
+  // Return in visual order [left, right]
+  if (isR2L()) {
+    // R2L: higher page on left, lower on right
+    return [p2, p1];
+  } else {
+    // L2R: lower page on left, higher on right
+    return [p1, p2];
+  }
+}
+
+// Navigate: find the "canonical" currentPage for a given page number
+function canonicalPage(pageNum) {
+  if (!isSpread()) return pageNum;
+  if (hasCover() && pageNum === 1) return 1;
+  const offset = hasCover() ? 1 : 0;
+  const adjusted = pageNum - offset;
+  return offset + (adjusted % 2 === 1 ? adjusted : adjusted - 1);
+}
+
+// Get the step size when navigating from a given page
+function navStep(pageNum) {
+  if (!isSpread()) return 1;
+  if (hasCover() && pageNum === 1) return 1;
+  return 2;
+}
+
+// Get the previous canonical page
+function prevPage(pageNum) {
+  if (!isSpread()) return pageNum - 1;
+  if (hasCover() && pageNum <= 2) return 1; // go back to cover
+  const step = (hasCover() && pageNum === 1) ? 1 : 2;
+  let prev = pageNum - step;
+  if (prev < 1) prev = 1;
+  return canonicalPage(prev);
+}
+
+// Get the next canonical page
+function nextPage(pageNum) {
+  if (!isSpread()) return pageNum + 1 <= totalPages ? pageNum + 1 : null;
+  const pages = getSpreadPages(pageNum);
+  const maxShown = Math.max(...pages);
+  return maxShown + 1 <= totalPages ? canonicalPage(maxShown + 1) : null;
+}
+
+// Get render scale, accounting for spread (two pages side by side)
+function getScale(page, forSpread) {
+  const val = scaleSelect.value;
+  if (val === 'fit') {
+    const vp = page.getViewport({ scale: 1 });
+    const maxW = window.innerWidth - 200;
+    const maxH = window.innerHeight - 80;
+    const divisor = forSpread ? 2 : 1;
+    return Math.min((maxW / divisor) / vp.width, maxH / vp.height, 3);
+  }
+  return parseFloat(val);
+}
+
+async function renderPageToCanvas(pageNum, scale) {
+  const page = await pdfDoc.getPage(pageNum);
+  const s = scale || getScale(page, isSpread() && getSpreadPages(currentPage).length === 2);
+  const viewport = page.getViewport({ scale: s });
+  const canvas = document.createElement('canvas');
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  const ctx = canvas.getContext('2d');
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  return canvas;
+}
+
+async function renderView(num) {
+  if (!pdfDoc || rendering) return;
+  rendering = true;
+  try {
+    currentPage = canonicalPage(num);
+    pageInput.value = currentPage;
+
+    const prev = prevPage(currentPage);
+    const next = nextPage(currentPage);
+    prevBtn.disabled = currentPage <= 1;
+    nextBtn.disabled = next === null;
+
+    const pages = getSpreadPages(currentPage);
+    viewer.innerHTML = '';
+
+    if (pages.length === 2) {
+      // Spread view - two pages
+      const spreadWrap = document.createElement('div');
+      spreadWrap.className = 'spread-container';
+
+      // Determine scale from the first page, apply to both
+      const firstPage = await pdfDoc.getPage(pages[0]);
+      const scale = getScale(firstPage, true);
+
+      for (const pn of pages) {
+        const container = document.createElement('div');
+        container.className = 'page-container';
+        const canvas = await renderPageToCanvas(pn, scale);
+        container.appendChild(canvas);
+        const label = document.createElement('div');
+        label.className = 'page-label';
+        label.textContent = `${pn}`;
+        container.appendChild(label);
+        spreadWrap.appendChild(container);
+      }
+
+      // Overall label
+      const sortedPages = [...pages].sort((a, b) => a - b);
+      const overallLabel = document.createElement('div');
+      overallLabel.style.cssText = 'text-align:center; font-size:12px; color:#888; margin-top:28px;';
+      overallLabel.textContent = `${sortedPages[0]}-${sortedPages[1]} / ${totalPages}`;
+
+      viewer.appendChild(spreadWrap);
+      viewer.appendChild(overallLabel);
+    } else {
+      // Single page
+      const container = document.createElement('div');
+      container.className = 'page-container';
+      const canvas = await renderPageToCanvas(pages[0]);
+      container.appendChild(canvas);
+      const label = document.createElement('div');
+      label.className = 'page-label';
+      label.textContent = `${pages[0]} / ${totalPages}`;
+      container.appendChild(label);
+      viewer.appendChild(container);
+    }
+
+    // Update thumbnail highlights
+    const pagesSet = new Set(pages);
+    sidebar.querySelectorAll('.thumb').forEach((t, i) => {
+      t.classList.toggle('active', pagesSet.has(i + 1));
+    });
+    const active = sidebar.querySelector('.thumb.active');
+    if (active) active.scrollIntoView({ block: 'nearest' });
+  } finally {
+    rendering = false;
+  }
+}
+
+async function renderThumbnails() {
+  sidebar.innerHTML = '';
+  for (let i = 1; i <= totalPages; i++) {
+    const page = await pdfDoc.getPage(i);
+    const vp = page.getViewport({ scale: 1 });
+    const scale = 140 / vp.width;
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d');
+    await page.render({ canvasContext: ctx, viewport }).promise;
+
+    const div = document.createElement('div');
+    div.className = 'thumb' + (i === currentPage ? ' active' : '');
+    div.appendChild(canvas);
+    const numLabel = document.createElement('div');
+    numLabel.className = 'num';
+    numLabel.textContent = i;
+    div.appendChild(numLabel);
+    div.addEventListener('click', () => renderView(i));
+    sidebar.appendChild(div);
+  }
+}
+
+function getExt(mime) {
+  if (mime === 'image/png') return 'png';
+  if (mime === 'image/jpeg') return 'jpg';
+  return 'webp';
+}
+
+function getQuality(mime) {
+  return mime === 'image/png' ? undefined : 0.95;
+}
+
+function baseName() {
+  return fileName.replace(/\.pdf$/i, '');
+}
+
+function saveCanvas(canvas, name) {
+  const mime = formatSelect.value;
+  const ext = getExt(mime);
+  const quality = getQuality(mime);
+  canvas.toBlob(blob => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${name}.${ext}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+  }, mime, quality);
+}
+
+async function exportPageCanvas(pageNum) {
+  return renderPageToCanvas(pageNum, 2);
+}
+
+async function saveCurrent() {
+  saveBtn.disabled = true;
+  const pages = getSpreadPages(currentPage);
+  const pad = String(totalPages).length;
+  if (pages.length === 2) {
+    // In spread view, save both pages as a merged image
+    const sorted = [...pages].sort((a, b) => a - b);
+    const [c1, c2] = await Promise.all(sorted.map(p => exportPageCanvas(p)));
+    const w = c1.width + c2.width;
+    const h = Math.max(c1.height, c2.height);
+    const merged = document.createElement('canvas');
+    merged.width = w;
+    merged.height = h;
+    const ctx = merged.getContext('2d');
+    if (isR2L()) {
+      ctx.drawImage(c2, 0, 0);
+      ctx.drawImage(c1, c2.width, 0);
+    } else {
+      ctx.drawImage(c1, 0, 0);
+      ctx.drawImage(c2, c1.width, 0);
+    }
+    const p1 = String(sorted[0]).padStart(pad, '0');
+    const p2 = String(sorted[1]).padStart(pad, '0');
+    saveCanvas(merged, `${baseName()}_${p1}-${p2}`);
+    showToast(`Pages ${sorted[0]}-${sorted[1]} saved`);
+  } else {
+    const canvas = await exportPageCanvas(pages[0]);
+    const num = String(pages[0]).padStart(pad, '0');
+    saveCanvas(canvas, `${baseName()}_${num}`);
+    showToast(`Page ${pages[0]} saved`);
+  }
+  saveBtn.disabled = false;
+}
+
+async function saveSpread() {
+  spreadBtn.disabled = true;
+  const pages = getSpreadPages(currentPage);
+  const sorted = [...pages].sort((a, b) => a - b);
+  const maxPage = Math.max(...sorted);
+  const pad = String(totalPages).length;
+
+  // If currently single, grab current + next
+  let p1, p2;
+  if (pages.length === 1) {
+    p1 = pages[0];
+    p2 = p1 + 1;
+    if (p2 > totalPages) {
+      showToast('No next page for spread');
+      spreadBtn.disabled = false;
+      return;
+    }
+  } else {
+    p1 = sorted[0];
+    p2 = sorted[1];
+  }
+
+  const [c1, c2] = await Promise.all([exportPageCanvas(p1), exportPageCanvas(p2)]);
+  const w = c1.width + c2.width;
+  const h = Math.max(c1.height, c2.height);
+  const merged = document.createElement('canvas');
+  merged.width = w;
+  merged.height = h;
+  const ctx = merged.getContext('2d');
+  if (isR2L()) {
+    ctx.drawImage(c2, 0, 0);
+    ctx.drawImage(c1, c2.width, 0);
+  } else {
+    ctx.drawImage(c1, 0, 0);
+    ctx.drawImage(c2, c1.width, 0);
+  }
+  const s1 = String(p1).padStart(pad, '0');
+  const s2 = String(p2).padStart(pad, '0');
+  saveCanvas(merged, `${baseName()}_${s1}-${s2}`);
+  showToast(`Spread ${p1}-${p2} saved`);
+  spreadBtn.disabled = false;
+}
+
+async function saveAll() {
+  saveAllBtn.disabled = true;
+  const pad = String(totalPages).length;
+  for (let i = 1; i <= totalPages; i++) {
+    setProgress((i / totalPages) * 100);
+    const canvas = await exportPageCanvas(i);
+    const num = String(i).padStart(pad, '0');
+    saveCanvas(canvas, `${baseName()}_${num}`);
+    await new Promise(r => setTimeout(r, 100));
+  }
+  setProgress(0);
+  showToast(`All ${totalPages} pages saved`);
+  saveAllBtn.disabled = false;
+}
+
+async function loadPDF(data, name) {
+  pdfDoc = await pdfjsLib.getDocument({ data }).promise;
+  totalPages = pdfDoc.numPages;
+  fileName = name || 'document.pdf';
+  currentPage = 1;
+
+  pageCount.textContent = `/ ${totalPages}`;
+  pageInput.max = totalPages;
+  pageInput.disabled = false;
+  fileInfo.textContent = `${fileName} (${totalPages}p)`;
+
+  [saveBtn, spreadBtn, saveAllBtn, thumbToggle].forEach(b => b.disabled = false);
+
+  await renderView(1);
+  renderThumbnails();
+}
+
+// File input
+fileInput.addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const buf = await file.arrayBuffer();
+  await loadPDF(buf, file.name);
+});
+
+// Drag & drop
+document.addEventListener('dragover', e => {
+  e.preventDefault();
+  const dz = document.getElementById('dropzone');
+  if (dz) dz.classList.add('dragover');
+});
+document.addEventListener('dragleave', () => {
+  const dz = document.getElementById('dropzone');
+  if (dz) dz.classList.remove('dragover');
+});
+document.addEventListener('drop', async e => {
+  e.preventDefault();
+  const dz = document.getElementById('dropzone');
+  if (dz) dz.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type === 'application/pdf') {
+    const buf = await file.arrayBuffer();
+    await loadPDF(buf, file.name);
+  }
+});
+
+// Navigation
+prevBtn.addEventListener('click', () => {
+  const p = prevPage(currentPage);
+  if (p >= 1) renderView(p);
+});
+nextBtn.addEventListener('click', () => {
+  const p = nextPage(currentPage);
+  if (p !== null) renderView(p);
+});
+pageInput.addEventListener('change', () => {
+  const n = parseInt(pageInput.value);
+  if (n >= 1 && n <= totalPages) renderView(n);
+  else pageInput.value = currentPage;
+});
+
+// Keyboard navigation
+document.addEventListener('keydown', e => {
+  if (!pdfDoc || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    // R2L: left = next; L2R: left = prev
+    if (isR2L()) {
+      const p = nextPage(currentPage);
+      if (p !== null) renderView(p);
+    } else {
+      const p = prevPage(currentPage);
+      if (p >= 1) renderView(p);
+    }
+  }
+  if (e.key === 'ArrowRight') {
+    e.preventDefault();
+    if (isR2L()) {
+      const p = prevPage(currentPage);
+      if (p >= 1) renderView(p);
+    } else {
+      const p = nextPage(currentPage);
+      if (p !== null) renderView(p);
+    }
+  }
+  if (e.key === 'ArrowUp') { e.preventDefault(); const p = prevPage(currentPage); if (p >= 1) renderView(p); }
+  if (e.key === 'ArrowDown') { e.preventDefault(); const p = nextPage(currentPage); if (p !== null) renderView(p); }
+  if (e.key === 'Home') { e.preventDefault(); renderView(1); }
+  if (e.key === 'End') { e.preventDefault(); renderView(totalPages); }
+});
+
+// View mode / binding / cover changes
+viewMode.addEventListener('change', () => { if (pdfDoc) renderView(currentPage); });
+bindDir.addEventListener('change', () => { if (pdfDoc) renderView(currentPage); });
+coverCheck.addEventListener('change', () => { if (pdfDoc) renderView(currentPage); });
+scaleSelect.addEventListener('change', () => { if (pdfDoc) renderView(currentPage); });
+
+// Actions
+saveBtn.addEventListener('click', saveCurrent);
+spreadBtn.addEventListener('click', saveSpread);
+saveAllBtn.addEventListener('click', saveAll);
+
+// Mouse wheel navigation
+viewer.addEventListener('wheel', e => {
+  if (!pdfDoc || rendering) return;
+  e.preventDefault();
+  if (e.deltaY > 0) {
+    const p = nextPage(currentPage);
+    if (p !== null) renderView(p);
+  } else if (e.deltaY < 0) {
+    const p = prevPage(currentPage);
+    if (p >= 1) renderView(p);
+  }
+}, { passive: false });
+
+// Tap/click navigation on viewer area
+viewer.addEventListener('click', e => {
+  if (!pdfDoc) return;
+  if (e.target.closest('button, input, select, a, label')) return;
+  const rect = viewer.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const third = rect.width / 3;
+  if (x < third) {
+    if (isR2L()) {
+      const p = nextPage(currentPage);
+      if (p !== null) renderView(p);
+    } else {
+      const p = prevPage(currentPage);
+      if (p >= 1) renderView(p);
+    }
+  } else if (x > third * 2) {
+    if (isR2L()) {
+      const p = prevPage(currentPage);
+      if (p >= 1) renderView(p);
+    } else {
+      const p = nextPage(currentPage);
+      if (p !== null) renderView(p);
+    }
+  }
+});
+
+// Thumbnail sidebar toggle
+thumbToggle.addEventListener('click', () => {
+  sidebar.classList.toggle('open');
+});
+</script>
+</body>
+</html>
