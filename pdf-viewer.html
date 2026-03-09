@@ -670,10 +670,12 @@ viewer.addEventListener('touchend', e => {
   const dt = Date.now() - touchStartTime;
   if (dt > 300 || Math.abs(dx) < 50 || Math.abs(dy) > Math.abs(dx)) return;
   e.preventDefault();
-  if (dx < 0) {
+  if (dx > 0) {
+    // Swipe right (pull/flip forward) — next page
     const p = nextPage(currentPage);
     if (p !== null) renderView(p);
   } else {
+    // Swipe left (pull/flip back) — prev page
     const p = prevPage(currentPage);
     if (p >= 1) renderView(p);
   }
