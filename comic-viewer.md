@@ -63,7 +63,15 @@ npx serve .
 | Home | 最初のページ | 最初のページ |
 | End | 最後のページ | 最後のページ |
 
-画面の左右1/3エリアをクリック/タップでページ送りできます。中央1/3は誤操作防止のため無反応です。
+画面の左右1/3エリアをクリック/タップでページ送りできます。中央1/3をタップするとUIの表示/非表示を切り替えます。
+
+| 操作 | 説明 |
+|------|------|
+| 中央タップ / `H`キー | ヘッダーUIの表示/非表示を切替 |
+| `Escape` | UIを再表示 |
+| 左右スワイプ (タッチ) | ページ送り (スマートフォン対応) |
+
+UI非表示時は表示スケール「Fit」がヘッダー分の領域も使って拡大表示されます。
 
 ### 画像エクスポート
 
@@ -199,7 +207,15 @@ Open `http://localhost:8000/comic-viewer.html` in your browser.
 | Home | First page | First page |
 | End | Last page | Last page |
 
-Click/tap the left or right 1/3 of the screen to navigate pages. The center 1/3 is unresponsive to prevent accidental page turns.
+Click/tap the left or right 1/3 of the screen to navigate pages. Tap the center 1/3 to toggle UI visibility.
+
+| Input | Description |
+|-------|-------------|
+| Center tap / `H` key | Toggle header UI visibility |
+| `Escape` | Show UI |
+| Left/right swipe (touch) | Page navigation (smartphone support) |
+
+When the UI is hidden, the "Fit" display scale uses the full viewport height for a larger view.
 
 ### Image Export
 

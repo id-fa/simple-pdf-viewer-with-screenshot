@@ -9,7 +9,8 @@
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; min-height: 100vh; }
 
 /* Header */
-.header { position: sticky; top: 0; z-index: 100; background: #16213e; border-bottom: 1px solid #0f3460; padding: 8px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.header { position: sticky; top: 0; z-index: 100; background: #16213e; border-bottom: 1px solid #0f3460; padding: 8px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; transition: max-height 0.3s, padding 0.3s, opacity 0.3s, border-width 0.3s; max-height: 200px; overflow: hidden; }
+.header.hidden { max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0; pointer-events: none; border-bottom-width: 0; }
 .header h1 { font-size: 16px; font-weight: 600; white-space: nowrap; }
 .header .info { font-size: 13px; color: #888; }
 
@@ -36,14 +37,16 @@ label.check input { cursor: pointer; }
 .nav input { width: 50px; text-align: center; padding: 5px; border: 1px solid #333; border-radius: 6px; background: #2d2d44; color: #e0e0e0; font-size: 13px; }
 
 /* Viewer */
-.viewer { display: flex; flex-direction: column; align-items: center; padding: 16px; gap: 8px; }
+.viewer { display: flex; flex-direction: column; align-items: center; padding: 16px; gap: 8px; transition: padding-top 0.3s; }
+.ui-hidden .viewer { padding-top: 4px; }
 .spread-container { display: flex; align-items: flex-start; gap: 2px; }
 .page-container { position: relative; background: #111; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
-.page-container canvas { display: block; }
+.page-container canvas { display: block; image-rendering: auto; }
 .page-label { position: absolute; bottom: -24px; left: 50%; transform: translateX(-50%); font-size: 12px; color: #888; white-space: nowrap; }
 
 /* Thumbnails */
-.sidebar { position: fixed; left: 0; top: 49px; bottom: 0; width: 160px; background: #111; border-right: 1px solid #333; overflow-y: auto; padding: 8px; z-index: 50; transform: translateX(-100%); transition: transform 0.2s; }
+.sidebar { position: fixed; left: 0; top: 49px; bottom: 0; width: 160px; background: #111; border-right: 1px solid #333; overflow-y: auto; padding: 8px; z-index: 50; transform: translateX(-100%); transition: transform 0.2s, top 0.3s; }
+.ui-hidden .sidebar { top: 0; }
 .sidebar.open { transform: translateX(0); }
 .sidebar .thumb { cursor: pointer; margin-bottom: 8px; border: 2px solid transparent; border-radius: 4px; overflow: hidden; position: relative; }
 .sidebar .thumb.active { border-color: #4a9eff; }
@@ -51,7 +54,8 @@ label.check input { cursor: pointer; }
 .sidebar .thumb .num { position: absolute; bottom: 2px; right: 4px; font-size: 11px; background: rgba(0,0,0,0.7); padding: 1px 5px; border-radius: 3px; }
 
 /* Progress */
-.progress-bar { position: fixed; top: 49px; left: 0; right: 0; height: 3px; z-index: 200; }
+.progress-bar { position: fixed; top: 49px; left: 0; right: 0; height: 3px; z-index: 200; transition: top 0.3s; }
+.ui-hidden .progress-bar { top: 0; }
 .progress-bar .fill { height: 100%; background: #4a9eff; transition: width 0.1s; width: 0%; }
 
 /* Drop zone */
@@ -425,15 +429,47 @@ async function getPageDimensions(pageNum) {
   }
 }
 
+function isUIHidden() { return document.body.classList.contains('ui-hidden'); }
+
 function getScale(dims, forSpread) {
   const val = scaleSelect.value;
   if (val === 'fit') {
-    const maxW = window.innerWidth - 200;
-    const maxH = window.innerHeight - 80;
+    const sidebarOpen = sidebar.classList.contains('open') && !isUIHidden();
+    const sidebarW = sidebarOpen ? 170 : 0;
+    const maxW = window.innerWidth - sidebarW - 32;
+    const headerH = isUIHidden() ? 0 : 60;
+    const maxH = window.innerHeight - headerH - 24;
     const divisor = forSpread ? 2 : 1;
     return Math.min((maxW / divisor) / dims.width, maxH / dims.height, 3);
   }
   return parseFloat(val);
+}
+
+// High-quality downscale: step-halve until close to target, then final draw
+function drawImageHighQuality(ctx, img, targetW, targetH) {
+  const srcW = img.naturalWidth || img.width;
+  const srcH = img.naturalHeight || img.height;
+  // If not downscaling significantly, just draw directly
+  if (targetW >= srcW * 0.5) {
+    ctx.drawImage(img, 0, 0, targetW, targetH);
+    return;
+  }
+  // Step-halve using offscreen canvases
+  let curW = srcW, curH = srcH;
+  let src = img;
+  while (curW > targetW * 2) {
+    const halfW = Math.round(curW / 2);
+    const halfH = Math.round(curH / 2);
+    const step = document.createElement('canvas');
+    step.width = halfW;
+    step.height = halfH;
+    const sCtx = step.getContext('2d');
+    sCtx.drawImage(src, 0, 0, halfW, halfH);
+    src = step;
+    curW = halfW;
+    curH = halfH;
+  }
+  ctx.drawImage(src, 0, 0, targetW, targetH);
 }
 
 async function renderPageToCanvas(pageNum, scale) {
@@ -456,7 +492,7 @@ async function renderPageToCanvas(pageNum, scale) {
     canvas.width = Math.round(dims.width * s);
     canvas.height = Math.round(dims.height * s);
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(entry.img, 0, 0, canvas.width, canvas.height);
+    drawImageHighQuality(ctx, entry.img, canvas.width, canvas.height);
     return canvas;
   }
 }
@@ -922,6 +958,8 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowDown') { e.preventDefault(); const p = nextPageNum(currentPage); if (p !== null) renderView(p); }
   if (e.key === 'Home') { e.preventDefault(); renderView(1); }
   if (e.key === 'End') { e.preventDefault(); renderView(totalPages); }
+  if (e.key === 'Escape') { e.preventDefault(); toggleUI(true); }
+  if (e.key === 'h' || e.key === 'H') { e.preventDefault(); toggleUI(); }
 });
 
 // ---- View mode changes ----
@@ -956,38 +994,84 @@ viewer.addEventListener('wheel', e => {
 }, { passive: false });
 
 // ---- Tap/click navigation on viewer area ----
+// (Left/right zones navigate, center zone toggles UI — see below)
+
+// ---- Thumbnail sidebar ----
+thumbToggle.addEventListener('click', () => {
+  sidebar.classList.toggle('open');
+  // Re-render with updated Fit size when sidebar state changes
+  if (totalPages > 0 && scaleSelect.value === 'fit') renderView(currentPage);
+});
+
+// ---- UI hide/show toggle ----
+const header = document.querySelector('.header');
+
+function toggleUI(forceShow) {
+  const shouldShow = forceShow === true || document.body.classList.contains('ui-hidden');
+  if (shouldShow) {
+    document.body.classList.remove('ui-hidden');
+    header.classList.remove('hidden');
+  } else {
+    document.body.classList.add('ui-hidden');
+    header.classList.add('hidden');
+  }
+  // Re-render with updated Fit size
+  if (totalPages > 0 && scaleSelect.value === 'fit') {
+    setTimeout(() => renderView(currentPage), 320);
+  }
+}
+
+// Tap/click: left/right = navigate, center = toggle UI
 viewer.addEventListener('click', e => {
   if (totalPages === 0) return;
-  // Ignore clicks on controls or links
   if (e.target.closest('button, input, select, a, label')) return;
   const rect = viewer.getBoundingClientRect();
   const x = e.clientX - rect.left;
   const third = rect.width / 3;
   if (x < third) {
-    // Left zone
-    if (isR2L()) {
-      const p = nextPageNum(currentPage);
-      if (p !== null) renderView(p);
-    } else {
-      const p = prevPageNum(currentPage);
-      if (p >= 1) renderView(p);
-    }
+    if (isR2L()) { const p = nextPageNum(currentPage); if (p !== null) renderView(p); }
+    else { const p = prevPageNum(currentPage); if (p >= 1) renderView(p); }
   } else if (x > third * 2) {
-    // Right zone
-    if (isR2L()) {
-      const p = prevPageNum(currentPage);
-      if (p >= 1) renderView(p);
-    } else {
-      const p = nextPageNum(currentPage);
-      if (p !== null) renderView(p);
-    }
+    if (isR2L()) { const p = prevPageNum(currentPage); if (p >= 1) renderView(p); }
+    else { const p = nextPageNum(currentPage); if (p !== null) renderView(p); }
+  } else {
+    toggleUI();
   }
 });
 
-// ---- Thumbnail sidebar ----
-thumbToggle.addEventListener('click', () => {
-  sidebar.classList.toggle('open');
-});
+// ---- Touch swipe navigation ----
+let touchStartX = 0;
+let touchStartY = 0;
+let touchStartTime = 0;
+
+viewer.addEventListener('touchstart', e => {
+  if (totalPages === 0) return;
+  const t = e.touches[0];
+  touchStartX = t.clientX;
+  touchStartY = t.clientY;
+  touchStartTime = Date.now();
+}, { passive: true });
+
+viewer.addEventListener('touchend', e => {
+  if (totalPages === 0) return;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - touchStartX;
+  const dy = t.clientY - touchStartY;
+  const dt = Date.now() - touchStartTime;
+  // Must be a quick horizontal swipe (>50px, <300ms, more horizontal than vertical)
+  if (dt > 300 || Math.abs(dx) < 50 || Math.abs(dy) > Math.abs(dx)) return;
+
+  e.preventDefault();
+  if (dx < 0) {
+    // Swipe left — R2L: next page, L2R: next page
+      const p = nextPageNum(currentPage);
+      if (p !== null) renderView(p);
+    } else {
+    // Swipe right — R2L: prev page, L2R: prev page
+      const p = prevPageNum(currentPage);
+      if (p >= 1) renderView(p);
+    }
+}, { passive: false });
 </script>
 </body>
 </html>
