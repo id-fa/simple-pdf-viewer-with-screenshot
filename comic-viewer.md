@@ -49,6 +49,7 @@ npx serve .
 | Single / Spread | 単ページ / 見開き切替 |
 | Right (R2L) / Left (L2R) | 綴じ方向 (右綴じ=日本漫画, 左綴じ=洋書) |
 | Cover | 表紙を単独ページとして扱う |
+| HQ | PDF縮小表示の高品質モード (1xレンダリング→段階的半減縮小) |
 | 50% ~ 200% / Fit | 表示スケール |
 | Thumbs | サムネイルサイドバー表示 |
 
@@ -193,6 +194,7 @@ Open `http://localhost:8000/comic-viewer.html` in your browser.
 | Single / Spread | Toggle single page / two-page spread |
 | Right (R2L) / Left (L2R) | Binding direction (R2L = Japanese manga, L2R = Western books) |
 | Cover | Treat the cover as a standalone page |
+| HQ | High-quality PDF downscale mode (render at 1x → step-halve downscale) |
 | 50% ~ 200% / Fit | Display scale |
 | Thumbs | Show thumbnail sidebar |
 

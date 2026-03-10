@@ -103,9 +103,15 @@
 - Fit スケール時はヘッダー分の高さも使って拡大表示 (`getScale()` が `isUIHidden()` を参照)
 - `toggleUI(forceShow?)` — トグル関数、トランジション完了後に `renderView()` を再実行
 
-### 高品質縮小 (comic-viewer.html)
-- `drawImageHighQuality()` — アーカイブ画像の大幅縮小時に段階的半減 (step-halving) で描画
+### 高品質縮小 (HQ モード)
+- `drawImageHighQuality()` — 段階的半減 (step-halving) で高品質縮小描画
 - 50%以下の縮小時に品質劣化を防止
+- **アーカイブ画像** (comic-viewer.html): 常時適用
+- **PDF** (両ビューア共通): HQ チェックボックスで切替可能
+  - OFF (デフォルト): PDF.js が直接ターゲットスケールでレンダリング (軽量)
+  - ON: PDF.js で 1x レンダリング → `drawImageHighQuality()` で縮小 (高品質・重い)
+  - `s < 1` (Fit, 50%, 75% 等の縮小表示) の場合のみ HQ パスを通る
+  - サムネイルにも適用される
 
 ### 関数
 - `getSpreadPages(pageNum)` — スプレッド構成を返す ([left, right] or [single])

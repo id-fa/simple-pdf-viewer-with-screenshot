@@ -106,6 +106,10 @@ label.check input { cursor: pointer; }
       <input type="checkbox" id="coverCheck" checked>
       Cover
     </label>
+    <label class="check">
+      <input type="checkbox" id="hqPdfCheck">
+      HQ
+    </label>
     <select id="scaleSelect">
       <option value="0.5">50%</option>
       <option value="0.75">75%</option>
@@ -173,6 +177,7 @@ const sidebar = document.getElementById('sidebar');
 const fileInfo = document.getElementById('fileInfo');
 const progressFill = document.getElementById('progressFill');
 const toast = document.getElementById('toast');
+const hqPdfCheck = document.getElementById('hqPdfCheck');
 
 function showToast(msg, ms = 2000) {
   toast.textContent = msg;
@@ -270,9 +275,51 @@ function getScale(page, forSpread) {
   return parseFloat(val);
 }
 
+// High-quality downscale: step-halve until close to target, then final draw
+function drawImageHighQuality(ctx, img, targetW, targetH) {
+  const srcW = img.naturalWidth || img.width;
+  const srcH = img.naturalHeight || img.height;
+  if (targetW >= srcW * 0.5) {
+    ctx.drawImage(img, 0, 0, targetW, targetH);
+    return;
+  }
+  let curW = srcW, curH = srcH;
+  let src = img;
+  while (curW > targetW * 2) {
+    const halfW = Math.round(curW / 2);
+    const halfH = Math.round(curH / 2);
+    const step = document.createElement('canvas');
+    step.width = halfW;
+    step.height = halfH;
+    const sCtx = step.getContext('2d');
+    sCtx.drawImage(src, 0, 0, halfW, halfH);
+    src = step;
+    curW = halfW;
+    curH = halfH;
+  }
+  ctx.drawImage(src, 0, 0, targetW, targetH);
+}
+
 async function renderPageToCanvas(pageNum, scale) {
   const page = await pdfDoc.getPage(pageNum);
   const s = scale || getScale(page, isSpread() && getSpreadPages(currentPage).length === 2);
+  // HQ mode: render at 1x then downscale as image
+  if (hqPdfCheck.checked && s < 1) {
+    const fullVp = page.getViewport({ scale: 1 });
+    const fullCanvas = document.createElement('canvas');
+    fullCanvas.width = fullVp.width;
+    fullCanvas.height = fullVp.height;
+    const fullCtx = fullCanvas.getContext('2d');
+    await page.render({ canvasContext: fullCtx, viewport: fullVp }).promise;
+    const targetW = Math.round(fullVp.width * s);
+    const targetH = Math.round(fullVp.height * s);
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d');
+    drawImageHighQuality(ctx, fullCanvas, targetW, targetH);
+    return canvas;
+  }
   const viewport = page.getViewport({ scale: s });
   const canvas = document.createElement('canvas');
   canvas.width = viewport.width;
@@ -598,6 +645,7 @@ viewMode.addEventListener('change', () => { if (pdfDoc) renderView(currentPage);
 bindDir.addEventListener('change', () => { if (pdfDoc) renderView(currentPage); });
 coverCheck.addEventListener('change', () => { if (pdfDoc) renderView(currentPage); });
 scaleSelect.addEventListener('change', () => { if (pdfDoc) renderView(currentPage); });
+hqPdfCheck.addEventListener('change', () => { if (pdfDoc) { renderView(currentPage); renderThumbnails(); } });
 
 // Actions
 saveBtn.addEventListener('click', saveCurrent);

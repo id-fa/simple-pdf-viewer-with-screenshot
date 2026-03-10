@@ -25,6 +25,7 @@ Open `pdf-viewer.html` directly in your browser. No server required.
 - **綴じ方向** — 右綴じ (R2L) / 左綴じ (L2R) binding direction toggle
 - **表紙モード** — Cover ON で1ページ目を単独表示、以降見開きペアリング / Cover mode: page 1 displayed alone, then paired spreads
 - **ズーム** — 50% / 75% / 100% / 150% / 200% / Fit (ウィンドウフィット / fit to window)
+- **HQモード** — PDF縮小表示時に1xレンダリング→段階的半減で高品質表示 (オプション) / HQ mode: render PDF at 1x then step-halve downscale for higher quality display (optional)
 - **サムネイル** — 左サイドバーにページ一覧、クリックでジャンプ / Thumbnail sidebar with click-to-jump
 - **キーボード操作** — 矢印キーでページ送り (R2L時は左右反転)、Home/End / Arrow keys for navigation (reversed in R2L mode), Home/End
 
@@ -45,7 +46,9 @@ Open `pdf-viewer.html` directly in your browser. No server required.
 
 ```
 pdf-viewer-with-screenshot/
-├── pdf-viewer.html   # Main application
-├── README.md         # This file
-└── CLAUDE.md         # AI development guide
+├── pdf-viewer.html    # PDF-only viewer
+├── comic-viewer.html  # Universal viewer (PDF + CBZ/CBR/CB7)
+├── README.md          # This file
+├── comic-viewer.md    # Comic Viewer documentation
+└── CLAUDE.md          # AI development guide
 ```

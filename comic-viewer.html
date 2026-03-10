@@ -101,6 +101,10 @@ label.check input { cursor: pointer; }
       <input type="checkbox" id="coverCheck" checked>
       Cover
     </label>
+    <label class="check">
+      <input type="checkbox" id="hqPdfCheck">
+      HQ
+    </label>
     <select id="scaleSelect">
       <option value="0.5">50%</option>
       <option value="0.75">75%</option>
@@ -194,6 +198,7 @@ const coverCheck = document.getElementById('coverCheck');
 const scaleSelect = document.getElementById('scaleSelect');
 const formatSelect = document.getElementById('formatSelect');
 const sortSelect = document.getElementById('sortSelect');
+const hqPdfCheck = document.getElementById('hqPdfCheck');
 const saveBtn = document.getElementById('saveBtn');
 const spreadBtn = document.getElementById('spreadBtn');
 const saveAllBtn = document.getElementById('saveAllBtn');
@@ -468,6 +473,23 @@ async function renderPageToCanvas(pageNum, scale) {
     const page = await pdfDoc.getPage(pageNum);
     const dims = { width: page.getViewport({ scale: 1 }).width, height: page.getViewport({ scale: 1 }).height };
     const s = scale || getScale(dims, isSpread() && getSpreadPages(currentPage).length === 2);
+    // HQ mode: render at 1x (or higher) then downscale as image
+    if (hqPdfCheck.checked && s < 1) {
+      const fullVp = page.getViewport({ scale: 1 });
+      const fullCanvas = document.createElement('canvas');
+      fullCanvas.width = fullVp.width;
+      fullCanvas.height = fullVp.height;
+      const fullCtx = fullCanvas.getContext('2d');
+      await page.render({ canvasContext: fullCtx, viewport: fullVp }).promise;
+      const targetW = Math.round(dims.width * s);
+      const targetH = Math.round(dims.height * s);
+      const canvas = document.createElement('canvas');
+      canvas.width = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext('2d');
+      drawImageHighQuality(ctx, fullCanvas, targetW, targetH);
+      return canvas;
+    }
     const viewport = page.getViewport({ scale: s });
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width;
@@ -958,6 +980,7 @@ viewMode.addEventListener('change', () => { if (totalPages > 0) renderView(curre
 bindDir.addEventListener('change', () => { if (totalPages > 0) renderView(currentPage); });
 coverCheck.addEventListener('change', () => { if (totalPages > 0) renderView(currentPage); });
 scaleSelect.addEventListener('change', () => { if (totalPages > 0) renderView(currentPage); });
+hqPdfCheck.addEventListener('change', () => { if (totalPages > 0) { renderView(currentPage); renderThumbnails(); } });
 sortSelect.addEventListener('change', () => {
   if (docType !== 'archive' || archiveImagesUnsorted.length === 0) return;
   applySortOrder();
