@@ -276,28 +276,12 @@ function getScale(page, forSpread) {
 }
 
 // High-quality downscale: step-halve until close to target, then final draw
-function drawImageHighQuality(ctx, img, targetW, targetH) {
-  const srcW = img.naturalWidth || img.width;
-  const srcH = img.naturalHeight || img.height;
-  if (targetW >= srcW * 0.5) {
-    ctx.drawImage(img, 0, 0, targetW, targetH);
-    return;
-  }
-  let curW = srcW, curH = srcH;
-  let src = img;
-  while (curW > targetW * 2) {
-    const halfW = Math.round(curW / 2);
-    const halfH = Math.round(curH / 2);
-    const step = document.createElement('canvas');
-    step.width = halfW;
-    step.height = halfH;
-    const sCtx = step.getContext('2d');
-    sCtx.drawImage(src, 0, 0, halfW, halfH);
-    src = step;
-    curW = halfW;
-    curH = halfH;
-  }
-  ctx.drawImage(src, 0, 0, targetW, targetH);
+async function drawImageHighQuality(ctx, img, targetW, targetH) {
+  const bmp = await createImageBitmap(img, {
+    resizeWidth: targetW, resizeHeight: targetH, resizeQuality: 'high'
+  });
+  ctx.drawImage(bmp, 0, 0);
+  bmp.close();
 }
 
 async function renderPageToCanvas(pageNum, scale) {
@@ -317,7 +301,7 @@ async function renderPageToCanvas(pageNum, scale) {
     canvas.width = targetW;
     canvas.height = targetH;
     const ctx = canvas.getContext('2d');
-    drawImageHighQuality(ctx, fullCanvas, targetW, targetH);
+    await drawImageHighQuality(ctx, fullCanvas, targetW, targetH);
     return canvas;
   }
   const viewport = page.getViewport({ scale: s });
