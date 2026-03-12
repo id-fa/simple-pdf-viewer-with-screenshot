@@ -27,6 +27,7 @@
 ### 画像エクスポート
 - エクスポート用: 固定 2x スケール (`exportPageCanvas()`)
 - ファイル名: `{PDFファイル名}_{ページ番号}.{ext}` (ゼロパディング)
+- 見開き表示時: `Save Page` ボタンが `Save p{左ページ番号}` / `Save p{右ページ番号}` の2つに置き換わる
 
 ## comic-viewer.html
 
@@ -71,6 +72,7 @@
 - PDF: 2x スケール (pdf-viewer.html と同じ)
 - アーカイブ画像: ネイティブ解像度 (1x) でエクスポート
 - ファイル名: `{ファイル名}_{ページ番号}.{ext}` (ゼロパディング)
+- 見開き表示時: `Save Page` ボタンが `Save p{左ページ番号}` / `Save p{右ページ番号}` の2つに置き換わる
 
 ### 実行要件
 - ローカル HTTP サーバー必須 (`python -m http.server`, `php -S localhost:8000` 等)
@@ -88,6 +90,10 @@
 - **R2L (右綴じ)**: `[大きいページ番号 | 小さいページ番号]` — 日本の漫画レイアウト
 - **L2R (左綴じ)**: `[小さいページ番号 | 大きいページ番号]` — 洋書レイアウト
 
+### R2L時のナビゲーション反転
+- `<` / `>` ボタン: R2L時は動作が反転 (`<` = 次ページ、`>` = 前ページ)
+- ボタンの disabled 状態もR2Lに対応 (最終ページで `<` 無効、最初のページで `>` 無効)
+
 ### キーボード / タッチ操作
 - R2L時: ←キー = 次ページ、→キー = 前ページ (読み方向に合致)
 - L2R時: ←キー = 前ページ、→キー = 次ページ (通常方向)
@@ -104,12 +110,12 @@
 - `toggleUI(forceShow?)` — トグル関数、トランジション完了後に `renderView()` を再実行
 
 ### 高品質縮小 (HQ モード)
-- `drawImageHighQuality()` — 段階的半減 (step-halving) で高品質縮小描画
-- 50%以下の縮小時に品質劣化を防止
-- **アーカイブ画像** (comic-viewer.html): 常時適用
+- `drawImageHighQuality()` — `createImageBitmap` + `resizeQuality: 'high'` (Lanczos3 相当) で高品質縮小描画
+- `applySharpen()` — 3x3ラプラシアンカーネルによるアンシャープマスク (amount=0.4)、HQ縮小後に適用
+- **アーカイブ画像** (comic-viewer.html): 常時 `drawImageHighQuality()` 適用、HQチェックON + 縮小時にシャープネスも適用
 - **PDF** (両ビューア共通): HQ チェックボックスで切替可能
   - OFF (デフォルト): PDF.js が直接ターゲットスケールでレンダリング (軽量)
-  - ON: PDF.js で 1x レンダリング → `drawImageHighQuality()` で縮小 (高品質・重い)
+  - ON: PDF.js で 1x レンダリング → `drawImageHighQuality()` で縮小 → `applySharpen()` でシャープネス適用 (高品質・重い)
   - `s < 1` (Fit, 50%, 75% 等の縮小表示) の場合のみ HQ パスを通る
   - サムネイルにも適用される
 

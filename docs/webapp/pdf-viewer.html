@@ -124,6 +124,8 @@ label.check input { cursor: pointer; }
       <option value="image/webp">WebP 95%</option>
     </select>
     <button id="saveBtn" class="primary" disabled>Save Page</button>
+    <button id="saveLBtn" class="primary" disabled style="display:none">Save L</button>
+    <button id="saveRBtn" class="primary" disabled style="display:none">Save R</button>
     <button id="spreadBtn" class="spread" disabled>Save 2P</button>
     <button id="saveAllBtn" class="danger" disabled>Save All</button>
   </div>
@@ -170,6 +172,8 @@ const coverCheck = document.getElementById('coverCheck');
 const scaleSelect = document.getElementById('scaleSelect');
 const formatSelect = document.getElementById('formatSelect');
 const saveBtn = document.getElementById('saveBtn');
+const saveLBtn = document.getElementById('saveLBtn');
+const saveRBtn = document.getElementById('saveRBtn');
 const spreadBtn = document.getElementById('spreadBtn');
 const saveAllBtn = document.getElementById('saveAllBtn');
 const thumbToggle = document.getElementById('thumbToggle');
@@ -284,6 +288,40 @@ async function drawImageHighQuality(ctx, img, targetW, targetH) {
   bmp.close();
 }
 
+// Unsharp mask sharpening for downscaled images
+function applySharpen(ctx, w, h, amount = 0.4) {
+  const src = ctx.getImageData(0, 0, w, h);
+  const dst = ctx.createImageData(w, h);
+  const s = src.data, d = dst.data;
+  const t = amount;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = (y * w + x) * 4;
+      for (let c = 0; c < 3; c++) {
+        const val = s[i + c] * (1 + 4 * t)
+          - s[((y - 1) * w + x) * 4 + c] * t
+          - s[((y + 1) * w + x) * 4 + c] * t
+          - s[(y * w + x - 1) * 4 + c] * t
+          - s[(y * w + x + 1) * 4 + c] * t;
+        d[i + c] = val < 0 ? 0 : val > 255 ? 255 : val + 0.5 | 0;
+      }
+      d[i + 3] = s[i + 3];
+    }
+  }
+  // Copy edge pixels unchanged
+  for (let x = 0; x < w; x++) {
+    let j = x * 4, k = ((h - 1) * w + x) * 4;
+    d[j] = s[j]; d[j+1] = s[j+1]; d[j+2] = s[j+2]; d[j+3] = s[j+3];
+    d[k] = s[k]; d[k+1] = s[k+1]; d[k+2] = s[k+2]; d[k+3] = s[k+3];
+  }
+  for (let y = 0; y < h; y++) {
+    let j = (y * w) * 4, k = (y * w + w - 1) * 4;
+    d[j] = s[j]; d[j+1] = s[j+1]; d[j+2] = s[j+2]; d[j+3] = s[j+3];
+    d[k] = s[k]; d[k+1] = s[k+1]; d[k+2] = s[k+2]; d[k+3] = s[k+3];
+  }
+  ctx.putImageData(dst, 0, 0);
+}
+
 async function renderPageToCanvas(pageNum, scale) {
   const page = await pdfDoc.getPage(pageNum);
   const s = scale || getScale(page, isSpread() && getSpreadPages(currentPage).length === 2);
@@ -302,6 +340,7 @@ async function renderPageToCanvas(pageNum, scale) {
     canvas.height = targetH;
     const ctx = canvas.getContext('2d');
     await drawImageHighQuality(ctx, fullCanvas, targetW, targetH);
+    applySharpen(ctx, targetW, targetH);
     return canvas;
   }
   const viewport = page.getViewport({ scale: s });
@@ -320,10 +359,14 @@ async function renderView(num) {
     currentPage = canonicalPage(num);
     pageInput.value = currentPage;
 
-    const prev = prevPage(currentPage);
     const next = nextPage(currentPage);
+    if (isR2L()) {
+      prevBtn.disabled = next === null;
+      nextBtn.disabled = currentPage <= 1;
+    } else {
     prevBtn.disabled = currentPage <= 1;
     nextBtn.disabled = next === null;
+    }
 
     const pages = getSpreadPages(currentPage);
     viewer.innerHTML = '';
@@ -368,6 +411,21 @@ async function renderView(num) {
       label.textContent = `${pages[0]} / ${totalPages}`;
       container.appendChild(label);
       viewer.appendChild(container);
+    }
+
+    // Update save buttons for spread/single
+    if (pages.length === 2) {
+      saveBtn.style.display = 'none';
+      saveLBtn.style.display = '';
+      saveRBtn.style.display = '';
+      saveLBtn.textContent = `Save p${pages[0]}`;
+      saveRBtn.textContent = `Save p${pages[1]}`;
+      saveLBtn.dataset.page = pages[0];
+      saveRBtn.dataset.page = pages[1];
+    } else {
+      saveBtn.style.display = '';
+      saveLBtn.style.display = 'none';
+      saveRBtn.style.display = 'none';
     }
 
     // Update thumbnail highlights
@@ -542,7 +600,7 @@ async function loadPDF(data, name) {
   pageInput.disabled = false;
   fileInfo.textContent = `${fileName} (${totalPages}p)`;
 
-  [saveBtn, spreadBtn, saveAllBtn, thumbToggle].forEach(b => b.disabled = false);
+  [saveBtn, saveLBtn, saveRBtn, spreadBtn, saveAllBtn, thumbToggle].forEach(b => b.disabled = false);
 
   await renderView(1);
   renderThumbnails();
@@ -579,12 +637,22 @@ document.addEventListener('drop', async e => {
 
 // Navigation
 prevBtn.addEventListener('click', () => {
+  if (isR2L()) {
+    const p = nextPage(currentPage);
+    if (p !== null) renderView(p);
+  } else {
   const p = prevPage(currentPage);
   if (p >= 1) renderView(p);
+  }
 });
 nextBtn.addEventListener('click', () => {
+  if (isR2L()) {
+    const p = prevPage(currentPage);
+    if (p >= 1) renderView(p);
+  } else {
   const p = nextPage(currentPage);
   if (p !== null) renderView(p);
+  }
 });
 pageInput.addEventListener('change', () => {
   const n = parseInt(pageInput.value);
@@ -633,6 +701,24 @@ hqPdfCheck.addEventListener('change', () => { if (pdfDoc) { renderView(currentPa
 
 // Actions
 saveBtn.addEventListener('click', saveCurrent);
+saveLBtn.addEventListener('click', async () => {
+  saveLBtn.disabled = true;
+  const pn = parseInt(saveLBtn.dataset.page);
+  const pad = String(totalPages).length;
+  const canvas = await exportPageCanvas(pn);
+  saveCanvas(canvas, `${baseName()}_${String(pn).padStart(pad, '0')}`);
+  showToast(`Page ${pn} saved`);
+  saveLBtn.disabled = false;
+});
+saveRBtn.addEventListener('click', async () => {
+  saveRBtn.disabled = true;
+  const pn = parseInt(saveRBtn.dataset.page);
+  const pad = String(totalPages).length;
+  const canvas = await exportPageCanvas(pn);
+  saveCanvas(canvas, `${baseName()}_${String(pn).padStart(pad, '0')}`);
+  showToast(`Page ${pn} saved`);
+  saveRBtn.disabled = false;
+});
 spreadBtn.addEventListener('click', saveSpread);
 saveAllBtn.addEventListener('click', saveAll);
 
