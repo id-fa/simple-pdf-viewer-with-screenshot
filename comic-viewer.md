@@ -16,7 +16,7 @@ Created by id-fa, built with Claude Code.
 
 アーカイブ内の画像ファイル (JPEG, PNG, WebP, GIF, BMP, AVIF, JXL, TIFF) を自動検出して表示します。
 
-> **EPUB について**: EPUB は内部的に ZIP 形式であるため、アーカイブとして展開し画像ファイルを表示します。固定レイアウト(各ページが画像で構成されている)の EPUB のみ対応しています。テキストベース(リフロー型)の EPUB には対応していません。
+> **EPUB について**: EPUB は内部的に ZIP 形式であるため、アーカイブとして展開し画像ファイルを表示します。固定レイアウト(各ページが画像で構成されている)の EPUB のみ対応しています。テキストベース(リフロー型)の EPUB には対応していません。リフロー型 EPUB には [BiBI](https://id-fa.github.io/bibi-extension-ImageExporter/DEMO/) をお試しください。
 
 ## 使い方
 
@@ -164,7 +164,7 @@ Created by id-fa, built with Claude Code.
 
 Image files within archives (JPEG, PNG, WebP, GIF, BMP, AVIF, JXL, TIFF) are automatically detected and displayed.
 
-> **About EPUB**: EPUB files are internally ZIP archives, so they are extracted and image files are displayed. Only fixed-layout EPUBs (where each page is composed of images) are supported. Reflowable (text-based) EPUBs are not supported.
+> **About EPUB**: EPUB files are internally ZIP archives, so they are extracted and image files are displayed. Only fixed-layout EPUBs (where each page is composed of images) are supported. Reflowable (text-based) EPUBs are not supported. For reflowable EPUBs, try [BiBI](https://id-fa.github.io/bibi-extension-ImageExporter/DEMO/).
 
 ## Usage
 
