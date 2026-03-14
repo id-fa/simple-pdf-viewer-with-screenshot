@@ -110,6 +110,16 @@
 - Fit スケール時はヘッダー分の高さも使って拡大表示 (`getScale()` が `isUIHidden()` を参照)
 - `toggleUI(forceShow?)` — トグル関数、トランジション完了後に `renderView()` を再実行
 
+### ミニマップ (Map チェックボックス)
+- **ON**: 右下に固定表示のミニマップを表示。全体の縮小画像＋赤枠で現在の表示エリアを示す
+  - コンテンツが画面に収まっている場合は自動非表示 (スクロール不要時は表示しない)
+  - ミニマップ上をクリック/ドラッグで表示位置をジャンプ移動
+  - スクロール・リサイズ・ページ切替時に `requestAnimationFrame` でスロットリング更新
+  - `updateMinimap()` — ビューア内のcanvasをミニマップcanvasに縮小描画し、ビューポート矩形を更新
+  - パンモードのドラッグと干渉しないよう `minimapDragging` フラグで排他制御
+- **OFF** (デフォルト): ミニマップ非表示
+- 最大サイズ: 200×300px、ドキュメントの縦横比に合わせて自動スケーリング
+
 ### パンモード (Pan チェックボックス)
 - **ON**: ドラッグ操作が画面パン（スクロール）になる。拡大表示時に便利
   - マウスドラッグ: `window.scrollTo()` でスクロール位置を移動、カーソルが grab/grabbing に変化
@@ -127,6 +137,11 @@
   - ON: PDF.js で 1x レンダリング → `drawImageHighQuality()` で縮小 → `applySharpen()` でシャープネス適用 (高品質・重い)
   - `s < 1` (Fit, 50%, 75% 等の縮小表示) の場合のみ HQ パスを通る
   - サムネイルにも適用される
+
+### レイアウト中央揃え
+- `.viewer` は `align-items: center` を使わない (拡大時に左端が見切れる問題を回避)
+- 代わりに `.spread-container` / `.page-container` に `margin-left: auto; margin-right: auto` で中央揃え
+- コンテンツが画面内に収まる時は中央配置、画面より大きい時は左端(0,0)からスクロール可能
 
 ### 関数
 - `getSpreadPages(pageNum)` — スプレッド構成を返す ([left, right] or [single])

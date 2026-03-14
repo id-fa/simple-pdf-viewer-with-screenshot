@@ -37,10 +37,10 @@ label.check input { cursor: pointer; }
 .nav input { width: 50px; text-align: center; padding: 5px; border: 1px solid #333; border-radius: 6px; background: #2d2d44; color: #e0e0e0; font-size: 13px; }
 
 /* Viewer */
-.viewer { display: flex; flex-direction: column; align-items: center; padding: 16px; gap: 8px; transition: padding-top 0.3s; }
+.viewer { display: flex; flex-direction: column; padding: 16px; gap: 8px; transition: padding-top 0.3s; }
 .ui-hidden .viewer { padding-top: 4px; }
-.spread-container { display: flex; align-items: flex-start; gap: 2px; }
-.page-container { position: relative; background: #111; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+.spread-container { display: flex; align-items: flex-start; gap: 2px; margin-left: auto; margin-right: auto; }
+.page-container { position: relative; background: #111; box-shadow: 0 4px 20px rgba(0,0,0,0.5); margin-left: auto; margin-right: auto; }
 .page-container canvas { display: block; image-rendering: auto; }
 .page-label { position: absolute; bottom: -24px; left: 50%; transform: translateX(-50%); font-size: 12px; color: #888; white-space: nowrap; }
 
@@ -59,7 +59,7 @@ label.check input { cursor: pointer; }
 .progress-bar .fill { height: 100%; background: #4a9eff; transition: width 0.1s; width: 0%; }
 
 /* Drop zone */
-.dropzone { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: calc(100vh - 50px); gap: 16px; color: #666; }
+.dropzone { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: calc(100vh - 50px); gap: 16px; color: #666; margin-left: auto; margin-right: auto; width: 100%; }
 .dropzone.dragover { background: rgba(74, 158, 255, 0.05); }
 .dropzone .icon { font-size: 64px; }
 .dropzone p { font-size: 14px; }
@@ -67,6 +67,11 @@ label.check input { cursor: pointer; }
 /* Toast */
 .toast { position: fixed; bottom: 20px; right: 20px; background: #16213e; border: 1px solid #0f3460; padding: 10px 18px; border-radius: 8px; font-size: 13px; z-index: 300; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
 .toast.show { opacity: 1; }
+
+/* Minimap */
+.minimap { position: fixed; bottom: 16px; right: 16px; z-index: 250; background: rgba(0,0,0,0.85); border: 1px solid #444; border-radius: 6px; overflow: hidden; display: none; cursor: crosshair; box-shadow: 0 4px 16px rgba(0,0,0,0.6); }
+.minimap canvas { display: block; }
+.minimap .viewport-rect { position: absolute; border: 2px solid #ff4444; background: rgba(255,68,68,0.1); pointer-events: none; }
 
 /* Loading overlay */
 .loading-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 400; }
@@ -118,12 +123,17 @@ label.check input { cursor: pointer; }
       <input type="checkbox" id="panCheck">
       Pan
     </label>
+    <label class="check">
+      <input type="checkbox" id="minimapCheck">
+      Map
+    </label>
     <select id="scaleSelect">
       <option value="0.5">50%</option>
       <option value="0.75">75%</option>
       <option value="1">100%</option>
       <option value="1.5">150%</option>
       <option value="2">200%</option>
+      <option value="3">300%</option>
       <option value="fit" selected>Fit</option>
     </select>
     <select id="sortSelect" style="display:none">
@@ -156,6 +166,11 @@ label.check input { cursor: pointer; }
     <p style="font-size:12px; color:#555">対応形式: PDF, CBZ(ZIP), CBR(RAR), CB7(7z), EPUB(固定レイアウト)</p>
     <p style="font-size:11px; color:#444; margin-top:16px">Created by id-fa, built with Claude Code</p>
   </div>
+</div>
+
+<div class="minimap" id="minimap">
+  <canvas id="minimapCanvas"></canvas>
+  <div class="viewport-rect" id="minimapRect"></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -215,6 +230,10 @@ const formatSelect = document.getElementById('formatSelect');
 const sortSelect = document.getElementById('sortSelect');
 const hqPdfCheck = document.getElementById('hqPdfCheck');
 const panCheck = document.getElementById('panCheck');
+const minimapCheck = document.getElementById('minimapCheck');
+const minimapEl = document.getElementById('minimap');
+const minimapCanvas = document.getElementById('minimapCanvas');
+const minimapRect = document.getElementById('minimapRect');
 const saveBtn = document.getElementById('saveBtn');
 const saveLBtn = document.getElementById('saveLBtn');
 const saveRBtn = document.getElementById('saveRBtn');
@@ -622,6 +641,7 @@ async function renderView(num) {
     });
     const active = sidebar.querySelector('.thumb.active');
     if (active) active.scrollIntoView({ block: 'nearest' });
+    requestAnimationFrame(() => updateMinimap());
   } finally {
     rendering = false;
   }
@@ -1193,6 +1213,7 @@ viewer.addEventListener('touchend', e => {
 }, { passive: false });
 
 // ---- Mouse drag to pan (scroll) ----
+let minimapDragging = false;
 let panActive = false;
 let panStartX = 0, panStartY = 0;
 let panScrollX = 0, panScrollY = 0;
@@ -1211,6 +1232,7 @@ viewer.addEventListener('mousedown', e => {
 });
 
 window.addEventListener('mousemove', e => {
+  if (minimapDragging) { minimapScrollTo(e); return; }
   if (!panActive) return;
   const dx = e.clientX - panStartX;
   const dy = e.clientY - panStartY;
@@ -1219,6 +1241,7 @@ window.addEventListener('mousemove', e => {
 });
 
 window.addEventListener('mouseup', () => {
+  minimapDragging = false;
   if (!panActive) return;
   panActive = false;
   viewer.style.cursor = '';
@@ -1228,6 +1251,93 @@ window.addEventListener('mouseup', () => {
 panCheck.addEventListener('change', () => {
   viewer.style.cursor = panCheck.checked && totalPages > 0 ? 'grab' : '';
 });
+
+// ---- Minimap ----
+const MINIMAP_MAX_W = 200;
+const MINIMAP_MAX_H = 300;
+
+function updateMinimap() {
+  if (!minimapCheck.checked || totalPages === 0) {
+    minimapEl.style.display = 'none';
+    return;
+  }
+  const docW = document.documentElement.scrollWidth;
+  const docH = document.documentElement.scrollHeight;
+  const winW = window.innerWidth;
+  const winH = window.innerHeight;
+
+  if (docW <= winW + 2 && docH <= winH + 2) {
+    minimapEl.style.display = 'none';
+    return;
+  }
+
+  minimapEl.style.display = 'block';
+
+  const scale = Math.min(MINIMAP_MAX_W / docW, MINIMAP_MAX_H / docH);
+  const mw = Math.round(docW * scale);
+  const mh = Math.round(docH * scale);
+  minimapCanvas.width = mw;
+  minimapCanvas.height = mh;
+  minimapCanvas.style.width = mw + 'px';
+  minimapCanvas.style.height = mh + 'px';
+
+  const ctx = minimapCanvas.getContext('2d');
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(0, 0, mw, mh);
+
+  const pageCanvases = viewer.querySelectorAll('canvas');
+  for (const pc of pageCanvases) {
+    const rect = pc.getBoundingClientRect();
+    const x = (rect.left + window.scrollX) * scale;
+    const y = (rect.top + window.scrollY) * scale;
+    const w = rect.width * scale;
+    const h = rect.height * scale;
+    ctx.drawImage(pc, x, y, w, h);
+  }
+
+  const vx = window.scrollX * scale;
+  const vy = window.scrollY * scale;
+  const vw = winW * scale;
+  const vh = winH * scale;
+  minimapRect.style.left = vx + 'px';
+  minimapRect.style.top = vy + 'px';
+  minimapRect.style.width = vw + 'px';
+  minimapRect.style.height = vh + 'px';
+}
+
+function minimapScrollTo(e) {
+  const rect = minimapCanvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const mw = minimapCanvas.width;
+  const mh = minimapCanvas.height;
+  const docW = document.documentElement.scrollWidth;
+  const docH = document.documentElement.scrollHeight;
+  const targetX = (mx / mw) * docW - window.innerWidth / 2;
+  const targetY = (my / mh) * docH - window.innerHeight / 2;
+  window.scrollTo(targetX, targetY);
+}
+
+minimapEl.addEventListener('mousedown', e => {
+  minimapDragging = true;
+  minimapScrollTo(e);
+  e.preventDefault();
+});
+
+minimapCheck.addEventListener('change', () => {
+  updateMinimap();
+});
+
+let minimapScrollRAF = 0;
+window.addEventListener('scroll', () => {
+  if (!minimapCheck.checked || totalPages === 0) return;
+  cancelAnimationFrame(minimapScrollRAF);
+  minimapScrollRAF = requestAnimationFrame(() => updateMinimap());
+});
+window.addEventListener('resize', () => {
+  if (minimapCheck.checked && totalPages > 0) updateMinimap();
+});
+
 </script>
 </body>
 </html>
