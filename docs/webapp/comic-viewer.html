@@ -114,6 +114,10 @@ label.check input { cursor: pointer; }
       <input type="checkbox" id="hqPdfCheck">
       HQ
     </label>
+    <label class="check">
+      <input type="checkbox" id="panCheck">
+      Pan
+    </label>
     <select id="scaleSelect">
       <option value="0.5">50%</option>
       <option value="0.75">75%</option>
@@ -210,6 +214,7 @@ const scaleSelect = document.getElementById('scaleSelect');
 const formatSelect = document.getElementById('formatSelect');
 const sortSelect = document.getElementById('sortSelect');
 const hqPdfCheck = document.getElementById('hqPdfCheck');
+const panCheck = document.getElementById('panCheck');
 const saveBtn = document.getElementById('saveBtn');
 const saveLBtn = document.getElementById('saveLBtn');
 const saveRBtn = document.getElementById('saveRBtn');
@@ -1082,6 +1087,8 @@ saveAllBtn.addEventListener('click', saveAll);
 // ---- Mouse wheel navigation ----
 viewer.addEventListener('wheel', e => {
   if (totalPages === 0 || rendering) return;
+  // Pan mode: let browser handle scrolling
+  if (panCheck.checked) return;
   e.preventDefault();
   if (e.deltaY > 0) {
     const p = nextPageNum(currentPage);
@@ -1121,9 +1128,20 @@ function toggleUI(forceShow) {
 }
 
 // Tap/click: left/right = navigate, center = toggle UI
+let panDragged = false;
 viewer.addEventListener('click', e => {
   if (totalPages === 0) return;
   if (e.target.closest('button, input, select, a, label')) return;
+  // Suppress click after a pan drag
+  if (panDragged) { panDragged = false; return; }
+  // In pan mode, only center-tap toggles UI (no left/right navigation)
+  if (panCheck.checked) {
+    const rect = viewer.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const third = rect.width / 3;
+    if (x >= third && x <= third * 2) toggleUI();
+    return;
+  }
   const rect = viewer.getBoundingClientRect();
   const x = e.clientX - rect.left;
   const third = rect.width / 3;
@@ -1153,6 +1171,8 @@ viewer.addEventListener('touchstart', e => {
 
 viewer.addEventListener('touchend', e => {
   if (totalPages === 0) return;
+  // Pan mode: let browser handle touch scrolling
+  if (panCheck.checked) return;
   const t = e.changedTouches[0];
   const dx = t.clientX - touchStartX;
   const dy = t.clientY - touchStartY;
@@ -1171,6 +1191,43 @@ viewer.addEventListener('touchend', e => {
       if (p >= 1) renderView(p);
     }
 }, { passive: false });
+
+// ---- Mouse drag to pan (scroll) ----
+let panActive = false;
+let panStartX = 0, panStartY = 0;
+let panScrollX = 0, panScrollY = 0;
+
+viewer.addEventListener('mousedown', e => {
+  if (!panCheck.checked || totalPages === 0) return;
+  if (e.target.closest('button, input, select, a, label')) return;
+  panActive = true;
+  panDragged = false;
+  panStartX = e.clientX;
+  panStartY = e.clientY;
+  panScrollX = window.scrollX;
+  panScrollY = window.scrollY;
+  viewer.style.cursor = 'grabbing';
+  e.preventDefault();
+});
+
+window.addEventListener('mousemove', e => {
+  if (!panActive) return;
+  const dx = e.clientX - panStartX;
+  const dy = e.clientY - panStartY;
+  if (Math.abs(dx) > 3 || Math.abs(dy) > 3) panDragged = true;
+  window.scrollTo(panScrollX - dx, panScrollY - dy);
+});
+
+window.addEventListener('mouseup', () => {
+  if (!panActive) return;
+  panActive = false;
+  viewer.style.cursor = '';
+});
+
+// Show grab cursor when pan mode is active
+panCheck.addEventListener('change', () => {
+  viewer.style.cursor = panCheck.checked && totalPages > 0 ? 'grab' : '';
+});
 </script>
 </body>
 </html>
