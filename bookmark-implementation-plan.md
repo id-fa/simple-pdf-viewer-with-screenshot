@@ -20,7 +20,19 @@
 | `bookmark_enabled` | `"true"` / `"false"` | しおり機能の有効/無効 (デフォルト: `"false"`) |
 | `bookmarks` | JSON文字列 | 全書籍のしおりデータ |
 
-### 1.2 `bookmarks` データ構造
+### 1.2 ファイル名記録の制御
+
+ソースコード内の変数でファイル名をlocalStorageに記録するか制御する:
+
+```javascript
+const BOOKMARK_STORE_FILENAME = false; // true にするとファイル名もlocalStorageに保存する
+```
+
+- デフォルト: `false` (ファイル名を保存しない — プライバシー保護)
+- `true` にするとエクスポートJSONの可読性が向上する (どのファイルのしおりか識別しやすい)
+- ファイル名を保存しなくてもハッシュで書籍を一意に識別できるため、機能には影響しない
+
+### 1.3 `bookmarks` データ構造
 
 ```json
 {
@@ -35,12 +47,12 @@
 ```
 
 - `fileHash` — ファイル名+サイズから生成するハッシュ (後述)
-- `fileName` — 表示用のファイル名 (エクスポート時の可読性向上)
+- `fileName` — 表示用のファイル名 (`BOOKMARK_STORE_FILENAME = true` の場合のみ保存、`false` ならこのフィールドは省略)
 - `manual` — ユーザーが手動で付けたしおりのページ番号リスト (昇順ソート)
 - `lastRead` — 前回最後に開いていたページ (自動しおり1)
 - `furthest` — 開いたことのある一番最後のページ (自動しおり2)
 
-### 1.3 ファイルハッシュ生成
+### 1.4 ファイルハッシュ生成
 
 ```javascript
 async function generateFileHash(file) {

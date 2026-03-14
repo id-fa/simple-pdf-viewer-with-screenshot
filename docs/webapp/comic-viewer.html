@@ -45,8 +45,8 @@ label.check input { cursor: pointer; }
 .page-label { position: absolute; bottom: -24px; left: 50%; transform: translateX(-50%); font-size: 12px; color: #888; white-space: nowrap; }
 
 /* Thumbnails */
-.sidebar { position: fixed; left: 0; top: 49px; bottom: 0; width: 160px; background: #111; border-right: 1px solid #333; overflow-y: auto; padding: 8px; z-index: 50; transform: translateX(-100%); transition: transform 0.2s, top 0.3s; }
-.ui-hidden .sidebar { top: 0; }
+.sidebar { position: fixed; left: 0; top: 49px; bottom: 0; width: 160px; background: #111; border-right: 1px solid #333; overflow: hidden; padding: 0; z-index: 50; transform: translateX(-100%); transition: transform 0.2s; }
+.ui-hidden .sidebar { top: 0 !important; }
 .sidebar.open { transform: translateX(0); }
 .sidebar .thumb { cursor: pointer; margin-bottom: 8px; border: 2px solid transparent; border-radius: 4px; overflow: hidden; position: relative; }
 .sidebar .thumb.active { border-color: #4a9eff; }
@@ -73,9 +73,57 @@ label.check input { cursor: pointer; }
 .minimap canvas { display: block; }
 .minimap .viewport-rect { position: absolute; border: 2px solid #ff4444; background: rgba(255,68,68,0.1); pointer-events: none; }
 
+/* Sidebar tabs */
+.sidebar { display: flex; flex-direction: column; }
+.sidebar-tabs { display: flex; border-bottom: 1px solid #333; flex-shrink: 0; }
+.sidebar-tab { flex: 1; padding: 6px 4px; font-size: 12px; text-align: center; cursor: pointer; background: transparent; border: none; color: #888; border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s; }
+.sidebar-tab:hover { color: #ccc; }
+.sidebar-tab.active { color: #e0e0e0; border-bottom-color: #4a9eff; }
+.sidebar-panel { flex: 1; overflow-y: auto; display: none; padding: 8px; }
+.sidebar-panel.active { display: block; }
+
+/* Bookmark */
+.bookmark-settings { padding: 6px 4px; border-bottom: 1px solid #333; margin-bottom: 4px; font-size: 12px; }
+.bookmark-list { padding: 4px; }
+.bookmark-thumb-header { font-size: 11px; padding: 2px 4px; margin-top: 2px; }
+.bookmark-thumb-header.auto { color: #ff9f43; }
+.bookmark-thumb-header.manual { color: #4a9eff; }
+.bookmark-thumb { cursor: pointer; margin-bottom: 6px; border: 2px solid transparent; border-radius: 4px; overflow: hidden; position: relative; }
+.bookmark-thumb:hover { border-color: rgba(255,255,255,0.3); }
+.bookmark-thumb canvas { width: 100%; display: block; }
+.bookmark-empty { padding: 16px 8px; text-align: center; font-size: 12px; color: #666; }
+.bookmark-marker { position: absolute; top: 2px; right: 4px; font-size: 16px; cursor: pointer; opacity: 0.3; color: #4a9eff; transition: opacity 0.15s; z-index: 1; line-height: 1; background: rgba(0,0,0,0.7); padding: 1px 3px; border-radius: 3px; }
+.bookmark-marker:hover { opacity: 0.7; }
+.bookmark-marker.active { opacity: 1.0; }
+.sidebar .thumb .num.auto-bookmark { background: rgba(255,159,67,0.85); color: #fff; }
+.bookmark-management { padding: 8px 4px; border-top: 1px solid #333; margin-top: 4px; }
+.bookmark-management button { width: 100%; margin-bottom: 4px; font-size: 11px; padding: 4px; }
+.bookmark-mgmt-row { display: flex; gap: 4px; }
+.bookmark-mgmt-row button { flex: 1; }
+.bookmark-mgmt-title { font-size: 11px; color: #888; margin-bottom: 4px; }
+
 /* Loading overlay */
 .loading-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 400; }
 .loading-overlay .msg { background: #16213e; border: 1px solid #0f3460; padding: 20px 32px; border-radius: 10px; font-size: 14px; }
+
+/* Annotation comments */
+.annotation-fab { position: fixed; bottom: 20px; left: 20px; z-index: 250; width: 44px; height: 44px; border-radius: 50%; background: #0f3460; border: 1px solid #1a5276; color: #e0e0e0; font-size: 20px; cursor: pointer; display: none; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.5); transition: background 0.2s; line-height: 1; }
+.annotation-fab:hover { background: #1a5276; }
+.annotation-fab .badge { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; border-radius: 9px; background: #e74c3c; color: #fff; font-size: 10px; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
+.annotation-modal-overlay { position: fixed; inset: 0; z-index: 500; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; }
+.annotation-modal-overlay.open { display: flex; }
+.annotation-modal { background: #1e1e2e; border: 1px solid #333; border-radius: 10px; width: 90%; max-width: 560px; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.6); }
+.annotation-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #333; }
+.annotation-modal-header h2 { font-size: 15px; font-weight: 600; }
+.annotation-modal-close { background: none; border: none; color: #888; font-size: 20px; cursor: pointer; padding: 0 4px; line-height: 1; }
+.annotation-modal-close:hover { color: #e0e0e0; }
+.annotation-modal-body { flex: 1; overflow-y: auto; padding: 12px 16px; }
+.annotation-page-group { margin-bottom: 12px; }
+.annotation-page-label { font-size: 12px; color: #4a9eff; font-weight: 600; margin-bottom: 4px; padding-bottom: 3px; border-bottom: 1px solid #2a2a3a; }
+.annotation-item { padding: 6px 8px; margin-bottom: 4px; background: #252538; border-radius: 6px; font-size: 12px; }
+.annotation-item-meta { display: flex; gap: 8px; margin-bottom: 3px; color: #888; font-size: 11px; }
+.annotation-item-type { background: #333; padding: 1px 5px; border-radius: 3px; font-size: 10px; }
+.annotation-item-content { white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
 </style>
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-E05P3RLDS9"></script>
@@ -173,6 +221,17 @@ label.check input { cursor: pointer; }
   <div class="viewport-rect" id="minimapRect"></div>
 </div>
 
+<button class="annotation-fab" id="annotationFab" title="Annotation Comments">💬<span class="badge" id="annotationBadge">0</span></button>
+<div class="annotation-modal-overlay" id="annotationOverlay">
+  <div class="annotation-modal">
+    <div class="annotation-modal-header">
+      <h2>Annotation Comments</h2>
+      <button class="annotation-modal-close" id="annotationClose">&times;</button>
+    </div>
+    <div class="annotation-modal-body" id="annotationBody"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script type="module">
@@ -180,6 +239,9 @@ import * as pdfjsModule from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.
 
 const pdfjsLib = pdfjsModule;
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.mjs';
+
+// Bookmark config
+const BOOKMARK_STORE_FILENAME = false;
 
 // ---- libarchive.js dynamic loading ----
 let Archive = null;
@@ -214,6 +276,7 @@ let currentPage = 1;
 let totalPages = 0;
 let fileName = '';
 let rendering = false;
+let currentFileHash = null;
 
 // ---- DOM ----
 const fileInput = document.getElementById('fileInput');
@@ -244,6 +307,404 @@ const sidebar = document.getElementById('sidebar');
 const fileInfo = document.getElementById('fileInfo');
 const progressFill = document.getElementById('progressFill');
 const toast = document.getElementById('toast');
+const annotationFab = document.getElementById('annotationFab');
+const annotationBadge = document.getElementById('annotationBadge');
+const annotationOverlay = document.getElementById('annotationOverlay');
+const annotationBody = document.getElementById('annotationBody');
+
+// ---- Annotation comments ----
+let pdfAnnotations = [];
+
+function escapeText(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+async function collectAnnotations() {
+  pdfAnnotations = [];
+  annotationFab.style.display = 'none';
+  if (!pdfDoc || docType !== 'pdf') return;
+  for (let i = 1; i <= pdfDoc.numPages; i++) {
+    const page = await pdfDoc.getPage(i);
+    const annots = await page.getAnnotations();
+    for (const a of annots) {
+      if (a.contents && a.contents.trim()) {
+        pdfAnnotations.push({
+          page: i,
+          type: a.subtype || 'Unknown',
+          author: a.title || '',
+          content: a.contents,
+          date: a.creationDate || ''
+        });
+      }
+    }
+  }
+  if (pdfAnnotations.length > 0) {
+    annotationFab.style.display = 'flex';
+    annotationBadge.textContent = pdfAnnotations.length;
+  }
+}
+
+function formatAnnotationDate(raw) {
+  if (!raw) return '';
+  const m = raw.match(/D:(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})?/);
+  if (!m) return raw;
+  return `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}`;
+}
+
+function renderAnnotationModal() {
+  const grouped = {};
+  for (const a of pdfAnnotations) {
+    if (!grouped[a.page]) grouped[a.page] = [];
+    grouped[a.page].push(a);
+  }
+  let html = '';
+  for (const page of Object.keys(grouped).map(Number).sort((a, b) => a - b)) {
+    html += `<div class="annotation-page-group">`;
+    html += `<div class="annotation-page-label">Page ${page}</div>`;
+    for (const a of grouped[page]) {
+      const meta = [];
+      if (a.author) meta.push(escapeText(a.author));
+      const dateStr = formatAnnotationDate(a.date);
+      if (dateStr) meta.push(escapeText(dateStr));
+      html += `<div class="annotation-item">`;
+      html += `<div class="annotation-item-meta"><span class="annotation-item-type">${escapeText(a.type)}</span>${meta.join(' · ')}</div>`;
+      html += `<div class="annotation-item-content">${escapeText(a.content)}</div>`;
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+  annotationBody.innerHTML = html;
+}
+
+annotationFab.addEventListener('click', () => {
+  renderAnnotationModal();
+  annotationOverlay.classList.add('open');
+});
+document.getElementById('annotationClose').addEventListener('click', () => {
+  annotationOverlay.classList.remove('open');
+});
+annotationOverlay.addEventListener('click', e => {
+  if (e.target === annotationOverlay) annotationOverlay.classList.remove('open');
+});
+
+// ---- Bookmark system ----
+async function generateFileHash(file) {
+  const data = new TextEncoder().encode(file.name + '|' + file.size);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
+}
+
+function isBookmarkEnabled() {
+  return localStorage.getItem('bookmark_enabled') === 'true';
+}
+
+function loadAllBookmarks() {
+  try { return JSON.parse(localStorage.getItem('bookmarks') || '{}'); } catch { return {}; }
+}
+
+function saveAllBookmarks(data) {
+  localStorage.setItem('bookmarks', JSON.stringify(data));
+}
+
+function getBookmarkForFile(hash) {
+  if (!hash) return { manual: [], lastRead: null, furthest: null };
+  const all = loadAllBookmarks();
+  return all[hash] || { manual: [], lastRead: null, furthest: null };
+}
+
+function setBookmarkForFile(hash, data) {
+  const all = loadAllBookmarks();
+  all[hash] = data;
+  saveAllBookmarks(all);
+}
+
+function updateAutoBookmarks(pageNum) {
+  if (!isBookmarkEnabled() || !currentFileHash) return;
+  const bm = getBookmarkForFile(currentFileHash);
+  bm.lastRead = pageNum;
+  bm.furthest = Math.max(bm.furthest || 0, pageNum);
+  if (BOOKMARK_STORE_FILENAME && fileName) bm.fileName = fileName;
+  setBookmarkForFile(currentFileHash, bm);
+}
+
+function toggleManualBookmark(pageNum) {
+  if (!isBookmarkEnabled() || !currentFileHash) return;
+  const bm = getBookmarkForFile(currentFileHash);
+  if (!bm.manual) bm.manual = [];
+  const idx = bm.manual.indexOf(pageNum);
+  if (idx >= 0) bm.manual.splice(idx, 1);
+  else { bm.manual.push(pageNum); bm.manual.sort((a, b) => a - b); }
+  if (BOOKMARK_STORE_FILENAME && fileName) bm.fileName = fileName;
+  setBookmarkForFile(currentFileHash, bm);
+  updateBookmarkUI();
+}
+
+let thumbsContainer = null;
+let bookmarkListEl = null;
+let bookmarkSettingsEl = null;
+let bookmarkMgmtEl = null;
+let bookmarkPanel = null;
+let thumbsPanel = null;
+
+function switchSidebarTab(tabName) {
+  sidebar.querySelectorAll('.sidebar-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabName));
+  if (bookmarkPanel) bookmarkPanel.classList.toggle('active', tabName === 'bookmarks');
+  if (thumbsPanel) thumbsPanel.classList.toggle('active', tabName === 'thumbs');
+}
+
+function initSidebarBookmarks() {
+  // Tab bar
+  const tabBar = document.createElement('div');
+  tabBar.className = 'sidebar-tabs';
+  const bmTab = document.createElement('button');
+  bmTab.className = 'sidebar-tab';
+  bmTab.dataset.tab = 'bookmarks';
+  bmTab.textContent = 'Bookmarks';
+  bmTab.addEventListener('click', () => switchSidebarTab('bookmarks'));
+  const thTab = document.createElement('button');
+  thTab.className = 'sidebar-tab active';
+  thTab.dataset.tab = 'thumbs';
+  thTab.textContent = 'Thumbs';
+  thTab.addEventListener('click', () => switchSidebarTab('thumbs'));
+  tabBar.append(bmTab, thTab);
+  sidebar.appendChild(tabBar);
+
+  // Bookmarks panel
+  bookmarkPanel = document.createElement('div');
+  bookmarkPanel.className = 'sidebar-panel';
+  bookmarkListEl = document.createElement('div');
+  bookmarkListEl.className = 'bookmark-list';
+  bookmarkPanel.appendChild(bookmarkListEl);
+  sidebar.appendChild(bookmarkPanel);
+
+  // Thumbs panel
+  thumbsPanel = document.createElement('div');
+  thumbsPanel.className = 'sidebar-panel active';
+
+  bookmarkSettingsEl = document.createElement('div');
+  bookmarkSettingsEl.className = 'bookmark-settings';
+  bookmarkSettingsEl.innerHTML = '<label style="cursor:pointer"><input type="checkbox" id="bookmarkEnabledCheck"> Bookmarks</label>';
+  thumbsPanel.appendChild(bookmarkSettingsEl);
+
+  const check = bookmarkSettingsEl.querySelector('input');
+  check.checked = isBookmarkEnabled();
+  check.addEventListener('change', () => {
+    if (check.checked) {
+      localStorage.setItem('bookmark_enabled', 'true');
+    } else {
+      const hasData = Object.keys(loadAllBookmarks()).length > 0;
+      if (hasData && confirm('登録済みのしおりデータを消去しますか？\n「OK」で消去、「キャンセル」でデータを保持したまま無効化')) {
+        localStorage.removeItem('bookmarks');
+      }
+      localStorage.setItem('bookmark_enabled', 'false');
+    }
+    updateBookmarkUI();
+  });
+
+  thumbsContainer = document.createElement('div');
+  thumbsPanel.appendChild(thumbsContainer);
+
+  bookmarkMgmtEl = document.createElement('div');
+  bookmarkMgmtEl.className = 'bookmark-management';
+  bookmarkMgmtEl.innerHTML = `<div class="bookmark-mgmt-title">Bookmark Management</div>
+    <button id="clearBookmarksThis">Clear this book</button>
+    <button id="clearBookmarksAll">Clear all books</button>
+    <div class="bookmark-mgmt-row">
+      <button id="exportBookmarks">Export</button>
+      <button id="importBookmarks">Import</button>
+    </div>
+    <input type="file" id="importBookmarksFile" accept=".json" style="display:none">`;
+  bookmarkPanel.appendChild(bookmarkMgmtEl);
+  sidebar.appendChild(thumbsPanel);
+
+  document.getElementById('clearBookmarksThis').addEventListener('click', () => {
+    if (!currentFileHash) return;
+    const all = loadAllBookmarks();
+    delete all[currentFileHash];
+    saveAllBookmarks(all);
+    updateBookmarkUI();
+    showToast('This book\'s bookmarks cleared');
+  });
+
+  document.getElementById('clearBookmarksAll').addEventListener('click', () => {
+    if (!confirm('すべての本のしおりデータを消去しますか？この操作は取り消せません。')) return;
+    localStorage.removeItem('bookmarks');
+    updateBookmarkUI();
+    showToast('All bookmarks cleared');
+  });
+
+  document.getElementById('exportBookmarks').addEventListener('click', () => {
+    const data = loadAllBookmarks();
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `bookmarks_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    showToast('Bookmarks exported');
+  });
+
+  document.getElementById('importBookmarks').addEventListener('click', () => {
+    document.getElementById('importBookmarksFile').click();
+  });
+
+  document.getElementById('importBookmarksFile').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const imported = JSON.parse(text);
+      if (typeof imported !== 'object' || imported === null) throw new Error('Invalid');
+      const existing = loadAllBookmarks();
+      Object.assign(existing, imported);
+      saveAllBookmarks(existing);
+      updateBookmarkUI();
+      showToast('Bookmarks imported');
+    } catch {
+      showToast('Import error: invalid JSON', 3000);
+    }
+    e.target.value = '';
+  });
+
+  updateBookmarkUI();
+}
+
+function updateBookmarkUI() {
+  const enabled = isBookmarkEnabled();
+  const check = bookmarkSettingsEl ? bookmarkSettingsEl.querySelector('input') : null;
+  if (check) check.checked = enabled;
+
+  if (bookmarkMgmtEl) bookmarkMgmtEl.style.display = enabled ? '' : 'none';
+
+  if (!enabled) {
+    if (bookmarkListEl) bookmarkListEl.innerHTML = '';
+    updateBookmarkMarkers();
+    return;
+  }
+
+  renderBookmarkList();
+  updateBookmarkMarkers();
+}
+
+function cloneThumbCanvas(pageNum) {
+  if (!thumbsContainer) return null;
+  const thumbDiv = thumbsContainer.children[pageNum - 1];
+  if (!thumbDiv) return null;
+  const srcCanvas = thumbDiv.querySelector('canvas');
+  if (!srcCanvas) return null;
+  const clone = document.createElement('canvas');
+  clone.width = srcCanvas.width;
+  clone.height = srcCanvas.height;
+  clone.getContext('2d').drawImage(srcCanvas, 0, 0);
+  return clone;
+}
+
+function renderBookmarkList() {
+  if (!bookmarkListEl) return;
+  bookmarkListEl.innerHTML = '';
+  if (!currentFileHash || !isBookmarkEnabled()) {
+    const msg = document.createElement('div');
+    msg.className = 'bookmark-empty';
+    msg.textContent = !isBookmarkEnabled() ? 'Thumbs タブで Bookmarks を有効にしてください' : 'ファイルを開いてください';
+    bookmarkListEl.appendChild(msg);
+    return;
+  }
+
+  const bm = getBookmarkForFile(currentFileHash);
+  const hasAny = bm.lastRead || bm.furthest || (bm.manual && bm.manual.length > 0);
+  if (!hasAny) {
+    const msg = document.createElement('div');
+    msg.className = 'bookmark-empty';
+    msg.textContent = 'しおりはまだありません';
+    bookmarkListEl.appendChild(msg);
+    return;
+  }
+
+  function addBookmarkThumb(pageNum, type, labelText) {
+    const wrapper = document.createElement('div');
+    wrapper.style.cursor = 'pointer';
+    const header = document.createElement('div');
+    header.className = 'bookmark-thumb-header ' + type;
+    header.textContent = labelText;
+    wrapper.appendChild(header);
+    const div = document.createElement('div');
+    div.className = 'bookmark-thumb';
+    const canvas = cloneThumbCanvas(pageNum);
+    if (canvas) {
+      div.appendChild(canvas);
+    }
+    wrapper.appendChild(div);
+    wrapper.addEventListener('click', () => renderView(pageNum));
+    bookmarkListEl.appendChild(wrapper);
+  }
+
+  if (bm.lastRead) {
+    const label = bm.furthest === bm.lastRead
+      ? `p.${bm.lastRead} last read / furthest`
+      : `p.${bm.lastRead} last read`;
+    addBookmarkThumb(bm.lastRead, 'auto', label);
+  }
+  if (bm.furthest && bm.furthest !== bm.lastRead) {
+    addBookmarkThumb(bm.furthest, 'auto', `p.${bm.furthest} furthest`);
+  }
+  if (bm.manual) {
+    for (const p of bm.manual) {
+      addBookmarkThumb(p, 'manual', `p.${p}`);
+    }
+  }
+}
+
+function updateBookmarkMarkers() {
+  if (!thumbsContainer) return;
+  const thumbs = thumbsContainer.querySelectorAll('.thumb');
+  const enabled = isBookmarkEnabled();
+  const bm = currentFileHash ? getBookmarkForFile(currentFileHash) : { manual: [], lastRead: null, furthest: null };
+
+  thumbs.forEach((thumb, i) => {
+    const pageNum = i + 1;
+    let marker = thumb.querySelector('.bookmark-marker');
+    const numLabel = thumb.querySelector('.num');
+
+    // Auto bookmark: highlight page number label
+    if (numLabel) {
+      const isAuto = enabled && (bm.lastRead === pageNum || bm.furthest === pageNum);
+      numLabel.classList.toggle('auto-bookmark', isAuto);
+    }
+
+    // Manual bookmark: marker icon
+    if (!enabled) {
+      if (marker) marker.style.display = 'none';
+      return;
+    }
+
+    if (!marker) {
+      marker = document.createElement('div');
+      marker.className = 'bookmark-marker';
+      marker.textContent = '●';
+      marker.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleManualBookmark(pageNum);
+      });
+      thumb.appendChild(marker);
+    }
+
+    marker.style.display = '';
+    const isManual = bm.manual && bm.manual.includes(pageNum);
+
+    if (isManual) {
+      marker.classList.add('active');
+    } else {
+      marker.classList.remove('active');
+    }
+  });
+}
+
+initSidebarBookmarks();
 
 function showToast(msg, ms = 2000) {
   toast.textContent = msg;
@@ -636,11 +1097,18 @@ async function renderView(num) {
     }
 
     const pagesSet = new Set(pages);
-    sidebar.querySelectorAll('.thumb').forEach((t, i) => {
+    if (thumbsContainer) {
+      thumbsContainer.querySelectorAll('.thumb').forEach((t, i) => {
       t.classList.toggle('active', pagesSet.has(i + 1));
     });
-    const active = sidebar.querySelector('.thumb.active');
+      const active = thumbsContainer.querySelector('.thumb.active');
     if (active) active.scrollIntoView({ block: 'nearest' });
+    }
+
+    // Update bookmarks
+    updateAutoBookmarks(currentPage);
+    updateBookmarkUI();
+
     requestAnimationFrame(() => updateMinimap());
   } finally {
     rendering = false;
@@ -648,7 +1116,8 @@ async function renderView(num) {
 }
 
 async function renderThumbnails() {
-  sidebar.innerHTML = '';
+  if (!thumbsContainer) return;
+  thumbsContainer.innerHTML = '';
   for (let i = 1; i <= totalPages; i++) {
     const dims = await getPageDimensions(i);
     const scale = 140 / dims.width;
@@ -662,8 +1131,9 @@ async function renderThumbnails() {
     numLabel.textContent = i;
     div.appendChild(numLabel);
     div.addEventListener('click', () => renderView(i));
-    sidebar.appendChild(div);
+    thumbsContainer.appendChild(div);
   }
+  updateBookmarkMarkers();
 }
 
 // ---- Export ----
@@ -802,6 +1272,7 @@ async function loadPDF(data, name) {
   fileName = name || 'document.pdf';
   currentPage = 1;
   onDocLoaded();
+  collectAnnotations();
 }
 
 // ---- Load Archive (CBZ/CBR/CB7) ----
@@ -905,6 +1376,8 @@ async function loadImageEntries(imageFiles, archiveFileName) {
 }
 
 async function loadArchive(file) {
+  annotationFab.style.display = 'none';
+  pdfAnnotations = [];
   const loading = showLoading(`${file.name} を展開中...`);
   try {
     await ensureLibArchive();
@@ -922,6 +1395,11 @@ async function loadArchive(file) {
 
       const chosen = await showArchiveChooser(innerArchives, file.name);
       if (!chosen) return; // cancelled
+
+      // Re-hash with outer+inner names for nested archives
+      const combinedData = new TextEncoder().encode(file.name + '|' + file.size + '|' + chosen.name);
+      const hashBuf = await crypto.subtle.digest('SHA-256', combinedData);
+      currentFileHash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
 
       const innerLoading = showLoading(`${chosen.name} を展開中...`);
       try {
@@ -978,6 +1456,7 @@ function getFileType(file) {
 
 async function openFile(file) {
   if (!file) return;
+  currentFileHash = await generateFileHash(file);
   const type = getFileType(file);
   if (type === 'pdf') {
     const buf = await file.arrayBuffer();
@@ -1131,6 +1610,17 @@ thumbToggle.addEventListener('click', () => {
 
 // ---- UI hide/show toggle ----
 const header = document.querySelector('.header');
+
+// Keep sidebar top in sync with header height
+function updateSidebarTop() {
+  if (!isUIHidden()) {
+    const h = header.offsetHeight + 'px';
+    sidebar.style.top = h;
+    progressFill.parentElement.style.top = h;
+  }
+}
+new ResizeObserver(updateSidebarTop).observe(header);
+updateSidebarTop();
 
 function toggleUI(forceShow) {
   const shouldShow = forceShow === true || document.body.classList.contains('ui-hidden');

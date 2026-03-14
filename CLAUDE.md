@@ -143,6 +143,25 @@
 - 代わりに `.spread-container` / `.page-container` に `margin-left: auto; margin-right: auto` で中央揃え
 - コンテンツが画面内に収まる時は中央配置、画面より大きい時は左端(0,0)からスクロール可能
 
+### しおり（ブックマーク）機能
+- サイドバーを「Bookmarks」「Thumbs」の排他タブに分割
+- localStorage にファイルハッシュ (SHA-256先頭16文字、`file.name + '|' + file.size`) とページ番号を保存
+- `BOOKMARK_STORE_FILENAME` 変数 (デフォルト `false`) でファイル名の保存可否を制御（プライバシー保護）
+- **手動しおり**: サムネイル上の `●` マーカークリックでトグル
+- **自動しおり**: `lastRead` (最後に表示したページ) / `furthest` (到達最深ページ) を `renderView()` 時に自動更新
+- Bookmarksタブ: しおり付きページをサムネイル表示（canvas クローン）、ヘッダーにページ番号・種別表示
+- Thumbsタブ: 従来サムネイル + しおりマーカー、自動しおりはページ番号ラベルのオレンジ背景で表現
+- 管理機能 (Bookmarksタブ下部): Clear this book / Clear all / Export JSON / Import JSON
+- comic-viewer.html の二重アーカイブ時は外側+内側ファイル名を結合してハッシュ生成
+- サイドバーの `top` は ResizeObserver でヘッダー高さに追従
+
+### アノテーションコメント表示 (PDF)
+- PDF読み込み時に全ページの `page.getAnnotations()` を走査し、`contents` を持つアノテーションを収集
+- コメントが1件以上ある場合、左下にフローティングボタン (💬 + 件数バッジ) を表示
+- クリックでモーダル表示: ページ別グループ、タイプ・著者・日時・コメント内容
+- セキュリティ: `textContent` 経由でエスケープし HTML/JS は動作しない
+- comic-viewer.html ではアーカイブ読み込み時にFABを非表示にリセット
+
 ### 関数
 - `getSpreadPages(pageNum)` — スプレッド構成を返す ([left, right] or [single])
 - `canonicalPage(pageNum)` — ページ番号をペアの先頭に正規化

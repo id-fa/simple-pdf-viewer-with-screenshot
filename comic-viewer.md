@@ -144,6 +144,22 @@ libarchive.wasm (979KB) ── Worker が CDN から自動 fetch
 
 libarchive.js は初回のアーカイブファイル読み込み時に動的 `import()` されます。PDF のみ使用する場合は WASM のダウンロードは発生しません。
 
+### しおり（ブックマーク）
+
+サイドバーの「Bookmarks」タブでしおり機能を利用できます。
+
+- **有効化**: Thumbsタブの設定チェックボックスで有効/無効を切替（グローバル設定、localStorageに保存）
+- **手動しおり**: サムネイル右上の `●` マーカーをクリックして設定/解除
+- **自動しおり**: 前回最後に開いたページ (last read) と到達した最深ページ (furthest) を自動記録
+- **しおり一覧**: Bookmarksタブにサムネイル付きで表示、クリックでジャンプ
+- **管理**: Bookmarksタブ下部から、現在の本のしおり消去、全書籍のしおり消去、JSONエクスポート/インポートが可能
+
+しおりデータはファイル名+サイズのハッシュで識別されるため、同じファイルを再度開けばしおりが復元されます。`pdf-viewer.html` と同じ localStorage キーを使用するため、しおりデータは共有されます。
+
+### アノテーションコメント (PDF)
+
+PDFにアノテーションコメントが含まれている場合、画面左下にフローティングボタン (💬) が表示されます。クリックするとモーダルでコメント一覧を確認できます。ページ別にグループ化され、タイプ・著者・日時・コメント内容が表示されます。
+
 ---
 
 # Comic Viewer (English)
@@ -291,3 +307,19 @@ libarchive.wasm (979KB) ── Worker auto-fetches from CDN
 ### Lazy Loading
 
 libarchive.js is dynamically `import()`ed when an archive file is first loaded. If only PDFs are used, the WASM download does not occur.
+
+### Bookmarks
+
+The bookmark feature is available via the "Bookmarks" tab in the sidebar.
+
+- **Enable/disable**: Toggle via the settings checkbox in the Thumbs tab (global setting, saved in localStorage)
+- **Manual bookmarks**: Click the `●` marker on a thumbnail to set/unset
+- **Auto bookmarks**: Automatically records the last viewed page (last read) and the furthest page reached (furthest)
+- **Bookmark list**: Displayed with thumbnails in the Bookmarks tab; click to jump to a page
+- **Management**: From the bottom of the Bookmarks tab, you can clear bookmarks for the current book, clear all bookmarks, and export/import as JSON
+
+Bookmarks are identified by a hash of filename + size, so reopening the same file restores bookmarks. Uses the same localStorage keys as `pdf-viewer.html`, so bookmark data is shared between the two viewers.
+
+### Annotation Comments (PDF)
+
+When a PDF contains annotation comments, a floating button (💬) appears at the bottom-left of the screen. Clicking it opens a modal displaying all comments grouped by page, showing the annotation type, author, date, and content.
