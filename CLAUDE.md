@@ -40,6 +40,7 @@
 - CBZ / ZIP — libarchive.js (WASM) で展開
 - CBR / RAR — libarchive.js (WASM) で展開
 - CB7 / 7z — libarchive.js (WASM) で展開
+- EPUB — libarchive.js (WASM) で展開 ※固定レイアウト(画像ベース)のみ対応
 
 ### WASM Worker のクロスオリジン対策
 ブラウザはクロスオリジン URL から直接 Worker を生成できないため:

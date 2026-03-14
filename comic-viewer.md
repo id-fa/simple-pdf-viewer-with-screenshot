@@ -1,6 +1,6 @@
 # Comic Viewer
 
-ブラウザベースの汎用コミックビューア。PDF / CBZ / CBR / CB7 に対応。単一HTMLファイルで完結。
+ブラウザベースの汎用コミックビューア。PDF / CBZ / CBR / CB7 / EPUB に対応。単一HTMLファイルで完結。
 
 Created by id-fa, built with Claude Code.
 
@@ -12,8 +12,11 @@ Created by id-fa, built with Claude Code.
 | CBZ | `.cbz`, `.zip` | [libarchive.js](https://github.com/nika-begiashvili/libarchivejs) v2.0.2 (WASM) |
 | CBR | `.cbr`, `.rar` | libarchive.js v2.0.2 (WASM) |
 | CB7 | `.cb7`, `.7z` | libarchive.js v2.0.2 (WASM) |
+| EPUB | `.epub` | libarchive.js v2.0.2 (WASM) ※固定レイアウト(画像ベース)のみ |
 
 アーカイブ内の画像ファイル (JPEG, PNG, WebP, GIF, BMP, AVIF, JXL, TIFF) を自動検出して表示します。
+
+> **EPUB について**: EPUB は内部的に ZIP 形式であるため、アーカイブとして展開し画像ファイルを表示します。固定レイアウト(各ページが画像で構成されている)の EPUB のみ対応しています。テキストベース(リフロー型)の EPUB には対応していません。
 
 ## 使い方
 
@@ -145,7 +148,7 @@ libarchive.js は初回のアーカイブファイル読み込み時に動的 `i
 
 # Comic Viewer (English)
 
-A browser-based universal comic viewer. Supports PDF / CBZ / CBR / CB7. Self-contained in a single HTML file.
+A browser-based universal comic viewer. Supports PDF / CBZ / CBR / CB7 / EPUB. Self-contained in a single HTML file.
 
 Created by id-fa, built with Claude Code.
 
@@ -157,8 +160,11 @@ Created by id-fa, built with Claude Code.
 | CBZ | `.cbz`, `.zip` | [libarchive.js](https://github.com/nika-begiashvili/libarchivejs) v2.0.2 (WASM) |
 | CBR | `.cbr`, `.rar` | libarchive.js v2.0.2 (WASM) |
 | CB7 | `.cb7`, `.7z` | libarchive.js v2.0.2 (WASM) |
+| EPUB | `.epub` | libarchive.js v2.0.2 (WASM) — Fixed-layout (image-based) only |
 
 Image files within archives (JPEG, PNG, WebP, GIF, BMP, AVIF, JXL, TIFF) are automatically detected and displayed.
+
+> **About EPUB**: EPUB files are internally ZIP archives, so they are extracted and image files are displayed. Only fixed-layout EPUBs (where each page is composed of images) are supported. Reflowable (text-based) EPUBs are not supported.
 
 ## Usage
 
