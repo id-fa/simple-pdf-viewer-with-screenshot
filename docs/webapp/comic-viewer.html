@@ -864,6 +864,10 @@ async function loadImageEntries(imageFiles, archiveFileName) {
   }
   setProgress(0);
 
+  // EPUB defaults to lexical sort (directory structure reflects page order)
+  if (/\.epub$/i.test(archiveFileName.split(' > ').pop())) {
+    sortSelect.value = 'lexical';
+  }
   applySortOrder();
 
   docType = 'archive';
