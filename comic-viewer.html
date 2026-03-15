@@ -1366,16 +1366,37 @@ async function loadPDF(data, name) {
 // ---- Load Archive (CBZ/CBR/CB7) ----
 
 // Flatten extracted object from libarchive.js into {name, file} entries
+// Security limits for archive extraction
+const ARCHIVE_MAX_FILES = 10000;
+const ARCHIVE_MAX_TOTAL_SIZE = 2 * 1024 * 1024 * 1024; // 2 GB
+
+// Sanitize path: remove traversal sequences and leading slashes
+function sanitizePath(name) {
+  return name
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter(seg => seg !== '..' && seg !== '.' && seg !== '')
+    .join('/');
+}
+
 function flattenExtracted(obj, prefix = '', fnMap = null) {
   const files = [];
-  for (const [key, value] of Object.entries(obj)) {
-    const fixedKey = (fnMap && fnMap.has(key)) ? fnMap.get(key) : tryFixFilename(key);
-    if (value instanceof File) {
-      files.push({ name: prefix + fixedKey, file: value });
-    } else if (typeof value === 'object' && value !== null) {
-      files.push(...flattenExtracted(value, prefix + fixedKey + '/', fnMap));
+  let totalSize = 0;
+  function walk(obj, prefix) {
+    for (const [key, value] of Object.entries(obj)) {
+      const fixedKey = (fnMap && fnMap.has(key)) ? fnMap.get(key) : tryFixFilename(key);
+      if (value instanceof File) {
+        if (files.length >= ARCHIVE_MAX_FILES) throw new Error(`ファイル数が上限 (${ARCHIVE_MAX_FILES}) を超えました`);
+        totalSize += value.size;
+        if (totalSize > ARCHIVE_MAX_TOTAL_SIZE) throw new Error(`展開サイズが上限 (${(ARCHIVE_MAX_TOTAL_SIZE / 1024 / 1024 / 1024).toFixed(0)} GB) を超えました`);
+        const safeName = sanitizePath(prefix + fixedKey);
+        if (safeName) files.push({ name: safeName, file: value });
+      } else if (typeof value === 'object' && value !== null) {
+        walk(value, prefix + fixedKey + '/');
+      }
     }
   }
+  walk(obj, prefix);
   return files;
 }
 

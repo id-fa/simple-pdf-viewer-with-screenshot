@@ -85,6 +85,12 @@
 - canvas 表示は静止画 (1フレーム目)、モーダルでのみアニメーション再生
 - モーダルは背景クリックまたは Escape キーで閉じる
 
+### アーカイブ展開のセキュリティ対策 (comic-viewer.html)
+- **パストラバーサル防止**: `sanitizePath()` で `..` / `.` セグメントと先頭スラッシュを除去
+- **ファイル数制限**: `ARCHIVE_MAX_FILES` (10,000) 超過で展開中断・エラー表示
+- **展開サイズ制限**: `ARCHIVE_MAX_TOTAL_SIZE` (2 GB) 超過で展開中断・エラー表示 (Zip Bomb 対策)
+- WASM サンドボックスにより libarchive 本体のバッファオーバーフロー等の CVE は RCE に繋がらない
+
 ### 実行要件
 - ローカル HTTP サーバー必須 (`python -m http.server`, `php -S localhost:8000` 等)
 - `file://` では WASM Worker が動作しない
