@@ -175,6 +175,12 @@ label.check input { cursor: pointer; }
       <option value="3">300%</option>
       <option value="fit" selected>Fit</option>
     </select>
+    <select id="rotateSelect">
+      <option value="0">0°</option>
+      <option value="90">90°</option>
+      <option value="180">180°</option>
+      <option value="270">270°</option>
+    </select>
     <select id="sortSelect" style="display:none">
       <option value="natural">Sort: Natural</option>
       <option value="lexical">Sort: Lexical</option>
@@ -280,6 +286,7 @@ const viewMode = document.getElementById('viewMode');
 const bindDir = document.getElementById('bindDir');
 const coverCheck = document.getElementById('coverCheck');
 const scaleSelect = document.getElementById('scaleSelect');
+const rotateSelect = document.getElementById('rotateSelect');
 const formatSelect = document.getElementById('formatSelect');
 const sortSelect = document.getElementById('sortSelect');
 const hqPdfCheck = document.getElementById('hqPdfCheck');
@@ -916,16 +923,36 @@ async function getPageDimensions(pageNum) {
 
 function isUIHidden() { return document.body.classList.contains('ui-hidden'); }
 
+// Rotation
+function getRotation() { return parseInt(rotateSelect.value) || 0; }
+function rotateCanvas(srcCanvas) {
+  const deg = getRotation();
+  if (deg === 0) return srcCanvas;
+  const w = srcCanvas.width, h = srcCanvas.height;
+  const rc = document.createElement('canvas');
+  if (deg === 90 || deg === 270) { rc.width = h; rc.height = w; }
+  else { rc.width = w; rc.height = h; }
+  const ctx = rc.getContext('2d');
+  ctx.translate(rc.width / 2, rc.height / 2);
+  ctx.rotate(deg * Math.PI / 180);
+  ctx.drawImage(srcCanvas, -w / 2, -h / 2);
+  return rc;
+}
+
 function getScale(dims, forSpread) {
   const val = scaleSelect.value;
   if (val === 'fit') {
+    const rot = getRotation();
+    const isRotated = (rot === 90 || rot === 270);
+    const docW = isRotated ? dims.height : dims.width;
+    const docH = isRotated ? dims.width : dims.height;
     const sidebarOpen = sidebar.classList.contains('open') && !isUIHidden();
     const sidebarW = sidebarOpen ? 170 : 0;
     const maxW = window.innerWidth - sidebarW - 32;
     const headerH = isUIHidden() ? 0 : 60;
     const maxH = window.innerHeight - headerH - 24;
     const divisor = forSpread ? 2 : 1;
-    return Math.min((maxW / divisor) / dims.width, maxH / dims.height, 3);
+    return Math.min((maxW / divisor) / docW, maxH / docH, 3);
   }
   return parseFloat(val);
 }
@@ -1046,8 +1073,8 @@ async function renderView(num) {
       for (const pn of pages) {
         const container = document.createElement('div');
         container.className = 'page-container';
-        const canvas = await renderPageToCanvas(pn, scale);
-        container.appendChild(canvas);
+        const rawCanvas = await renderPageToCanvas(pn, scale);
+        container.appendChild(rotateCanvas(rawCanvas));
         const label = document.createElement('div');
         label.className = 'page-label';
         label.textContent = `${pn}`;
@@ -1063,8 +1090,8 @@ async function renderView(num) {
     } else {
       const container = document.createElement('div');
       container.className = 'page-container';
-      const canvas = await renderPageToCanvas(pages[0]);
-      container.appendChild(canvas);
+      const rawCanvas = await renderPageToCanvas(pages[0]);
+      container.appendChild(rotateCanvas(rawCanvas));
       const label = document.createElement('div');
       label.className = 'page-label';
       label.textContent = `${pages[0]} / ${totalPages}`;
@@ -1158,10 +1185,12 @@ function saveCanvas(canvas, name) {
 
 async function exportPageCanvas(pageNum) {
   if (docType === 'pdf') {
-    return renderPageToCanvas(pageNum, 2);
+    const canvas = await renderPageToCanvas(pageNum, 2);
+    return rotateCanvas(canvas);
   } else {
     // For images, export at native resolution
-    return renderPageToCanvas(pageNum, 1);
+    const canvas = await renderPageToCanvas(pageNum, 1);
+    return rotateCanvas(canvas);
   }
 }
 
@@ -1542,6 +1571,7 @@ viewMode.addEventListener('change', () => { if (totalPages > 0) renderView(curre
 bindDir.addEventListener('change', () => { if (totalPages > 0) renderView(currentPage); });
 coverCheck.addEventListener('change', () => { if (totalPages > 0) renderView(currentPage); });
 scaleSelect.addEventListener('change', () => { if (totalPages > 0) renderView(currentPage); });
+rotateSelect.addEventListener('change', () => { if (totalPages > 0) renderView(currentPage); });
 hqPdfCheck.addEventListener('change', () => { if (totalPages > 0) { renderView(currentPage); renderThumbnails(); } });
 sortSelect.addEventListener('change', () => {
   if (docType !== 'archive' || archiveImagesUnsorted.length === 0) return;

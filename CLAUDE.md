@@ -28,6 +28,7 @@
 - エクスポート用: 固定 2x スケール (`exportPageCanvas()`)
 - ファイル名: `{PDFファイル名}_{ページ番号}.{ext}` (ゼロパディング)
 - 見開き表示時: `Save Page` ボタンが `Save p{左ページ番号}` / `Save p{右ページ番号}` の2つに置き換わる
+- 回転設定が適用された状態でエクスポートされる
 
 ## comic-viewer.html
 
@@ -74,6 +75,7 @@
 - アーカイブ画像: ネイティブ解像度 (1x) でエクスポート
 - ファイル名: `{ファイル名}_{ページ番号}.{ext}` (ゼロパディング)
 - 見開き表示時: `Save Page` ボタンが `Save p{左ページ番号}` / `Save p{右ページ番号}` の2つに置き換わる
+- 回転設定が適用された状態でエクスポートされる
 
 ### 実行要件
 - ローカル HTTP サーバー必須 (`python -m http.server`, `php -S localhost:8000` 等)
@@ -127,6 +129,14 @@
   - タッチスワイプ: ブラウザ標準のスクロール動作 (ページ送り無効)
   - 画面左右タップによるページ送りは無効化 (中央タップのUIトグルのみ有効)
 - **OFF** (デフォルト): ページ送り優先 (従来動作)
+
+### 回転表示 (Rotate)
+- プルダウンで 0° / 90° / 180° / 270° を選択
+- `getRotation()` — 現在の回転角度を返す
+- `rotateCanvas(srcCanvas)` — canvas を現在の回転角度で回転した新しい canvas を返す
+- `getScale()` の Fit 計算時: 90°/270° では幅と高さを入れ替えてフィット計算
+- 表示 (`renderView()`): レンダリング後に `rotateCanvas()` を適用
+- エクスポート (`exportPageCanvas()`): レンダリング後に `rotateCanvas()` を適用 → 見開き結合保存にも反映
 
 ### 高品質縮小 (HQ モード)
 - `drawImageHighQuality()` — `createImageBitmap` + `resizeQuality: 'high'` (Lanczos3 相当) で高品質縮小描画

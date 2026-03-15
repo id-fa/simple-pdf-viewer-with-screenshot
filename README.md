@@ -1,56 +1,208 @@
 # PDF Viewer with Screenshot
 
-ブラウザベースのPDFビューア＋画像エクスポートツール。ローカルのPDFファイルを開いて、ページを画像として保存できる。
+ブラウザベースのビューア＋画像エクスポートツール群。単一HTMLファイルで完結する設計。
 
-A browser-based PDF viewer and image export tool. Open local PDF files and save pages as images.
+A browser-based viewer + image export toolkit. Each viewer is self-contained in a single HTML file.
+
+Created by id-fa, built with Claude Code.
 
 [open pdf-viewer](https://id-fa.github.io/simple-pdf-viewer-with-screenshot/webapp/pdf-viewer.html)
 
-[open archive-viewer (test)](https://id-fa.github.io/simple-pdf-viewer-with-screenshot/webapp/comic-viewer.html)
-
-## 使い方 / Usage
-
-`pdf-viewer.html` をブラウザで直接開く。サーバー不要。
-
-Open `pdf-viewer.html` directly in your browser. No server required.
-
-1. 「Open PDF」ボタンまたはドラッグ＆ドロップでPDFを読み込む / Open a PDF via the "Open PDF" button or drag & drop
-2. ページを閲覧・ナビゲーション / Browse and navigate pages
-3. 必要なページを画像として保存 / Save pages as images
-
-## 機能 / Features
-
-### ビューア / Viewer
-- **単ページ / 見開き表示** — Single / Spread view toggle
-- **綴じ方向** — 右綴じ (R2L) / 左綴じ (L2R) binding direction toggle
-- **表紙モード** — Cover ON で1ページ目を単独表示、以降見開きペアリング / Cover mode: page 1 displayed alone, then paired spreads
-- **ズーム** — 50% / 75% / 100% / 150% / 200% / Fit (ウィンドウフィット / fit to window)
-- **HQモード** — PDF縮小表示時に1xレンダリング→段階的半減で高品質表示 (オプション) / HQ mode: render PDF at 1x then step-halve downscale for higher quality display (optional)
-- **サムネイル** — 左サイドバーにページ一覧、クリックでジャンプ / Thumbnail sidebar with click-to-jump
-- **しおり（ブックマーク）** — 手動しおり＋自動しおり (last read / furthest)、localStorageに保存、JSON export/import対応 / Bookmarks: manual + auto (last read / furthest), saved in localStorage, JSON export/import
-- **アノテーションコメント** — PDFのアノテーションコメントをモーダルで一覧表示 / Annotation comments: view PDF annotation comments in a modal
-- **キーボード操作** — 矢印キーでページ送り (R2L時は左右反転)、Home/End / Arrow keys for navigation (reversed in R2L mode), Home/End
-
-### 画像保存 / Image Export
-- **Save Page** — 現在表示中のページを画像保存 (見開き時は2ページ結合) / Save current page (merged spread in spread view)
-- **Save 2P** — 現在ページ＋次ページの見開き画像を保存 / Save current + next page as a spread image
-- **Save All** — 全ページを一括保存 (プログレスバー付き) / Save all pages with progress bar
-- **出力形式 / Format** — PNG / JPEG 95% / WebP 95%
-- **解像度 / Resolution** — 2x スケールで高品質出力 / 2x scale for high-quality output
-
-## 技術スタック / Tech Stack
-
-- [PDF.js](https://mozilla.github.io/pdf.js/) 4.9.155 — PDF rendering (CDN)
-- Vanilla JavaScript (ES Modules)
-- 単一HTMLファイル、依存なし / Single HTML file, no dependencies
+[open comic-viewer](https://id-fa.github.io/simple-pdf-viewer-with-screenshot/webapp/comic-viewer.html)
 
 ## ファイル構成 / File Structure
 
 ```
 pdf-viewer-with-screenshot/
-├── pdf-viewer.html    # PDF-only viewer
-├── comic-viewer.html  # Universal viewer (PDF + CBZ/CBR/CB7)
+├── pdf-viewer.html    # PDF専用ビューア / PDF-only viewer
+├── comic-viewer.html  # 汎用ビューア / Universal viewer (PDF + CBZ/CBR/CB7/EPUB)
 ├── README.md          # This file
-├── comic-viewer.md    # Comic Viewer documentation
 └── CLAUDE.md          # AI development guide
 ```
+
+---
+
+## pdf-viewer.html
+
+PDF専用の軽量ビューア。サーバー不要、`file://` で動作する。
+
+A lightweight PDF-only viewer. No server required, works with `file://`.
+
+### 使い方 / Usage
+
+1. `pdf-viewer.html` をブラウザで直接開く / Open `pdf-viewer.html` directly in your browser
+2. 「Open PDF」ボタンまたはドラッグ＆ドロップでPDFを読み込む / Load a PDF via "Open PDF" button or drag & drop
+3. ページを閲覧・画像として保存 / Browse pages and save as images
+
+### 依存 / Dependencies
+
+- [PDF.js](https://mozilla.github.io/pdf.js/) v4.9.155 (CDN)
+
+---
+
+## comic-viewer.html
+
+PDF / CBZ / CBR / CB7 / EPUB に対応する汎用コミックビューア。
+
+A universal comic viewer supporting PDF / CBZ / CBR / CB7 / EPUB.
+
+### 対応形式 / Supported Formats
+
+| 形式 / Format | 拡張子 / Extension | ライブラリ / Library |
+|------|--------|-----------|
+| PDF | `.pdf` | [PDF.js](https://mozilla.github.io/pdf.js/) v4.9.155 |
+| CBZ | `.cbz`, `.zip` | [libarchive.js](https://github.com/nika-begiashvili/libarchivejs) v2.0.2 (WASM) |
+| CBR | `.cbr`, `.rar` | libarchive.js v2.0.2 (WASM) |
+| CB7 | `.cb7`, `.7z` | libarchive.js v2.0.2 (WASM) |
+| EPUB | `.epub` | libarchive.js v2.0.2 (WASM) ※固定レイアウトのみ / Fixed-layout only |
+
+アーカイブ内の画像ファイル (JPEG, PNG, WebP, GIF, BMP, AVIF, JXL, TIFF) を自動検出して表示します。
+
+Image files within archives are automatically detected and displayed.
+
+> **EPUB について / About EPUB**: 固定レイアウト(画像ベース)のみ対応。リフロー型EPUBには [BiBI](https://id-fa.github.io/bibi-extension-ImageExporter/DEMO/) をお試しください。 / Only fixed-layout (image-based) EPUBs are supported. For reflowable EPUBs, try [BiBI](https://id-fa.github.io/bibi-extension-ImageExporter/DEMO/).
+
+### 起動 / Getting Started
+
+`file://` では WASM Worker が動作しないため、ローカル HTTP サーバーが必要です。
+
+A local HTTP server is required because WASM Workers do not work with `file://`.
+
+```bash
+# Python
+python -m http.server 8000
+
+# PHP
+php -S localhost:8000
+
+# Node.js (npx)
+npx serve .
+```
+
+ブラウザで `http://localhost:8000/comic-viewer.html` を開きます。
+
+Open `http://localhost:8000/comic-viewer.html` in your browser.
+
+---
+
+## 共通機能 / Common Features
+
+以下の機能は両ビューアに共通です。 / The following features are shared by both viewers.
+
+### ビューア操作 / Viewer Controls
+
+| 操作 / Control | 説明 / Description |
+|------|------|
+| `<` / `>` ボタン | ページ送り / Page navigation |
+| ページ番号入力 | 任意ページにジャンプ / Jump to a specific page |
+| Single / Spread | 単ページ / 見開き切替 / Toggle single / two-page spread |
+| Right (R2L) / Left (L2R) | 綴じ方向 / Binding direction (R2L=日本漫画, L2R=洋書) |
+| Cover | 表紙を単独ページとして扱う / Treat cover as standalone page |
+| HQ | PDF縮小時の高品質モード / High-quality PDF downscale mode |
+| 0° / 90° / 180° / 270° | ページ回転 / Page rotation |
+| 50% ~ 300% / Fit | 表示スケール / Display scale |
+| Pan | ドラッグで画面パン / Drag to pan (scroll) |
+| Map | ミニマップ表示 / Show minimap |
+| Thumbs / Bookmarks | サイドバー切替 / Sidebar tabs |
+
+### キーボード・タッチ操作 / Keyboard & Touch
+
+| 操作 / Input | R2L (右綴じ) | L2R (左綴じ) |
+|------|-------------|-------------|
+| ← / 画面左端タップ | 次ページ / Next | 前ページ / Prev |
+| → / 画面右端タップ | 前ページ / Prev | 次ページ / Next |
+| ↑ | 前ページ / Prev | 前ページ / Prev |
+| ↓ | 次ページ / Next | 次ページ / Next |
+| Home | 最初のページ / First page | 最初のページ / First page |
+| End | 最後のページ / Last page | 最後のページ / Last page |
+
+| 操作 / Input | 説明 / Description |
+|------|------|
+| 画面中央タップ / `H` キー | UI表示/非表示トグル / Toggle UI visibility |
+| `Escape` | UI再表示 / Show UI |
+| 左右スワイプ | ページ送り (スマホ対応) / Page navigation (touch) |
+
+### 画像エクスポート / Image Export
+
+| ボタン / Button | 動作 / Action |
+|--------|------|
+| Save Page | 現在のページを保存 (見開き時は2ページ結合) / Save current page (merged in spread) |
+| Save 2P | 現在+次ページの見開きを保存 / Save current + next as spread |
+| Save All | 全ページを連番で保存 / Save all pages sequentially |
+
+- **出力形式 / Format**: PNG / JPEG 95% / WebP 95%
+- **解像度 / Resolution**: PDF は 2x スケール、アーカイブ画像はネイティブ解像度 / PDF at 2x scale, archive images at native resolution
+- **回転 / Rotation**: 回転設定が適用された状態でエクスポートされる (見開き結合保存を含む) / Rotation setting is applied to exports (including spread merge saves)
+
+### しおり (ブックマーク) / Bookmarks
+
+- **手動しおり**: サムネイル上の `●` マーカーをクリックして設定/解除 / Click `●` marker on thumbnail to set/unset
+- **自動しおり**: 最後に開いたページ (last read) と到達最深ページ (furthest) を自動記録 / Auto-records last read and furthest page
+- **しおり一覧**: Bookmarksタブにサムネイル付きで表示、クリックでジャンプ / Displayed with thumbnails in Bookmarks tab
+- **管理**: 現在の本のしおり消去、全消去、JSON export/import / Clear per book, clear all, JSON export/import
+- **データ共有**: 両ビューアで同じ localStorage キーを使用 / Both viewers share the same localStorage keys
+
+### アノテーションコメント (PDF) / Annotation Comments
+
+PDFにアノテーションコメントがある場合、左下にフローティングボタン (💬) が表示されます。クリックでモーダル表示。
+
+When a PDF contains annotation comments, a floating button (💬) appears. Click to view in a modal grouped by page.
+
+---
+
+## comic-viewer.html 固有機能 / comic-viewer.html Specific Features
+
+### ソート順 (アーカイブ時のみ) / Sort Order (Archives Only)
+
+| ソート / Sort | 動作 / Behavior | 例 / Example |
+|--------|------|-----|
+| Natural (デフォルト) | 数字を数値比較 / Numeric comparison | `img_1 → img_2 → img_10 → img_100` |
+| Lexical | 文字コード順 / Dictionary order | `img_1 → img_10 → img_100 → img_2` |
+| Timestamp | 更新日時順 / By modification date | 古い→新しい / Oldest → Newest |
+
+### 二重アーカイブ / Nested Archives
+
+CBZ 内に複数のアーカイブが含まれている場合:
+
+When a CBZ contains multiple archive files:
+
+1. 外側を展開し内部アーカイブの一覧を表示 / Extract outer, show list of inner archives
+2. 展開したい内部アーカイブを1つ選択 / Select one inner archive
+3. 選択分のみを展開・表示 / Extract and display only the selected one
+
+### ZIPファイル名エンコーディング修正 / ZIP Filename Encoding Fix
+
+Windows で作成された ZIP/CBZ の Shift-JIS ファイル名の文字化けを自動修正。ZIP の中央ディレクトリを直接パースして正しいファイル名を復元します。
+
+Automatically fixes garbled Shift-JIS filenames in Windows-created ZIP/CBZ files by parsing the ZIP central directory.
+
+---
+
+## 技術メモ / Technical Notes
+
+### 技術スタック / Tech Stack
+
+- [PDF.js](https://mozilla.github.io/pdf.js/) v4.9.155 — PDF rendering (CDN)
+- [libarchive.js](https://github.com/nika-begiashvili/libarchivejs) v2.0.2 — Archive extraction (CDN, WASM, comic-viewer.html only)
+- Vanilla JavaScript (ES Modules)
+- 単一HTMLファイル、フレームワーク不使用 / Single HTML files, no frameworks
+
+### libarchive.js WASM の CDN 読み込み / Loading WASM from CDN
+
+クロスオリジン制約のワークアラウンド: / Cross-origin workaround:
+
+1. `worker-bundle.js` を CDN から `fetch()` でテキスト取得 / Fetch as text from CDN
+2. `import.meta.url` を CDN URL に置換 / Replace with actual CDN URL
+3. `Blob` → `blob:` URL で Worker 起動 / Launch Worker via blob: URL
+
+```
+libarchive.js (7.9KB) ── import ──→ CDN module
+worker-bundle.js (60KB) ── fetch → patch → blob: URL → Worker
+libarchive.wasm (979KB) ── Worker が CDN から自動 fetch / auto-fetched by Worker
+```
+
+### 遅延読み込み / Lazy Loading
+
+libarchive.js は初回のアーカイブファイル読み込み時に動的 `import()` されます。PDF のみ使用する場合は WASM のダウンロードは発生しません。
+
+libarchive.js is dynamically `import()`ed on first archive load. WASM download does not occur if only PDFs are used.

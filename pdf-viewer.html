@@ -171,6 +171,12 @@ label.check input { cursor: pointer; }
       <option value="3">300%</option>
       <option value="fit" selected>Fit</option>
     </select>
+    <select id="rotateSelect">
+      <option value="0">0°</option>
+      <option value="90">90°</option>
+      <option value="180">180°</option>
+      <option value="270">270°</option>
+    </select>
     <select id="formatSelect">
       <option value="image/png">PNG</option>
       <option value="image/jpeg">JPEG 95%</option>
@@ -243,6 +249,7 @@ const viewMode = document.getElementById('viewMode');
 const bindDir = document.getElementById('bindDir');
 const coverCheck = document.getElementById('coverCheck');
 const scaleSelect = document.getElementById('scaleSelect');
+const rotateSelect = document.getElementById('rotateSelect');
 const formatSelect = document.getElementById('formatSelect');
 const saveBtn = document.getElementById('saveBtn');
 const saveLBtn = document.getElementById('saveLBtn');
@@ -739,6 +746,22 @@ function nextPage(pageNum) {
   return maxShown + 1 <= totalPages ? canonicalPage(maxShown + 1) : null;
 }
 
+// Rotation
+function getRotation() { return parseInt(rotateSelect.value) || 0; }
+function rotateCanvas(srcCanvas) {
+  const deg = getRotation();
+  if (deg === 0) return srcCanvas;
+  const w = srcCanvas.width, h = srcCanvas.height;
+  const rc = document.createElement('canvas');
+  if (deg === 90 || deg === 270) { rc.width = h; rc.height = w; }
+  else { rc.width = w; rc.height = h; }
+  const ctx = rc.getContext('2d');
+  ctx.translate(rc.width / 2, rc.height / 2);
+  ctx.rotate(deg * Math.PI / 180);
+  ctx.drawImage(srcCanvas, -w / 2, -h / 2);
+  return rc;
+}
+
 // Get render scale, accounting for spread (two pages side by side)
 function isUIHidden() { return document.body.classList.contains('ui-hidden'); }
 
@@ -746,13 +769,17 @@ function getScale(page, forSpread) {
   const val = scaleSelect.value;
   if (val === 'fit') {
     const vp = page.getViewport({ scale: 1 });
+    const rot = getRotation();
+    const isRotated = (rot === 90 || rot === 270);
+    const docW = isRotated ? vp.height : vp.width;
+    const docH = isRotated ? vp.width : vp.height;
     const sidebarOpen = sidebar.classList.contains('open') && !isUIHidden();
     const sidebarW = sidebarOpen ? 170 : 0;
     const maxW = window.innerWidth - sidebarW - 32;
     const headerH = isUIHidden() ? 0 : 60;
     const maxH = window.innerHeight - headerH - 24;
     const divisor = forSpread ? 2 : 1;
-    return Math.min((maxW / divisor) / vp.width, maxH / vp.height, 3);
+    return Math.min((maxW / divisor) / docW, maxH / docH, 3);
   }
   return parseFloat(val);
 }
@@ -861,8 +888,8 @@ async function renderView(num) {
       for (const pn of pages) {
         const container = document.createElement('div');
         container.className = 'page-container';
-        const canvas = await renderPageToCanvas(pn, scale);
-        container.appendChild(canvas);
+        const rawCanvas = await renderPageToCanvas(pn, scale);
+        container.appendChild(rotateCanvas(rawCanvas));
         const label = document.createElement('div');
         label.className = 'page-label';
         label.textContent = `${pn}`;
@@ -882,8 +909,8 @@ async function renderView(num) {
       // Single page
       const container = document.createElement('div');
       container.className = 'page-container';
-      const canvas = await renderPageToCanvas(pages[0]);
-      container.appendChild(canvas);
+      const rawCanvas = await renderPageToCanvas(pages[0]);
+      container.appendChild(rotateCanvas(rawCanvas));
       const label = document.createElement('div');
       label.className = 'page-label';
       label.textContent = `${pages[0]} / ${totalPages}`;
@@ -982,7 +1009,8 @@ function saveCanvas(canvas, name) {
 }
 
 async function exportPageCanvas(pageNum) {
-  return renderPageToCanvas(pageNum, 2);
+  const canvas = await renderPageToCanvas(pageNum, 2);
+  return rotateCanvas(canvas);
 }
 
 async function saveCurrent() {
@@ -1188,6 +1216,7 @@ viewMode.addEventListener('change', () => { if (pdfDoc) renderView(currentPage);
 bindDir.addEventListener('change', () => { if (pdfDoc) renderView(currentPage); });
 coverCheck.addEventListener('change', () => { if (pdfDoc) renderView(currentPage); });
 scaleSelect.addEventListener('change', () => { if (pdfDoc) renderView(currentPage); });
+rotateSelect.addEventListener('change', () => { if (pdfDoc) renderView(currentPage); });
 hqPdfCheck.addEventListener('change', () => { if (pdfDoc) { renderView(currentPage); renderThumbnails(); } });
 
 // Actions
