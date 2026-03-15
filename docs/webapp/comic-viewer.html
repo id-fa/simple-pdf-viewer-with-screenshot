@@ -871,7 +871,7 @@ async function buildFilenameMap(fileOrBlob, name) {
 }
 
 // ---- Image helpers ----
-const IMAGE_EXTS = /\.(jpe?g|png|webp|gif|bmp|avif|jxl|tiff?)$/i;
+const IMAGE_EXTS = /\.(jpe?g|png|webp|gif|bmp|avif|jxl|tiff?|heic|heif)$/i;
 const ARCHIVE_EXTS = /\.(cbz|zip|cbr|rar|cb7|7z|epub)$/i;
 
 function loadImageFromBlob(blob) {
@@ -1466,7 +1466,8 @@ async function loadImageEntries(imageFiles, archiveFileName) {
   for (let i = 0; i < imageFiles.length; i++) {
     setProgress(((i + 1) / imageFiles.length) * 100);
     const f = imageFiles[i];
-    const img = await loadImageFromBlob(f.file);
+    let img;
+    try { img = await loadImageFromBlob(f.file); } catch { continue; } // skip unsupported formats
     const animated = await isAnimatedImage(f.file);
     archiveImagesUnsorted.push({
       name: f.name,

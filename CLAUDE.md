@@ -54,7 +54,7 @@
 ### 状態管理
 - `docType` — `'pdf'` | `'archive'`
 - `pdfDoc` — PDF.js ドキュメント (PDF時)
-- `archiveImages[]` — ソート済み画像配列 (アーカイブ時) `{name, blob, img, width, height, lastModified}`
+- `archiveImages[]` — ソート済み画像配列 (アーカイブ時) `{name, blob, img, width, height, lastModified, animated}`
 - `archiveImagesUnsorted[]` — 展開順の画像配列 (ソート切替用の元データ)
 - `currentPage` / `totalPages` / `rendering` — pdf-viewer.html と同じ
 
@@ -69,6 +69,11 @@
 2. 内部アーカイブを検出 → 選択ダイアログ表示 (ファイル名 + サイズ)
 3. ユーザーが選んだ内部アーカイブのみを展開 → 画像をロード・表示
 4. ファイル名表示: `外側.cbz > 内側.cbz (Np)`
+
+### 対応画像形式
+- `IMAGE_EXTS`: JPEG, PNG, WebP, GIF, BMP, AVIF, JXL, TIFF, HEIC, HEIF
+- HEIC/HEIF は Safari のみ対応 (Chrome/Firefox 非対応)
+- ブラウザ非対応の形式は `loadImageEntries` で `loadImageFromBlob` 失敗時にスキップ
 
 ### 画像エクスポート
 - PDF: 2x スケール (pdf-viewer.html と同じ)
