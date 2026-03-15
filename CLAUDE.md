@@ -77,6 +77,14 @@
 - 見開き表示時: `Save Page` ボタンが `Save p{左ページ番号}` / `Save p{右ページ番号}` の2つに置き換わる
 - 回転設定が適用された状態でエクスポートされる
 
+### アニメーション画像再生 (comic-viewer.html)
+- `isAnimatedImage(blob)` — GIF (画像ブロック 0x2C が2つ以上) / WebP (RIFF内 "ANIM" チャンク) / APNG (PNG内 "acTL" チャンク) を判定
+- `loadImageEntries` で各画像に `animated` フラグを付与
+- アニメーション画像ページには左下に "GIF ▶" バッジを表示 (`addGifBadge()`)
+- バッジクリックでモーダルが開き、blob URL の `<img>` でアニメーション再生
+- canvas 表示は静止画 (1フレーム目)、モーダルでのみアニメーション再生
+- モーダルは背景クリックまたは Escape キーで閉じる
+
 ### 実行要件
 - ローカル HTTP サーバー必須 (`python -m http.server`, `php -S localhost:8000` 等)
 - `file://` では WASM Worker が動作しない
