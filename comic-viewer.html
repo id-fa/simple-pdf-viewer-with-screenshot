@@ -1107,7 +1107,7 @@ function addGifBadge(container, pageNum) {
   if (!entry || !entry.animated) return;
   const badge = document.createElement('div');
   badge.className = 'gif-badge';
-  badge.textContent = 'GIF ▶';
+  badge.textContent = '▶ Play';
   badge.addEventListener('click', e => { e.stopPropagation(); showGifModal(entry.blob); });
   container.appendChild(badge);
 }
