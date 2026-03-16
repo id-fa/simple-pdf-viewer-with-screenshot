@@ -1114,8 +1114,72 @@ async function saveAll() {
   saveAllBtn.disabled = false;
 }
 
+// Show a password input dialog for PDF files
+function showPasswordDialogPDF(fileName, errorMsg) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed; inset:0; z-index:500; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center;';
+
+    const dialog = document.createElement('div');
+    dialog.style.cssText = 'background:#16213e; border:1px solid #0f3460; border-radius:10px; padding:20px 24px; max-width:400px; width:90%; display:flex; flex-direction:column;';
+
+    const title = document.createElement('div');
+    title.style.cssText = 'font-size:14px; font-weight:600; margin-bottom:12px;';
+    title.textContent = `🔒 パスワード付きPDF`;
+
+    const desc = document.createElement('div');
+    desc.style.cssText = 'font-size:12px; color:#888; margin-bottom:12px;';
+    desc.textContent = `${fileName} はパスワードで保護されています。`;
+
+    const input = document.createElement('input');
+    input.type = 'password';
+    input.placeholder = 'パスワードを入力';
+    input.style.cssText = 'width:100%; padding:8px 10px; margin-bottom:12px; background:#1a2540; border:1px solid #333; border-radius:6px; color:#e0e0e0; font-size:13px; box-sizing:border-box;';
+
+    const errEl = document.createElement('div');
+    errEl.style.cssText = 'font-size:12px; color:#ff6b6b; margin-bottom:8px;';
+    if (errorMsg) { errEl.textContent = errorMsg; } else { errEl.style.display = 'none'; }
+
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex; justify-content:flex-end; gap:8px;';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'キャンセル';
+    cancelBtn.addEventListener('click', () => { overlay.remove(); resolve(null); });
+
+    const okBtn = document.createElement('button');
+    okBtn.textContent = 'OK';
+    okBtn.addEventListener('click', () => {
+      const pw = input.value;
+      if (!pw) { errEl.textContent = 'パスワードを入力してください'; errEl.style.display = 'block'; return; }
+      overlay.remove();
+      resolve(pw);
+    });
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') okBtn.click();
+      if (e.key === 'Escape') cancelBtn.click();
+    });
+
+    btnRow.append(cancelBtn, okBtn);
+    dialog.append(title, desc, input, errEl, btnRow);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    input.focus();
+  });
+}
+
 async function loadPDF(data, name) {
-  pdfDoc = await pdfjsLib.getDocument({ data }).promise;
+  const loadingTask = pdfjsLib.getDocument({ data });
+  loadingTask.onPassword = (updatePassword, reason) => {
+    const msg = reason === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD
+      ? 'パスワードが正しくありません。再入力してください。' : null;
+    showPasswordDialogPDF(name || 'document.pdf', msg).then(pw => {
+      if (pw === null) updatePassword(''); // triggers error → catch below
+      else updatePassword(pw);
+    });
+  };
+  pdfDoc = await loadingTask.promise;
   totalPages = pdfDoc.numPages;
   fileName = name || 'document.pdf';
   currentPage = 1;
@@ -1138,7 +1202,10 @@ fileInput.addEventListener('change', async e => {
   if (!file) return;
   currentFileHash = await generateFileHash(file);
   const buf = await file.arrayBuffer();
-  await loadPDF(buf, file.name);
+  try { await loadPDF(buf, file.name); } catch (err) {
+    if (/password/i.test(err.message)) { showToast('PDF を開けませんでした', 3000); return; }
+    throw err;
+  }
 });
 
 // Drag & drop
@@ -1159,7 +1226,10 @@ document.addEventListener('drop', async e => {
   if (file && file.type === 'application/pdf') {
     currentFileHash = await generateFileHash(file);
     const buf = await file.arrayBuffer();
-    await loadPDF(buf, file.name);
+    try { await loadPDF(buf, file.name); } catch (err) {
+      if (/password/i.test(err.message)) { showToast('PDF を開けませんでした', 3000); return; }
+      throw err;
+    }
   }
 });
 

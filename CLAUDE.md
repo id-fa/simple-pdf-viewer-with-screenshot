@@ -184,6 +184,18 @@
 - comic-viewer.html の二重アーカイブ時は外側+内側ファイル名を結合してハッシュ生成
 - サイドバーの `top` は ResizeObserver でヘッダー高さに追従
 
+### パスワード保護ファイル対応
+- **PDF** (両ビューア共通): PDF.js の `onPassword` コールバックでパスワード入力ダイアログを表示
+  - `showPasswordDialogPDF(fileName, errorMsg)` — パスワード入力ダイアログ (Promise ベース)
+  - 間違ったパスワード入力時: PDF.js が `PasswordResponses.INCORRECT_PASSWORD` で再コールバック → エラーメッセージ付きで再表示
+  - キャンセル時: 空文字列を `updatePassword()` に渡してエラーを発生させ、呼び出し側の try-catch でトースト表示
+- **アーカイブ** (comic-viewer.html): libarchive.js の `hasEncryptedData()` / `usePassword()` で対応
+  - `showPasswordDialog(archiveName)` — アーカイブ用パスワード入力ダイアログ
+  - `extractArchiveWithPassword(file, fnMap, loadingEl)` — 暗号化検出 → パスワード入力 → 展開の一連フロー
+  - ヘッダーで暗号化を検出できないケース (ZIP個別エントリ暗号化等): `extractFiles()` のエラーメッセージで検出しリトライ
+  - 二重アーカイブの内部アーカイブもパスワード付きに対応
+  - ※暗号化ファイル名の7zは libarchive の制限で非対応の可能性あり
+
 ### アノテーションコメント表示 (PDF)
 - PDF読み込み時に全ページの `page.getAnnotations()` を走査し、`contents` を持つアノテーションを収集
 - コメントが1件以上ある場合、左下にフローティングボタン (💬 + 件数バッジ) を表示
