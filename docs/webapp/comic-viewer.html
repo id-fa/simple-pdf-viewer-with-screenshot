@@ -479,11 +479,13 @@ function initSidebarBookmarks() {
   bmTab.className = 'sidebar-tab';
   bmTab.dataset.tab = 'bookmarks';
   bmTab.textContent = 'Bookmarks';
+  bmTab.title = 'しおり一覧を表示 / Show bookmarks';
   bmTab.addEventListener('click', () => switchSidebarTab('bookmarks'));
   const thTab = document.createElement('button');
   thTab.className = 'sidebar-tab active';
   thTab.dataset.tab = 'thumbs';
   thTab.textContent = 'Thumbs';
+  thTab.title = 'サムネイル一覧を表示 / Show thumbnails';
   thTab.addEventListener('click', () => switchSidebarTab('thumbs'));
   tabBar.append(bmTab, thTab);
   sidebar.appendChild(tabBar);
@@ -491,6 +493,12 @@ function initSidebarBookmarks() {
   // Bookmarks panel
   bookmarkPanel = document.createElement('div');
   bookmarkPanel.className = 'sidebar-panel';
+
+  bookmarkSettingsEl = document.createElement('div');
+  bookmarkSettingsEl.className = 'bookmark-settings';
+  bookmarkSettingsEl.innerHTML = '<label style="cursor:pointer" title="しおり機能の有効/無効を切替 / Enable or disable bookmark feature"><input type="checkbox" id="bookmarkEnabledCheck"> Bookmarks</label>';
+  bookmarkPanel.appendChild(bookmarkSettingsEl);
+
   bookmarkListEl = document.createElement('div');
   bookmarkListEl.className = 'bookmark-list';
   bookmarkPanel.appendChild(bookmarkListEl);
@@ -499,11 +507,6 @@ function initSidebarBookmarks() {
   // Thumbs panel
   thumbsPanel = document.createElement('div');
   thumbsPanel.className = 'sidebar-panel active';
-
-  bookmarkSettingsEl = document.createElement('div');
-  bookmarkSettingsEl.className = 'bookmark-settings';
-  bookmarkSettingsEl.innerHTML = '<label style="cursor:pointer"><input type="checkbox" id="bookmarkEnabledCheck"> Bookmarks</label>';
-  thumbsPanel.appendChild(bookmarkSettingsEl);
 
   const check = bookmarkSettingsEl.querySelector('input');
   check.checked = isBookmarkEnabled();
@@ -526,11 +529,11 @@ function initSidebarBookmarks() {
   bookmarkMgmtEl = document.createElement('div');
   bookmarkMgmtEl.className = 'bookmark-management';
   bookmarkMgmtEl.innerHTML = `<div class="bookmark-mgmt-title">Bookmark Management</div>
-    <button id="clearBookmarksThis">Clear this book</button>
-    <button id="clearBookmarksAll">Clear all books</button>
+    <button id="clearBookmarksThis" title="現在の本のしおりを全て消去 / Clear bookmarks for current book">Clear this book</button>
+    <button id="clearBookmarksAll" title="全ての本のしおりを消去 / Clear bookmarks for all books">Clear all books</button>
     <div class="bookmark-mgmt-row">
-      <button id="exportBookmarks">Export</button>
-      <button id="importBookmarks">Import</button>
+      <button id="exportBookmarks" title="しおりデータをJSONファイルに書き出し / Export bookmarks as JSON file">Export</button>
+      <button id="importBookmarks" title="JSONファイルからしおりデータを読み込み / Import bookmarks from JSON file">Import</button>
     </div>
     <input type="file" id="importBookmarksFile" accept=".json" style="display:none">`;
   bookmarkPanel.appendChild(bookmarkMgmtEl);
@@ -626,7 +629,7 @@ function renderBookmarkList() {
   if (!currentFileHash || !isBookmarkEnabled()) {
     const msg = document.createElement('div');
     msg.className = 'bookmark-empty';
-    msg.textContent = !isBookmarkEnabled() ? 'Thumbs タブで Bookmarks を有効にしてください' : 'ファイルを開いてください';
+    msg.textContent = !isBookmarkEnabled() ? 'Bookmarks タブで Bookmarks を有効にしてください' : 'ファイルを開いてください';
     bookmarkListEl.appendChild(msg);
     return;
   }
@@ -714,8 +717,10 @@ function updateBookmarkMarkers() {
 
     if (isManual) {
       marker.classList.add('active');
+      marker.title = 'しおりを外す / Remove bookmark';
     } else {
       marker.classList.remove('active');
+      marker.title = 'しおりを付ける / Add bookmark';
     }
   });
 }
