@@ -29,6 +29,7 @@
 - ファイル名: `{PDFファイル名}_{ページ番号}.{ext}` (ゼロパディング)
 - 見開き表示時: `Save Page` ボタンが `Save p{左ページ番号}` / `Save p{右ページ番号}` の2つに置き換わる
 - 回転設定が適用された状態でエクスポートされる
+- クリップボードコピー対応 (詳細は共通セクション参照)
 
 ## comic-viewer.html
 
@@ -81,6 +82,7 @@
 - ファイル名: `{ファイル名}_{ページ番号}.{ext}` (ゼロパディング)
 - 見開き表示時: `Save Page` ボタンが `Save p{左ページ番号}` / `Save p{右ページ番号}` の2つに置き換わる
 - 回転設定が適用された状態でエクスポートされる
+- クリップボードコピー対応 (詳細は共通セクション参照)
 
 ### アニメーション画像再生 (comic-viewer.html)
 - `isAnimatedImage(blob)` — GIF (画像ブロック 0x2C が2つ以上) / WebP (RIFF内 "ANIM" チャンク) / APNG (PNG内 "acTL" チャンク) を判定
@@ -195,6 +197,18 @@
   - ヘッダーで暗号化を検出できないケース (ZIP個別エントリ暗号化等): `extractFiles()` のエラーメッセージで検出しリトライ
   - 二重アーカイブの内部アーカイブもパスワード付きに対応
   - ※暗号化ファイル名の7zは libarchive の制限で非対応の可能性あり
+
+### クリップボードコピー (両ビューア共通)
+- `formatSelect` に **Clipboard (View)** と **Clipboard (Page)** の2つのオプションを追加
+- **Clipboard (Page)**: ページ全体を 2x スケール (PDF) またはネイティブ解像度 (アーカイブ) で PNG としてクリップボードにコピー
+  - `copyCanvasToClipboard(canvas)` — `canvas.toBlob()` → `navigator.clipboard.write()` + `ClipboardItem`
+  - Save All ボタンを無効化 (一括コピーは無意味)
+- **Clipboard (View)**: 現在ビューポートに表示されているエリアのみをキャプチャしてクリップボードにコピー
+  - `captureVisibleArea()` — ビューア内の全 canvas のビューポート可視矩形を計算し、1枚の canvas に合成
+  - Save All と Save 2P ボタンを無効化
+- `isClipboardMode()` / `isClipboardView()` — formatSelect の値から判定
+- `updateFormatButtons()` — formatSelect の change イベントで Save All / Save 2P の disabled を制御
+- `saveCanvas()` 内でクリップボードモードを判定し、ファイル保存の代わりにクリップボードコピーを実行
 
 ### フルスクリーンモード (Full チェックボックス)
 - **ON**: `document.documentElement.requestFullscreen()` でブラウザフルスクリーン化

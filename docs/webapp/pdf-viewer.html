@@ -213,6 +213,8 @@ label.check input { cursor: pointer; }
       <option value="image/png">PNG</option>
       <option value="image/jpeg">JPEG 95%</option>
       <option value="image/webp">WebP 95%</option>
+      <option value="clipboard-view">Clipboard (View)</option>
+      <option value="clipboard-page">Clipboard (Page)</option>
     </select>
     <button id="saveBtn" class="primary" disabled title="現在のページを画像として保存 / Save current page as image">Save Page</button>
     <button id="saveLBtn" class="primary" disabled style="display:none" title="左側のページを画像として保存 / Save left page as image">Save L</button>
@@ -1054,7 +1056,74 @@ function baseName() {
   return fileName.replace(/\.pdf$/i, '');
 }
 
+function isClipboardMode() { return formatSelect.value.startsWith('clipboard'); }
+function isClipboardView() { return formatSelect.value === 'clipboard-view'; }
+
+function updateFormatButtons() {
+  const cb = isClipboardMode();
+  const cbv = isClipboardView();
+  if (pdfDoc) {
+    saveAllBtn.disabled = cb;
+    spreadBtn.disabled = cbv;
+  }
+}
+
+formatSelect.addEventListener('change', updateFormatButtons);
+
+async function copyCanvasToClipboard(canvas) {
+  try {
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    showToast('Copied to clipboard');
+  } catch (e) {
+    showToast('Clipboard copy failed: ' + e.message, 3000);
+  }
+}
+
+function captureVisibleArea() {
+  const canvases = viewer.querySelectorAll('.page-container canvas');
+  if (!canvases.length) return null;
+  // Compute bounding box of all visible canvas areas clipped to viewport
+  const vt = 0, vl = 0, vr = window.innerWidth, vb = window.innerHeight;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const rects = [];
+  for (const c of canvases) {
+    const r = c.getBoundingClientRect();
+    const cx1 = Math.max(r.left, vl), cy1 = Math.max(r.top, vt);
+    const cx2 = Math.min(r.right, vr), cy2 = Math.min(r.bottom, vb);
+    if (cx1 >= cx2 || cy1 >= cy2) continue;
+    rects.push({ canvas: c, cx1, cy1, cx2, cy2, r });
+    minX = Math.min(minX, cx1); minY = Math.min(minY, cy1);
+    maxX = Math.max(maxX, cx2); maxY = Math.max(maxY, cy2);
+  }
+  if (!rects.length) return null;
+  const w = Math.round(maxX - minX), h = Math.round(maxY - minY);
+  const out = document.createElement('canvas');
+  out.width = w; out.height = h;
+  const ctx = out.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, w, h);
+  for (const { canvas: c, cx1, cy1, cx2, cy2, r } of rects) {
+    const scaleX = c.width / r.width, scaleY = c.height / r.height;
+    const sx = (cx1 - r.left) * scaleX, sy = (cy1 - r.top) * scaleY;
+    const sw = (cx2 - cx1) * scaleX, sh = (cy2 - cy1) * scaleY;
+    const dx = Math.round(cx1 - minX), dy = Math.round(cy1 - minY);
+    ctx.drawImage(c, sx, sy, sw, sh, dx, dy, Math.round(cx2 - cx1), Math.round(cy2 - cy1));
+  }
+  return out;
+}
+
 function saveCanvas(canvas, name) {
+  if (isClipboardMode()) {
+    if (isClipboardView()) {
+      const viewCanvas = captureVisibleArea();
+      if (viewCanvas) copyCanvasToClipboard(viewCanvas);
+      else showToast('No visible content');
+    } else {
+      copyCanvasToClipboard(canvas);
+    }
+    return;
+  }
   const mime = formatSelect.value;
   const ext = getExt(mime);
   const quality = getQuality(mime);
@@ -1244,6 +1313,7 @@ async function loadPDF(data, name) {
   fileInfo.textContent = `${fileName} (${totalPages}p)`;
 
   [saveBtn, saveLBtn, saveRBtn, spreadBtn, saveAllBtn, thumbToggle].forEach(b => b.disabled = false);
+  updateFormatButtons();
 
   await renderView(1);
   renderThumbnails();
