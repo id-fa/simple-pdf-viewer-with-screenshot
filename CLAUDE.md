@@ -196,6 +196,33 @@
   - 二重アーカイブの内部アーカイブもパスワード付きに対応
   - ※暗号化ファイル名の7zは libarchive の制限で非対応の可能性あり
 
+### フルスクリーンモード (Full チェックボックス)
+- **ON**: `document.documentElement.requestFullscreen()` でブラウザフルスクリーン化
+- **OFF**: `document.exitFullscreen()` で解除
+- ブラウザ側の操作 (Escキー等) でフルスクリーンが解除された場合、`fullscreenchange` イベントでチェック状態を同期
+- Fit スケール時はフルスクリーン切替後に `renderView()` を再実行してサイズ調整
+- WebKit プレフィックス (`webkitRequestFullscreen` / `webkitExitFullscreen`) にも対応
+- 両ビューア (pdf-viewer.html, comic-viewer.html) に実装
+
+### テキストモード (Text チェックボックス、pdf-viewer.html のみ)
+- **ON**: PDF テキストの選択・コピー・検索が可能なモードに切替
+  - PDF.js `TextLayer` API でキャンバス上に透明テキストスパンをオーバーレイ
+  - `--scale-factor` CSS変数を明示的に設定し、テキストレイヤーのサイズをキャンバスに一致させる
+  - テキスト選択: `color: transparent` + `::selection` でブラウザネイティブの選択・コピー動作
+  - 回転対応: 0°/90°/180°/270° に応じてテキストレイヤーに CSS `transform: rotate()` + 位置オフセットを適用
+  - クリック・タッチスワイプ・ホイールによるページ送りを無効化 (テキスト選択優先)
+  - キーボード矢印キーでのページ送りは維持
+- **OFF** (デフォルト): テキストレイヤー非表示、通常のページ送り動作
+- **検索ツールバー**: Text ON時にヘッダー下部に表示
+  - テキスト入力欄 (300ms デバウンス) + マッチ数表示 (`N / M`) + ▲/▼ ナビゲーションボタン
+  - 全ページの `page.getTextContent()` を走査してマッチを収集 (結果は `pageTextCache` にキャッシュ)
+  - マッチしたスパンを黄色 (`rgba(255,220,0,0.35)`) でハイライト、現在のマッチはオレンジ (`rgba(255,120,0,0.55)`)
+  - Enter / Shift+Enter で次/前のマッチへ移動 (ページ跨ぎ対応、自動ジャンプ)
+  - Escape で Text モードを解除
+  - `position: sticky` で表示、`updateSidebarTop()` でヘッダー高さに追従
+- 状態変数: `textMode`, `pageTextCache` (ページ番号→テキストデータ), `searchMatches[]`, `currentMatchIdx`
+- PDF再読み込み時にキャッシュをクリア
+
 ### アノテーションコメント表示 (PDF)
 - PDF読み込み時に全ページの `page.getAnnotations()` を走査し、`contents` を持つアノテーションを収集
 - コメントが1件以上ある場合、左下にフローティングボタン (💬 + 件数バッジ) を表示

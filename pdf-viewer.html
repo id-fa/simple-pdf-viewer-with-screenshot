@@ -120,6 +120,21 @@ label.check input { cursor: pointer; }
 .annotation-item-meta { display: flex; gap: 8px; margin-bottom: 3px; color: #888; font-size: 11px; }
 .annotation-item-type { background: #333; padding: 1px 5px; border-radius: 3px; font-size: 10px; }
 .annotation-item-content { white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
+
+/* Text layer */
+.text-layer { position: absolute; left: 0; top: 0; overflow: hidden; line-height: 1; text-size-adjust: none; -webkit-text-size-adjust: none; z-index: 1; }
+.text-layer span { color: transparent; position: absolute; white-space: pre; transform-origin: 0% 0%; cursor: text; }
+.text-layer span::selection { background: rgba(0, 80, 255, 0.3); }
+.text-layer .highlight { background: rgba(255, 220, 0, 0.35); border-radius: 1px; }
+.text-layer .current-match { background: rgba(255, 120, 0, 0.55); }
+
+/* Search bar */
+.search-bar { position: sticky; top: 49px; z-index: 99; background: #16213e; border-bottom: 1px solid #0f3460; padding: 6px 16px; display: none; align-items: center; gap: 8px; transition: top 0.3s; }
+.ui-hidden .search-bar { top: 0; }
+.search-bar.open { display: flex; }
+.search-bar input[type="text"] { flex: 1; max-width: 300px; padding: 5px 10px; border: 1px solid #333; border-radius: 6px; background: #2d2d44; color: #e0e0e0; font-size: 13px; outline: none; }
+.search-bar input[type="text"]:focus { border-color: #4a9eff; }
+.search-bar .search-info { font-size: 12px; color: #888; min-width: 50px; text-align: center; }
 </style>
 </head>
 <body>
@@ -162,6 +177,14 @@ label.check input { cursor: pointer; }
       <input type="checkbox" id="minimapCheck">
       Map
     </label>
+    <label class="check" title="フルスクリーン表示 / Toggle fullscreen mode">
+      <input type="checkbox" id="fullscreenCheck">
+      Full
+    </label>
+    <label class="check" title="テキスト選択モード: テキスト選択と検索が可能 / Text mode: Enable text selection and search">
+      <input type="checkbox" id="textModeCheck">
+      Text
+    </label>
     <select id="scaleSelect" title="表示倍率 / Zoom level">
       <option value="0.5">50%</option>
       <option value="0.75">75%</option>
@@ -192,6 +215,13 @@ label.check input { cursor: pointer; }
 </div>
 
 <div class="progress-bar"><div class="fill" id="progressFill"></div></div>
+
+<div class="search-bar" id="searchBar">
+  <input type="text" id="searchInput" placeholder="テキスト検索..." title="PDFテキスト検索 / Search text in PDF">
+  <span class="search-info" id="searchInfo"></span>
+  <button id="searchPrev" title="前の検索結果 / Previous match">&#9650;</button>
+  <button id="searchNext" title="次の検索結果 / Next match">&#9660;</button>
+</div>
 
 <div class="sidebar" id="sidebar"></div>
 
@@ -237,6 +267,10 @@ let totalPages = 0;
 let fileName = '';
 let rendering = false;
 let currentFileHash = null;
+let textMode = false;
+let pageTextCache = {};
+let searchMatches = [];
+let currentMatchIdx = -1;
 
 // DOM
 const fileInput = document.getElementById('fileInput');
@@ -271,6 +305,10 @@ const annotationFab = document.getElementById('annotationFab');
 const annotationBadge = document.getElementById('annotationBadge');
 const annotationOverlay = document.getElementById('annotationOverlay');
 const annotationBody = document.getElementById('annotationBody');
+const textModeCheck = document.getElementById('textModeCheck');
+const searchBar = document.getElementById('searchBar');
+const searchInput = document.getElementById('searchInput');
+const searchInfo = document.getElementById('searchInfo');
 
 // ---- Annotation comments ----
 let pdfAnnotations = []; // [{page, type, author, content, date}]
@@ -895,6 +933,10 @@ async function renderView(num) {
         container.className = 'page-container';
         const rawCanvas = await renderPageToCanvas(pn, scale);
         container.appendChild(rotateCanvas(rawCanvas));
+        if (textMode) {
+          const tl = await buildTextLayer(pn, scale, rawCanvas.width, rawCanvas.height);
+          if (tl) container.appendChild(tl);
+        }
         const label = document.createElement('div');
         label.className = 'page-label';
         label.textContent = `${pn}`;
@@ -916,6 +958,10 @@ async function renderView(num) {
       container.className = 'page-container';
       const rawCanvas = await renderPageToCanvas(pages[0]);
       container.appendChild(rotateCanvas(rawCanvas));
+      if (textMode) {
+        const tl = await buildTextLayer(pages[0], null, rawCanvas.width, rawCanvas.height);
+        if (tl) container.appendChild(tl);
+      }
       const label = document.createElement('div');
       label.className = 'page-label';
       label.textContent = `${pages[0]} / ${totalPages}`;
@@ -1179,6 +1225,9 @@ async function loadPDF(data, name) {
   totalPages = pdfDoc.numPages;
   fileName = name || 'document.pdf';
   currentPage = 1;
+  pageTextCache = {};
+  searchMatches = [];
+  currentMatchIdx = -1;
 
   pageCount.textContent = `/ ${totalPages}`;
   pageInput.max = totalPages;
@@ -1321,6 +1370,7 @@ saveAllBtn.addEventListener('click', saveAll);
 viewer.addEventListener('wheel', e => {
   if (!pdfDoc || rendering) return;
   if (panCheck.checked) return;
+  if (textMode) return;
   e.preventDefault();
   if (e.deltaY > 0) {
     const p = nextPage(currentPage);
@@ -1337,6 +1387,7 @@ viewer.addEventListener('click', e => {
   if (!pdfDoc) return;
   if (e.target.closest('button, input, select, a, label')) return;
   if (panDragged) { panDragged = false; return; }
+  if (textMode) return;
   if (panCheck.checked) {
     const rect = viewer.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -1373,6 +1424,7 @@ function updateSidebarTop() {
     const h = header.offsetHeight + 'px';
     sidebar.style.top = h;
     progressFill.parentElement.style.top = h;
+    searchBar.style.top = h;
   }
 }
 new ResizeObserver(updateSidebarTop).observe(header);
@@ -1408,6 +1460,7 @@ viewer.addEventListener('touchstart', e => {
 viewer.addEventListener('touchend', e => {
   if (!pdfDoc) return;
   if (panCheck.checked) return;
+  if (textMode) return;
   const t = e.changedTouches[0];
   const dx = t.clientX - touchStartX;
   const dy = t.clientY - touchStartY;
@@ -1553,6 +1606,227 @@ window.addEventListener('scroll', () => {
 });
 window.addEventListener('resize', () => {
   if (minimapCheck.checked && pdfDoc) updateMinimap();
+});
+
+// ---- Text mode & Search ----
+let searchDebounce = null;
+
+textModeCheck.addEventListener('change', () => {
+  textMode = textModeCheck.checked;
+  searchBar.classList.toggle('open', textMode);
+  if (pdfDoc) renderView(currentPage);
+  if (textMode) setTimeout(() => searchInput.focus(), 50);
+  else {
+    searchMatches = [];
+    currentMatchIdx = -1;
+    searchInput.value = '';
+    searchInfo.textContent = '';
+  }
+});
+
+async function getPageTextData(pageNum) {
+  if (pageTextCache[pageNum]) return pageTextCache[pageNum];
+  const page = await pdfDoc.getPage(pageNum);
+  const textContent = await page.getTextContent();
+  let fullText = '';
+  const items = [];
+  for (const item of textContent.items) {
+    if (item.str === undefined) continue;
+    items.push({ str: item.str, offset: fullText.length });
+    fullText += item.str;
+  }
+  pageTextCache[pageNum] = { items, fullText, textContent };
+  return pageTextCache[pageNum];
+}
+
+async function buildTextLayer(pageNum, scale, canvasW, canvasH) {
+  try {
+    if (!pdfjsLib.TextLayer) return null;
+    const page = await pdfDoc.getPage(pageNum);
+    const s = scale || getScale(page, isSpread() && getSpreadPages(currentPage).length === 2);
+    const viewport = page.getViewport({ scale: s });
+    const cached = await getPageTextData(pageNum);
+
+    const div = document.createElement('div');
+    div.className = 'text-layer';
+    div.dataset.page = pageNum;
+    const w = Math.round(viewport.width);
+    const h = Math.round(viewport.height);
+
+    const tl = new pdfjsLib.TextLayer({
+      textContentSource: cached.textContent,
+      container: div,
+      viewport: viewport,
+    });
+    await tl.render();
+
+    // PDF.js TextLayer uses --scale-factor CSS var for sizing; ensure it's set
+    div.style.setProperty('--scale-factor', s);
+    // Override any CSS-var-based width/height with concrete pixel values
+    div.style.width = w + 'px';
+    div.style.height = h + 'px';
+
+    // Apply rotation
+    const deg = getRotation();
+    div.style.position = 'absolute';
+    div.style.transformOrigin = '0 0';
+    if (deg === 90) {
+      div.style.left = h + 'px'; div.style.top = '0';
+      div.style.transform = 'rotate(90deg)';
+    } else if (deg === 180) {
+      div.style.left = w + 'px'; div.style.top = h + 'px';
+      div.style.transform = 'rotate(180deg)';
+    } else if (deg === 270) {
+      div.style.left = '0'; div.style.top = w + 'px';
+      div.style.transform = 'rotate(270deg)';
+    } else {
+      div.style.left = '0'; div.style.top = '0';
+    }
+
+    applyHighlights(pageNum, div);
+    return div;
+  } catch (e) {
+    console.warn('TextLayer failed:', e);
+    return null;
+  }
+}
+
+function applyHighlights(pageNum, textLayerDiv) {
+  if (!searchMatches.length) return;
+  const cached = pageTextCache[pageNum];
+  if (!cached) return;
+  const pageMatches = searchMatches.filter(m => m.page === pageNum);
+  if (!pageMatches.length) return;
+
+  const spans = Array.from(textLayerDiv.querySelectorAll('span'));
+  let offset = 0;
+  const spanRanges = [];
+  for (const span of spans) {
+    const len = span.textContent.length;
+    if (len > 0) {
+      spanRanges.push({ span, start: offset, end: offset + len });
+      offset += len;
+    }
+  }
+
+  for (const match of pageMatches) {
+    const mStart = match.offset;
+    const mEnd = match.offset + match.length;
+    const isCurrent = searchMatches[currentMatchIdx] === match;
+    for (const { span, start, end } of spanRanges) {
+      if (start < mEnd && end > mStart) {
+        span.classList.add('highlight');
+        if (isCurrent) span.classList.add('current-match');
+      }
+    }
+  }
+}
+
+async function performSearch() {
+  const query = searchInput.value.trim();
+  searchMatches = [];
+  currentMatchIdx = -1;
+
+  if (!query || !pdfDoc) {
+    searchInfo.textContent = '';
+    if (pdfDoc && textMode) renderView(currentPage);
+    return;
+  }
+
+  const q = query.toLowerCase();
+  for (let p = 1; p <= totalPages; p++) {
+    const { fullText } = await getPageTextData(p);
+    const text = fullText.toLowerCase();
+    let idx = 0;
+    while ((idx = text.indexOf(q, idx)) !== -1) {
+      searchMatches.push({ page: p, offset: idx, length: query.length });
+      idx += 1;
+    }
+  }
+
+  if (searchMatches.length > 0) {
+    const spread = getSpreadPages(currentPage);
+    let found = searchMatches.findIndex(m => spread.includes(m.page));
+    if (found < 0) found = searchMatches.findIndex(m => m.page >= Math.min(...spread));
+    if (found < 0) found = 0;
+    currentMatchIdx = found;
+    const match = searchMatches[currentMatchIdx];
+    if (!spread.includes(match.page)) {
+      await renderView(match.page);
+    } else {
+      await renderView(currentPage);
+    }
+  } else {
+    if (textMode) renderView(currentPage);
+  }
+  updateSearchInfo();
+}
+
+function updateSearchInfo() {
+  if (searchMatches.length > 0) {
+    searchInfo.textContent = `${currentMatchIdx + 1} / ${searchMatches.length}`;
+  } else {
+    searchInfo.textContent = searchInput.value.trim() ? '0 / 0' : '';
+  }
+}
+
+async function navigateMatch(dir) {
+  if (!searchMatches.length) return;
+  currentMatchIdx = (currentMatchIdx + dir + searchMatches.length) % searchMatches.length;
+  const match = searchMatches[currentMatchIdx];
+  const spread = getSpreadPages(currentPage);
+  if (!spread.includes(match.page)) {
+    await renderView(match.page);
+  } else {
+    await renderView(currentPage);
+  }
+  updateSearchInfo();
+  const el = viewer.querySelector('.current-match');
+  if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+searchInput.addEventListener('input', () => {
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(performSearch, 300);
+});
+
+searchInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    if (e.shiftKey) navigateMatch(-1);
+    else navigateMatch(1);
+  }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    textModeCheck.checked = false;
+    textModeCheck.dispatchEvent(new Event('change'));
+  }
+});
+
+document.getElementById('searchPrev').addEventListener('click', () => navigateMatch(-1));
+document.getElementById('searchNext').addEventListener('click', () => navigateMatch(1));
+
+// ---- Fullscreen ----
+const fullscreenCheck = document.getElementById('fullscreenCheck');
+
+fullscreenCheck.addEventListener('change', () => {
+  if (fullscreenCheck.checked) {
+    const el = document.documentElement;
+    (el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen).call(el);
+  } else {
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      (document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen).call(document);
+    }
+  }
+});
+
+document.addEventListener('fullscreenchange', () => {
+  fullscreenCheck.checked = !!document.fullscreenElement;
+  if (pdfDoc && scaleSelect.value === 'fit') setTimeout(() => renderView(currentPage), 100);
+});
+document.addEventListener('webkitfullscreenchange', () => {
+  fullscreenCheck.checked = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  if (pdfDoc && scaleSelect.value === 'fit') setTimeout(() => renderView(currentPage), 100);
 });
 
 

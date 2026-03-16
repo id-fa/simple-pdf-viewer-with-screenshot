@@ -173,6 +173,10 @@ label.check input { cursor: pointer; }
       <input type="checkbox" id="minimapCheck">
       Map
     </label>
+    <label class="check" title="フルスクリーン表示 / Toggle fullscreen mode">
+      <input type="checkbox" id="fullscreenCheck">
+      Full
+    </label>
     <select id="scaleSelect" title="表示倍率 / Zoom level">
       <option value="0.5">50%</option>
       <option value="0.75">75%</option>
@@ -2130,6 +2134,29 @@ window.addEventListener('scroll', () => {
 });
 window.addEventListener('resize', () => {
   if (minimapCheck.checked && totalPages > 0) updateMinimap();
+});
+
+// ---- Fullscreen ----
+const fullscreenCheck = document.getElementById('fullscreenCheck');
+
+fullscreenCheck.addEventListener('change', () => {
+  if (fullscreenCheck.checked) {
+    const el = document.documentElement;
+    (el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen).call(el);
+  } else {
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      (document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen).call(document);
+    }
+  }
+});
+
+document.addEventListener('fullscreenchange', () => {
+  fullscreenCheck.checked = !!document.fullscreenElement;
+  if (totalPages > 0 && scaleSelect.value === 'fit') setTimeout(() => renderView(currentPage), 100);
+});
+document.addEventListener('webkitfullscreenchange', () => {
+  fullscreenCheck.checked = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  if (totalPages > 0 && scaleSelect.value === 'fit') setTimeout(() => renderView(currentPage), 100);
 });
 
 </script>
