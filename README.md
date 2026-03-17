@@ -123,6 +123,8 @@ Open `http://localhost:8000/comic-viewer.html` in your browser.
 | 画面中央タップ / `H` キー | UI表示/非表示トグル / Toggle UI visibility |
 | `C` キー | Cover (表紙モード) トグル / Toggle cover mode |
 | `B` キー | 綴じ方向切替 (R2L ↔ L2R) / Toggle binding direction |
+| `L` キー | Last Read ページにジャンプ / Jump to last read page |
+| `M` キー | Max Read ページにジャンプ / Jump to max read page |
 | `Escape` | UI再表示 / Show UI |
 | 左右スワイプ | ページ送り (スマホ対応) / Page navigation (touch) |
 
@@ -141,7 +143,7 @@ Open `http://localhost:8000/comic-viewer.html` in your browser.
 ### しおり (ブックマーク) / Bookmarks
 
 - **手動しおり**: サムネイル上の `●` マーカーをクリックして設定/解除 / Click `●` marker on thumbnail to set/unset
-- **自動しおり**: 最後に開いたページ (last read) と到達最深ページ (furthest) を自動記録 / Auto-records last read and furthest page
+- **自動しおり**: 最後に開いたページ (last read) と到達最深ページ (max read) を自動記録 / Auto-records last read and max read page
 - **しおり一覧**: Bookmarksタブにサムネイル付きで表示、クリックでジャンプ / Displayed with thumbnails in Bookmarks tab
 - **管理**: 現在の本のしおり消去、全消去、JSON export/import / Clear per book, clear all, JSON export/import
 - **データ共有**: 両ビューアで同じ localStorage キーを使用 / Both viewers share the same localStorage keys

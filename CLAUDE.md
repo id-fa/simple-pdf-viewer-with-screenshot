@@ -125,14 +125,23 @@
 - H キー: ヘッダーUI表示/非表示トグル
 - C キー: Cover (表紙モード) トグル
 - B キー: 綴じ方向 (R2L ↔ L2R) トグル
+- L キー: Last Read ページにジャンプ (しおり未有効時はエラーダイアログ)
+- M キー: Max Read ページにジャンプ (しおり未有効時はエラーダイアログ)
 - Escape: UI再表示
 - 画面左右1/3タップ: ページ送り、中央1/3タップ: UI表示/非表示トグル
 - 左右スワイプ (タッチ): ページ送り (スマートフォン対応)
 
+### ヘッダーレイアウト
+- `.header` は `flex-wrap: wrap` で、`.title-row` と `.controls` の2要素
+- `.title-row` にアプリ名 (`<h1>`) とファイル名 (`#fileInfo`) を横並び配置
+- ウィンドウ幅が狭い場合は `.controls` が次行に折り返し (最大2行)
+- ヘッダー高さの変化は ResizeObserver で監視し、Fit スケール時に `renderView()` を再実行
+- `window.resize` イベントでも Fit スケール時に再描画
+
 ### UI非表示モード
 - ヘッダーを `max-height: 0` で畳む方式 (DOM上の高さが0になり隙間が出ない)
 - `body.ui-hidden` クラスでサイドバー・プログレスバー・ビューアの位置も連動
-- Fit スケール時はヘッダー分の高さも使って拡大表示 (`getScale()` が `isUIHidden()` を参照)
+- Fit スケール時はヘッダー分の高さも使って拡大表示 (`getScale()` が `isUIHidden()` を参照、`header.offsetHeight` で動的取得)
 - `toggleUI(forceShow?)` — トグル関数、トランジション完了後に `renderView()` を再実行
 
 ### ミニマップ (Map チェックボックス)
@@ -181,7 +190,7 @@
 - localStorage にファイルハッシュ (SHA-256先頭16文字、`file.name + '|' + file.size`) とページ番号を保存
 - `BOOKMARK_STORE_FILENAME` 変数 (デフォルト `false`) でファイル名の保存可否を制御（プライバシー保護）
 - **手動しおり**: サムネイル上の `●` マーカークリックでトグル
-- **自動しおり**: `lastRead` (最後に表示したページ) / `furthest` (到達最深ページ) を `renderView()` 時に自動更新
+- **自動しおり**: `lastRead` (最後に表示したページ) / `maxRead` (到達最深ページ) を `renderView()` 時に自動更新
 - Bookmarksタブ: しおり付きページをサムネイル表示（canvas クローン）、ヘッダーにページ番号・種別表示
 - Thumbsタブ: 従来サムネイル + しおりマーカー、自動しおりはページ番号ラベルのオレンジ背景で表現
 - 管理機能 (Bookmarksタブ下部): Clear this book / Clear all / Export JSON / Import JSON

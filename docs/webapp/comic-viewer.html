@@ -318,6 +318,8 @@ label.check input { cursor: pointer; }
         <div class="help-row"><span class="help-key">H</span><span class="help-desc">Toggle header UI visibility</span></div>
         <div class="help-row"><span class="help-key">C</span><span class="help-desc">Toggle cover mode (1st page alone)</span></div>
         <div class="help-row"><span class="help-key">B</span><span class="help-desc">Toggle binding direction (R2L / L2R)</span></div>
+        <div class="help-row"><span class="help-key">L</span><span class="help-desc">Jump to Last Read page</span></div>
+        <div class="help-row"><span class="help-key">M</span><span class="help-desc">Jump to Max Read page</span></div>
         <div class="help-row"><span class="help-key">Escape</span><span class="help-desc">Show UI / Close modals</span></div>
         <div class="help-row"><span class="help-key">?</span><span class="help-desc">Show this help</span></div>
       </div>
@@ -511,9 +513,9 @@ function saveAllBookmarks(data) {
 }
 
 function getBookmarkForFile(hash) {
-  if (!hash) return { manual: [], lastRead: null, furthest: null };
+  if (!hash) return { manual: [], lastRead: null, maxRead: null };
   const all = loadAllBookmarks();
-  return all[hash] || { manual: [], lastRead: null, furthest: null };
+  return all[hash] || { manual: [], lastRead: null, maxRead: null };
 }
 
 function setBookmarkForFile(hash, data) {
@@ -526,7 +528,7 @@ function updateAutoBookmarks(pageNum) {
   if (!isBookmarkEnabled() || !currentFileHash) return;
   const bm = getBookmarkForFile(currentFileHash);
   bm.lastRead = pageNum;
-  bm.furthest = Math.max(bm.furthest || 0, pageNum);
+  bm.maxRead = Math.max(bm.maxRead || 0, pageNum);
   if (BOOKMARK_STORE_FILENAME && fileName) bm.fileName = fileName;
   setBookmarkForFile(currentFileHash, bm);
 }
@@ -720,7 +722,7 @@ function renderBookmarkList() {
   }
 
   const bm = getBookmarkForFile(currentFileHash);
-  const hasAny = bm.lastRead || bm.furthest || (bm.manual && bm.manual.length > 0);
+  const hasAny = bm.lastRead || bm.maxRead || (bm.manual && bm.manual.length > 0);
   if (!hasAny) {
     const msg = document.createElement('div');
     msg.className = 'bookmark-empty';
@@ -748,13 +750,13 @@ function renderBookmarkList() {
   }
 
   if (bm.lastRead) {
-    const label = bm.furthest === bm.lastRead
-      ? `p.${bm.lastRead} last read / furthest`
+    const label = bm.maxRead === bm.lastRead
+      ? `p.${bm.lastRead} last read / max read`
       : `p.${bm.lastRead} last read`;
     addBookmarkThumb(bm.lastRead, 'auto', label);
   }
-  if (bm.furthest && bm.furthest !== bm.lastRead) {
-    addBookmarkThumb(bm.furthest, 'auto', `p.${bm.furthest} furthest`);
+  if (bm.maxRead && bm.maxRead !== bm.lastRead) {
+    addBookmarkThumb(bm.maxRead, 'auto', `p.${bm.maxRead} max read`);
   }
   if (bm.manual) {
     for (const p of bm.manual) {
@@ -767,7 +769,7 @@ function updateBookmarkMarkers() {
   if (!thumbsContainer) return;
   const thumbs = thumbsContainer.querySelectorAll('.thumb');
   const enabled = isBookmarkEnabled();
-  const bm = currentFileHash ? getBookmarkForFile(currentFileHash) : { manual: [], lastRead: null, furthest: null };
+  const bm = currentFileHash ? getBookmarkForFile(currentFileHash) : { manual: [], lastRead: null, maxRead: null };
 
   thumbs.forEach((thumb, i) => {
     const pageNum = i + 1;
@@ -776,7 +778,7 @@ function updateBookmarkMarkers() {
 
     // Auto bookmark: highlight page number label
     if (numLabel) {
-      const isAuto = enabled && (bm.lastRead === pageNum || bm.furthest === pageNum);
+      const isAuto = enabled && (bm.lastRead === pageNum || bm.maxRead === pageNum);
       numLabel.classList.toggle('auto-bookmark', isAuto);
     }
 
@@ -2119,6 +2121,22 @@ document.addEventListener('keydown', e => {
     bindDir.value = isR2L() ? 'L2R' : 'R2L';
     bindDir.dispatchEvent(new Event('change'));
     showToast('Binding: ' + bindDir.value);
+    return;
+  }
+  if (e.key === 'l' || e.key === 'L') {
+    e.preventDefault();
+    if (!isBookmarkEnabled()) { alert('しおり機能が有効になっていません\nBookmarks is not enabled'); return; }
+    const bm = currentFileHash ? getBookmarkForFile(currentFileHash) : null;
+    if (bm && bm.lastRead) { renderView(bm.lastRead); showToast('Last Read: p.' + bm.lastRead); }
+    else showToast('Last Read が記録されていません');
+    return;
+  }
+  if (e.key === 'm' || e.key === 'M') {
+    e.preventDefault();
+    if (!isBookmarkEnabled()) { alert('しおり機能が有効になっていません\nBookmarks is not enabled'); return; }
+    const bm = currentFileHash ? getBookmarkForFile(currentFileHash) : null;
+    if (bm && bm.maxRead) { renderView(bm.maxRead); showToast('Max Read: p.' + bm.maxRead); }
+    else showToast('Max Read が記録されていません');
     return;
   }
   if (isScrollMode()) {
