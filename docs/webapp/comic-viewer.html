@@ -247,6 +247,9 @@ label.check input { cursor: pointer; }
         <div class="filter-row"><span>Contrast</span><input type="range" id="filterContrast" min="50" max="150" value="100"><span class="filter-val" id="filterContrastVal">100%</span></div>
         <div class="filter-row"><span>Sepia</span><input type="range" id="filterSepia" min="0" max="100" value="0"><span class="filter-val" id="filterSepiaVal">0%</span></div>
         <div class="filter-row"><span>Invert</span><input type="range" id="filterInvert" min="0" max="100" value="0"><span class="filter-val" id="filterInvertVal">0%</span></div>
+        <div class="filter-row"><span>Sharpen</span><input type="range" id="filterSharpen" min="0" max="500" value="0"><span class="filter-val" id="filterSharpenVal">0</span></div>
+        <div class="filter-row"><span>Sh.Radius</span><input type="range" id="filterShRadius" min="5" max="20" value="6" step="1"><span class="filter-val" id="filterShRadiusVal">0.6</span></div>
+        <div class="filter-row"><span>Sh.Thresh</span><input type="range" id="filterShThreshold" min="0" max="255" value="2"><span class="filter-val" id="filterShThresholdVal">2</span></div>
         <button id="filterReset" style="width:100%;font-size:11px;padding:3px;margin-top:4px">Reset</button>
         <div style="display:flex;gap:4px;margin-top:6px;align-items:center"><span style="font-size:11px;color:#888;min-width:34px">Preset</span><button class="filter-preset-save" data-slot="0" title="Save to slot 1" style="font-size:10px;padding:2px 0;flex:1">Save 1</button><button class="filter-preset-save" data-slot="1" title="Save to slot 2" style="font-size:10px;padding:2px 0;flex:1">Save 2</button><button class="filter-preset-save" data-slot="2" title="Save to slot 3" style="font-size:10px;padding:2px 0;flex:1">Save 3</button></div>
         <div style="display:flex;gap:4px;margin-top:3px;align-items:center"><span style="font-size:11px;min-width:34px"></span><button class="filter-preset-load" data-slot="0" title="Load from slot 1" style="font-size:10px;padding:2px 0;flex:1" disabled>Load 1</button><button class="filter-preset-load" data-slot="1" title="Load from slot 2" style="font-size:10px;padding:2px 0;flex:1" disabled>Load 2</button><button class="filter-preset-load" data-slot="2" title="Load from slot 3" style="font-size:10px;padding:2px 0;flex:1" disabled>Load 3</button></div>
@@ -341,9 +344,12 @@ label.check input { cursor: pointer; }
 
 <script type="module">
 import * as pdfjsModule from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min.mjs';
+import Pica from 'https://cdn.jsdelivr.net/npm/pica@9.0.1/+esm';
 
 const pdfjsLib = pdfjsModule;
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.mjs';
+
+const picaInstance = new Pica({ features: ['js', 'wasm'] });
 
 // Bookmark config
 const BOOKMARK_STORE_FILENAME = false;
@@ -1134,47 +1140,17 @@ function getScale(dims, forSpread) {
   return parseFloat(val);
 }
 
-// High-quality downscale: step-halve until close to target, then final draw
-async function drawImageHighQuality(ctx, img, targetW, targetH) {
-  const bmp = await createImageBitmap(img, {
-    resizeWidth: targetW, resizeHeight: targetH, resizeQuality: 'high'
-  });
-  ctx.drawImage(bmp, 0, 0);
-  bmp.close();
-}
-
-// Unsharp mask sharpening for downscaled images
-function applySharpen(ctx, w, h, amount = 0.4) {
-  const src = ctx.getImageData(0, 0, w, h);
-  const dst = ctx.createImageData(w, h);
-  const s = src.data, d = dst.data;
-  const t = amount;
-  for (let y = 1; y < h - 1; y++) {
-    for (let x = 1; x < w - 1; x++) {
-      const i = (y * w + x) * 4;
-      for (let c = 0; c < 3; c++) {
-        const val = s[i + c] * (1 + 4 * t)
-          - s[((y - 1) * w + x) * 4 + c] * t
-          - s[((y + 1) * w + x) * 4 + c] * t
-          - s[(y * w + x - 1) * 4 + c] * t
-          - s[(y * w + x + 1) * 4 + c] * t;
-        d[i + c] = val < 0 ? 0 : val > 255 ? 255 : val + 0.5 | 0;
-      }
-      d[i + 3] = s[i + 3];
-    }
+// High-quality downscale using Pica (Lanczos3 + optional unsharp mask)
+async function drawImageHighQuality(ctx, img, targetW, targetH, sharpenOpts = {}) {
+  let src = img;
+  if (!(src instanceof HTMLCanvasElement)) {
+    const tmp = document.createElement('canvas');
+    tmp.width = src.naturalWidth || src.width;
+    tmp.height = src.naturalHeight || src.height;
+    tmp.getContext('2d').drawImage(src, 0, 0);
+    src = tmp;
   }
-  // Copy edge pixels unchanged
-  for (let x = 0; x < w; x++) {
-    let j = x * 4, k = ((h - 1) * w + x) * 4;
-    d[j] = s[j]; d[j+1] = s[j+1]; d[j+2] = s[j+2]; d[j+3] = s[j+3];
-    d[k] = s[k]; d[k+1] = s[k+1]; d[k+2] = s[k+2]; d[k+3] = s[k+3];
-  }
-  for (let y = 0; y < h; y++) {
-    let j = (y * w) * 4, k = (y * w + w - 1) * 4;
-    d[j] = s[j]; d[j+1] = s[j+1]; d[j+2] = s[j+2]; d[j+3] = s[j+3];
-    d[k] = s[k]; d[k+1] = s[k+1]; d[k+2] = s[k+2]; d[k+3] = s[k+3];
-  }
-  ctx.putImageData(dst, 0, 0);
+  await picaInstance.resize(src, ctx.canvas, sharpenOpts);
 }
 
 async function renderPageToCanvas(pageNum, scale) {
@@ -1196,8 +1172,7 @@ async function renderPageToCanvas(pageNum, scale) {
       canvas.width = targetW;
       canvas.height = targetH;
       const ctx = canvas.getContext('2d');
-      await drawImageHighQuality(ctx, fullCanvas, targetW, targetH);
-      applySharpen(ctx, targetW, targetH);
+      await drawImageHighQuality(ctx, fullCanvas, targetW, targetH, getSharpenOpts());
       return canvas;
     }
     const viewport = page.getViewport({ scale: s });
@@ -1215,10 +1190,7 @@ async function renderPageToCanvas(pageNum, scale) {
     canvas.width = Math.round(dims.width * s);
     canvas.height = Math.round(dims.height * s);
     const ctx = canvas.getContext('2d');
-    await drawImageHighQuality(ctx, entry.img, canvas.width, canvas.height);
-    if (hqPdfCheck.checked && s < 1) {
-      applySharpen(ctx, canvas.width, canvas.height);
-    }
+    await drawImageHighQuality(ctx, entry.img, canvas.width, canvas.height, getSharpenOpts());
     return canvas;
   }
 }
@@ -2234,7 +2206,13 @@ bindDir.addEventListener('change', () => { if (totalPages > 0) renderView(curren
 coverCheck.addEventListener('change', () => { if (totalPages > 0) renderView(currentPage); });
 scaleSelect.addEventListener('change', () => { if (totalPages > 0 && !isScrollMode()) renderView(currentPage); });
 rotateSelect.addEventListener('change', () => { if (totalPages > 0 && !isScrollMode()) renderView(currentPage); });
-hqPdfCheck.addEventListener('change', () => { if (totalPages > 0) { if (!isScrollMode()) renderView(currentPage); renderThumbnails(); } });
+hqPdfCheck.addEventListener('change', () => {
+  if (hqPdfCheck.checked && +filterSharpen.value === 0) {
+    filterSharpen.value = 80;
+    applyFilters();
+  }
+  if (totalPages > 0) { if (!isScrollMode()) renderView(currentPage); renderThumbnails(); }
+});
 sortSelect.addEventListener('change', () => {
   if (docType !== 'archive' || archiveImagesUnsorted.length === 0) return;
   applySortOrder();
@@ -2557,6 +2535,9 @@ const filterBrightness = document.getElementById('filterBrightness');
 const filterContrast = document.getElementById('filterContrast');
 const filterSepia = document.getElementById('filterSepia');
 const filterInvert = document.getElementById('filterInvert');
+const filterSharpen = document.getElementById('filterSharpen');
+const filterShRadius = document.getElementById('filterShRadius');
+const filterShThreshold = document.getElementById('filterShThreshold');
 
 filterBtn.addEventListener('click', e => {
   e.stopPropagation();
@@ -2580,6 +2561,9 @@ function applyFilters() {
   document.getElementById('filterContrastVal').textContent = c + '%';
   document.getElementById('filterSepiaVal').textContent = s + '%';
   document.getElementById('filterInvertVal').textContent = inv + '%';
+  document.getElementById('filterSharpenVal').textContent = filterSharpen.value;
+  document.getElementById('filterShRadiusVal').textContent = (+filterShRadius.value / 10).toFixed(1);
+  document.getElementById('filterShThresholdVal').textContent = filterShThreshold.value;
   const parts = [];
   if (b !== '100') parts.push(`brightness(${b}%)`);
   if (c !== '100') parts.push(`contrast(${c}%)`);
@@ -2588,14 +2572,48 @@ function applyFilters() {
   viewer.style.filter = parts.length ? parts.join(' ') : '';
 }
 
+function getSharpenOpts() {
+  const amt = +filterSharpen.value;
+  if (amt <= 0) return {};
+  return { unsharpAmount: amt, unsharpRadius: +filterShRadius.value / 10, unsharpThreshold: +filterShThreshold.value };
+}
+
 [filterBrightness, filterContrast, filterSepia, filterInvert].forEach(el => el.addEventListener('input', applyFilters));
 
+let sharpenDebounce = null;
+function rerenderForSharpen() {
+  if (totalPages === 0) return;
+  if (isScrollMode()) {
+    const sc = viewer.querySelector('.scroll-container');
+    if (sc) sc.remove();
+    renderScrollView(currentPage);
+  } else {
+    renderView(currentPage);
+  }
+}
+function onSharpenInput() {
+  applyFilters();
+  if (+filterSharpen.value > 0 && !hqPdfCheck.checked) {
+    hqPdfCheck.checked = true;
+    hqPdfCheck.dispatchEvent(new Event('change'));
+    return;
+  }
+  clearTimeout(sharpenDebounce);
+  sharpenDebounce = setTimeout(rerenderForSharpen, 300);
+}
+[filterSharpen, filterShRadius, filterShThreshold].forEach(el => el.addEventListener('input', onSharpenInput));
+
 document.getElementById('filterReset').addEventListener('click', () => {
+  const prevSharpen = filterSharpen.value;
   filterBrightness.value = 100;
   filterContrast.value = 100;
   filterSepia.value = 0;
   filterInvert.value = 0;
+  filterSharpen.value = 0;
+  filterShRadius.value = 6;
+  filterShThreshold.value = 2;
   applyFilters();
+  if (prevSharpen !== '0') rerenderForSharpen();
 });
 
 // Filter presets (3 slots, shared via localStorage)
@@ -2611,14 +2629,14 @@ function updatePresetLoadButtons() {
     const slot = +btn.dataset.slot;
     const p = presets[slot];
     btn.disabled = !p;
-    if (p) btn.title = `B:${p.b} C:${p.c} S:${p.s} I:${p.i}`;
+    if (p) btn.title = `B:${p.b} C:${p.c} S:${p.s} I:${p.i} Sh:${p.sh||0} R:${(p.shr||6)/10} T:${p.sht??2}`;
     else btn.title = `Slot ${slot + 1}: empty`;
   });
 }
 document.querySelectorAll('.filter-preset-save').forEach(btn => btn.addEventListener('click', () => {
   const slot = +btn.dataset.slot;
   const presets = getFilterPresets();
-  presets[slot] = { b: +filterBrightness.value, c: +filterContrast.value, s: +filterSepia.value, i: +filterInvert.value };
+  presets[slot] = { b: +filterBrightness.value, c: +filterContrast.value, s: +filterSepia.value, i: +filterInvert.value, sh: +filterSharpen.value, shr: +filterShRadius.value, sht: +filterShThreshold.value };
   saveFilterPresets(presets);
   updatePresetLoadButtons();
   showToast(`Filter preset ${slot + 1} saved`);
@@ -2627,11 +2645,16 @@ document.querySelectorAll('.filter-preset-load').forEach(btn => btn.addEventList
   const slot = +btn.dataset.slot;
   const p = getFilterPresets()[slot];
   if (!p) return;
+  const prevSharpen = filterSharpen.value;
   filterBrightness.value = p.b;
   filterContrast.value = p.c;
   filterSepia.value = p.s;
   filterInvert.value = p.i;
+  filterSharpen.value = p.sh || 0;
+  filterShRadius.value = p.shr || 6;
+  filterShThreshold.value = p.sht ?? 2;
   applyFilters();
+  if (String(p.sh || 0) !== prevSharpen) rerenderForSharpen();
   showToast(`Filter preset ${slot + 1} loaded`);
 }));
 updatePresetLoadButtons();

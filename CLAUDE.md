@@ -4,8 +4,8 @@
 ブラウザベースのビューア＋画像エクスポートツール群。単一HTMLファイルで完結する設計。
 
 ## ファイル構成
-- `pdf-viewer.html` — PDF専用ビューア (PDF.jsのみ依存)
-- `comic-viewer.html` — 汎用コミックビューア (PDF + CBZ/CBR/CB7対応)
+- `pdf-viewer.html` — PDF専用ビューア (PDF.js + Pica.js 依存)
+- `comic-viewer.html` — 汎用コミックビューア (PDF + CBZ/CBR/CB7対応、PDF.js + Pica.js + libarchive.js 依存)
 
 ## 共通アーキテクチャ
 - **単一ファイル構成**: 各HTMLファイルにHTML/CSS/JSを全て内包
@@ -17,6 +17,7 @@
 
 ### 依存
 - **PDF.js** v4.9.155 — CDN (`cdnjs.cloudflare.com`) から ES Module
+- **Pica.js** v9.0.1 — CDN (`cdn.jsdelivr.net`) から ES Module — 高品質画像縮小 (Lanczos3 + unsharp mask)
 
 ### 状態管理
 - `pdfDoc` — PDF.js のドキュメントオブジェクト
@@ -35,6 +36,7 @@
 
 ### 依存
 - **PDF.js** v4.9.155 — CDN (`cdnjs.cloudflare.com`)
+- **Pica.js** v9.0.1 — CDN (`cdn.jsdelivr.net`) から ES Module — 高品質画像縮小 (Lanczos3 + unsharp mask)
 - **libarchive.js** v2.0.2 — CDN (`cdn.jsdelivr.net`) — WASM ベース、遅延読み込み
 
 ### 対応形式
@@ -172,14 +174,16 @@
 - エクスポート (`exportPageCanvas()`): レンダリング後に `rotateCanvas()` を適用 → 見開き結合保存にも反映
 
 ### 高品質縮小 (HQ モード)
-- `drawImageHighQuality()` — `createImageBitmap` + `resizeQuality: 'high'` (Lanczos3 相当) で高品質縮小描画
-- `applySharpen()` — 3x3ラプラシアンカーネルによるアンシャープマスク (amount=0.4)、HQ縮小後に適用
-- **アーカイブ画像** (comic-viewer.html): 常時 `drawImageHighQuality()` 適用、HQチェックON + 縮小時にシャープネスも適用
+- **Pica.js** ベース: Lanczos3 フィルタ + 組み込み unsharp mask で高品質縮小
+- `drawImageHighQuality()` — `picaInstance.resize()` でソース canvas/image をターゲット canvas に縮小描画
+- Pica 初期化: `new Pica({ features: ['js', 'wasm'] })` — Web Worker は CDN ESM 環境で動作しないため無効化
+- **アーカイブ画像** (comic-viewer.html): 常時 Pica 経由で縮小、Filter の Sharpen 値が適用される
 - **PDF** (両ビューア共通): HQ チェックボックスで切替可能
   - OFF (デフォルト): PDF.js が直接ターゲットスケールでレンダリング (軽量)
-  - ON: PDF.js で 1x レンダリング → `drawImageHighQuality()` で縮小 → `applySharpen()` でシャープネス適用 (高品質・重い)
+  - ON: PDF.js で 1x レンダリング → Pica で縮小 + Sharpen 適用 (高品質・重い)
   - `s < 1` (Fit, 50%, 75% 等の縮小表示) の場合のみ HQ パスを通る
   - サムネイルにも適用される
+  - HQ チェック時に Sharpen が 0 なら自動的にデフォルト値 (80) を設定
 
 ### レイアウト中央揃え
 - `.viewer` は `align-items: center` を使わない (拡大時に左端が見切れる問題を回避)
@@ -276,11 +280,19 @@
 
 ### 色調補正フィルター (Filter、両ビューア共通)
 - ヘッダーに **Filter** ボタン + ポップアップ
-- スライダー4種: Brightness (50-150%), Contrast (50-150%), Sepia (0-100%), Invert (0-100%)
-- `applyFilters()` — CSS `filter` プロパティを `.viewer` に適用
-- Reset ボタンで初期値に復帰
+- **CSS フィルター** (即時適用): Brightness (50-150%), Contrast (50-150%), Sepia (0-100%), Invert (0-100%)
+- **シャープネス** (Pica unsharp mask、再レンダリング必要):
+  - Sharpen (0-500): unsharpAmount、シャープネス強度。0 = 無効
+  - Sh.Radius (0.5-2.0): unsharpRadius、ぼかし半径。内部は整数 5-20 で管理し /10 で表示
+  - Sh.Thresh (0-255): unsharpThreshold、適用しきい値。差がこの値以下のピクセルは無視
+  - Sharpen 操作時に HQ 未チェックなら自動的に HQ を ON にする (PDF では HQ パスでのみ Pica が使われるため)
+  - 変更時は 300ms debounce で `rerenderForSharpen()` を実行
+  - `getSharpenOpts()` — スライダー値から Pica の unsharp オプションオブジェクトを返す
+- `applyFilters()` — CSS `filter` プロパティを `.viewer` に適用 + シャープネス値の表示更新
+- Reset ボタンで全スライダーを初期値に復帰 (シャープネスは 0, Radius=0.6, Threshold=2)
 - ポップアップ外クリックで自動クローズ
 - **プリセット保存**: 3スロット (Save 1-3 / Load 1-3)、localStorage キー `viewerFilterPresets` でシステム共通 (ファイル毎ではない)
+  - 保存データ: `{ b, c, s, i, sh, shr, sht }` (旧プリセットとの後方互換: `sh/shr/sht` 未設定時はデフォルト値にフォールバック)
   - Save ボタンで現在のスライダー値を保存、Load ボタンで復元・即時適用
   - 未保存スロットの Load ボタンは disabled、保存済みスロットはツールチップに設定値を表示
 

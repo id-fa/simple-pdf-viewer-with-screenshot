@@ -39,6 +39,7 @@ You can use the viewer directly via GitHub Pages without downloading. Google Ana
 ### 依存 / Dependencies
 
 - [PDF.js](https://mozilla.github.io/pdf.js/) v4.9.155 (CDN)
+- [Pica.js](https://github.com/nodeca/pica) v9.0.1 (CDN) — 高品質画像縮小 (Lanczos3 + unsharp mask) / High-quality image downscaling
 
 ---
 
@@ -106,7 +107,7 @@ Open `http://localhost:8000/comic-viewer.html` in your browser.
 | Single / Spread / Scroll | 単ページ / 見開き / 連続スクロール切替 / Toggle single / spread / scroll |
 | Right (R2L) / Left (L2R) | 綴じ方向 / Binding direction (R2L=日本漫画, L2R=洋書) |
 | Cover | 表紙を単独ページとして扱う / Treat cover as standalone page |
-| HQ | PDF縮小時の高品質モード / High-quality PDF downscale mode |
+| HQ | 高品質縮小モード (Pica.js Lanczos3) / High-quality downscale mode (Pica.js Lanczos3) |
 | 0° / 90° / 180° / 270° | ページ回転 / Page rotation |
 | 50% ~ 300% / Fit | 表示スケール / Display scale |
 | Pan | ドラッグで画面パン / Drag to pan (scroll) |
@@ -173,14 +174,18 @@ Switch viewMode to **Scroll** to display all pages in a continuous vertical scro
 
 Click **Filter** to open the popup and adjust colors with 4 sliders.
 
-| スライダー / Slider | 範囲 / Range |
-|------|------|
-| Brightness | 50% – 150% |
-| Contrast | 50% – 150% |
-| Sepia | 0% – 100% |
-| Invert | 0% – 100% |
+| スライダー / Slider | 範囲 / Range | 説明 / Description |
+|------|------|------|
+| Brightness | 50% – 150% | 明るさ (CSS filter) |
+| Contrast | 50% – 150% | コントラスト (CSS filter) |
+| Sepia | 0% – 100% | セピア (CSS filter) |
+| Invert | 0% – 100% | 色反転 (CSS filter) |
+| Sharpen | 0 – 500 | シャープネス強度 (Pica unsharp mask) |
+| Sh.Radius | 0.5 – 2.0 | シャープネスぼかし半径 / Unsharp blur radius |
+| Sh.Thresh | 0 – 255 | シャープネスしきい値 / Unsharp threshold |
 
-- **プリセット保存**: 3スロット (Save 1-3 / Load 1-3)。localStorage に保存され、両ビューアで共有 / 3 preset slots shared between both viewers via localStorage
+- **Sharpen 操作時**: HQ 未チェックなら自動的に HQ を ON にする / Auto-enables HQ when Sharpen is adjusted
+- **プリセット保存**: 3スロット (Save 1-3 / Load 1-3)。localStorage に保存され、両ビューアで共有。シャープネス設定も含む / 3 preset slots shared between both viewers via localStorage, including sharpness settings
 - **Reset**: 全スライダーを初期値に戻す / Reset all sliders to default
 
 ### アノテーションコメント (PDF) / Annotation Comments
@@ -234,6 +239,7 @@ Automatically fixes garbled Shift-JIS filenames in Windows-created ZIP/CBZ files
 ### 技術スタック / Tech Stack
 
 - [PDF.js](https://mozilla.github.io/pdf.js/) v4.9.155 — PDF rendering (CDN)
+- [Pica.js](https://github.com/nodeca/pica) v9.0.1 — High-quality image downscaling with Lanczos3 + unsharp mask (CDN)
 - [libarchive.js](https://github.com/nika-begiashvili/libarchivejs) v2.0.2 — Archive extraction (CDN, WASM, comic-viewer.html only)
 - Vanilla JavaScript (ES Modules)
 - 単一HTMLファイル、フレームワーク不使用 / Single HTML files, no frameworks
