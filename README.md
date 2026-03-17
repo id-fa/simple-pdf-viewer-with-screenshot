@@ -123,6 +123,7 @@ Open `http://localhost:8000/comic-viewer.html` in your browser.
 | 画面中央タップ / `H` キー | UI表示/非表示トグル / Toggle UI visibility |
 | `C` キー | Cover (表紙モード) トグル / Toggle cover mode |
 | `B` キー | 綴じ方向切替 (R2L ↔ L2R) / Toggle binding direction |
+| `Z` キー | ズームトグル (300% + Pan + Map) / Toggle zoom (300% + Pan + Map) |
 | `L` キー | Last Read ページにジャンプ / Jump to last read page |
 | `M` キー | Max Read ページにジャンプ / Jump to max read page |
 | `Escape` | UI再表示 / Show UI |

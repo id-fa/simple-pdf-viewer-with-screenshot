@@ -325,6 +325,7 @@ label.check input { cursor: pointer; }
         <div class="help-row"><span class="help-key">H</span><span class="help-desc">Toggle header UI visibility</span></div>
         <div class="help-row"><span class="help-key">C</span><span class="help-desc">Toggle cover mode (1st page alone)</span></div>
         <div class="help-row"><span class="help-key">B</span><span class="help-desc">Toggle binding direction (R2L / L2R)</span></div>
+        <div class="help-row"><span class="help-key">Z</span><span class="help-desc">Toggle zoom (300% + Pan + Map)</span></div>
         <div class="help-row"><span class="help-key">L</span><span class="help-desc">Jump to Last Read page</span></div>
         <div class="help-row"><span class="help-key">M</span><span class="help-desc">Jump to Max Read page</span></div>
         <div class="help-row"><span class="help-key">Escape</span><span class="help-desc">Show UI / Close modals</span></div>
@@ -365,6 +366,7 @@ let fileName = '';
 let rendering = false;
 let currentFileHash = null;
 let sessionLastRead = null;
+let zoomStash = null;
 let textMode = false;
 let pageTextCache = {};
 let searchMatches = [];
@@ -1623,6 +1625,27 @@ document.addEventListener('keydown', e => {
     if (!isBookmarkEnabled()) { alert('しおり機能が有効になっていません\nBookmarks is not enabled'); return; }
     if (sessionLastRead) { renderView(sessionLastRead); showToast('Last Read: p.' + sessionLastRead); }
     else showToast('Last Read が記録されていません');
+    return;
+  }
+  if (e.key === 'z' || e.key === 'Z') {
+    e.preventDefault();
+    if (zoomStash) {
+      scaleSelect.value = zoomStash.scale;
+      panCheck.checked = zoomStash.pan;
+      minimapCheck.checked = zoomStash.map;
+      zoomStash = null;
+      scaleSelect.dispatchEvent(new Event('change'));
+      minimapCheck.dispatchEvent(new Event('change'));
+      showToast('Zoom OFF');
+    } else {
+      zoomStash = { scale: scaleSelect.value, pan: panCheck.checked, map: minimapCheck.checked };
+      scaleSelect.value = '3';
+      panCheck.checked = true;
+      minimapCheck.checked = true;
+      scaleSelect.dispatchEvent(new Event('change'));
+      minimapCheck.dispatchEvent(new Event('change'));
+      showToast('Zoom 300% + Pan + Map');
+    }
     return;
   }
   if (e.key === 'm' || e.key === 'M') {
