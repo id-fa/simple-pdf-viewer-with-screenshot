@@ -135,6 +135,36 @@ label.check input { cursor: pointer; }
 .search-bar input[type="text"] { flex: 1; max-width: 300px; padding: 5px 10px; border: 1px solid #333; border-radius: 6px; background: #2d2d44; color: #e0e0e0; font-size: 13px; outline: none; }
 .search-bar input[type="text"]:focus { border-color: #4a9eff; }
 .search-bar .search-info { font-size: 12px; color: #888; min-width: 50px; text-align: center; }
+
+/* Scroll mode */
+.scroll-container { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 16px; }
+.scroll-page { position: relative; background: #222; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+.scroll-page canvas { display: block; }
+.scroll-page .page-label { position: absolute; bottom: -22px; left: 50%; transform: translateX(-50%); font-size: 12px; color: #888; white-space: nowrap; }
+
+/* Filter popup */
+.filter-wrap { display: inline-block; }
+.filter-popup { position: fixed; background: #16213e; border: 1px solid #0f3460; border-radius: 8px; padding: 12px 16px; z-index: 150; min-width: 220px; display: none; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+.filter-popup.open { display: block; }
+.filter-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; }
+.filter-row span:first-child { min-width: 60px; }
+.filter-row input[type="range"] { flex: 1; }
+.filter-val { min-width: 32px; text-align: right; font-size: 11px; color: #888; }
+
+/* Help modal */
+.help-overlay { position: fixed; inset: 0; z-index: 500; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; }
+.help-overlay.open { display: flex; }
+.help-modal { background: #1e1e2e; border: 1px solid #333; border-radius: 10px; width: 90%; max-width: 520px; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.6); }
+.help-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #333; }
+.help-modal-header h2 { font-size: 15px; font-weight: 600; }
+.help-modal-close { background: none; border: none; color: #888; font-size: 20px; cursor: pointer; padding: 0 4px; line-height: 1; }
+.help-modal-close:hover { color: #e0e0e0; }
+.help-modal-body { flex: 1; overflow-y: auto; padding: 12px 16px; }
+.help-section { margin-bottom: 12px; }
+.help-section h3 { font-size: 12px; color: #4a9eff; font-weight: 600; margin-bottom: 6px; padding-bottom: 3px; border-bottom: 1px solid #2a2a3a; }
+.help-row { display: flex; padding: 2px 0; font-size: 12px; }
+.help-key { min-width: 140px; color: #ccc; font-family: monospace; }
+.help-desc { color: #999; }
 </style>
 </head>
 <body>
@@ -153,9 +183,10 @@ label.check input { cursor: pointer; }
       <span class="info" id="pageCount">/ -</span>
       <button id="nextBtn" disabled title="次のページへ / Next page">&gt;</button>
     </div>
-    <select id="viewMode" title="表示モード: 単ページ or 見開き / View mode: Single page or Spread">
+    <select id="viewMode" title="表示モード: 単ページ/見開き/スクロール / View mode: Single/Spread/Scroll">
       <option value="single">Single</option>
       <option value="spread">Spread</option>
+      <option value="scroll">Scroll</option>
     </select>
     <select id="bindDir" title="綴じ方向: 右綴じ(日本の漫画) or 左綴じ(洋書) / Binding: Right-to-Left (manga) or Left-to-Right (western)">
       <option value="R2L">Right (R2L)</option>
@@ -200,6 +231,17 @@ label.check input { cursor: pointer; }
       <option value="180">180°</option>
       <option value="270">270°</option>
     </select>
+    <div class="filter-wrap">
+      <button id="filterBtn" title="色調補正フィルター / Color adjustment filters">Filter</button>
+      <div class="filter-popup" id="filterPopup">
+        <div class="filter-row"><span>Brightness</span><input type="range" id="filterBrightness" min="50" max="150" value="100"><span class="filter-val" id="filterBrightnessVal">100%</span></div>
+        <div class="filter-row"><span>Contrast</span><input type="range" id="filterContrast" min="50" max="150" value="100"><span class="filter-val" id="filterContrastVal">100%</span></div>
+        <div class="filter-row"><span>Sepia</span><input type="range" id="filterSepia" min="0" max="100" value="0"><span class="filter-val" id="filterSepiaVal">0%</span></div>
+        <div class="filter-row"><span>Invert</span><input type="range" id="filterInvert" min="0" max="100" value="0"><span class="filter-val" id="filterInvertVal">0%</span></div>
+        <button id="filterReset" style="width:100%;font-size:11px;padding:3px;margin-top:4px">Reset</button>
+      </div>
+    </div>
+    <button id="helpBtn" title="キーボードショートカット一覧 / Keyboard shortcuts (?)" style="padding:6px 8px">?</button>
     <select id="formatSelect" title="保存形式 / Export image format">
       <option value="image/png">PNG</option>
       <option value="image/jpeg">JPEG 95%</option>
@@ -252,6 +294,46 @@ label.check input { cursor: pointer; }
 </div>
 
 <div class="toast" id="toast"></div>
+
+<div class="help-overlay" id="helpOverlay">
+  <div class="help-modal">
+    <div class="help-modal-header">
+      <h2>Keyboard Shortcuts</h2>
+      <button class="help-modal-close" id="helpClose">&times;</button>
+    </div>
+    <div class="help-modal-body">
+      <div class="help-section">
+        <h3>Navigation</h3>
+        <div class="help-row"><span class="help-key">&larr; / &rarr;</span><span class="help-desc">Previous / Next page (R2L: reversed)</span></div>
+        <div class="help-row"><span class="help-key">&uarr; / &darr;</span><span class="help-desc">Previous / Next page</span></div>
+        <div class="help-row"><span class="help-key">Home / End</span><span class="help-desc">First / Last page</span></div>
+        <div class="help-row"><span class="help-key">Page number input</span><span class="help-desc">Type page number + Enter to jump</span></div>
+      </div>
+      <div class="help-section">
+        <h3>Display</h3>
+        <div class="help-row"><span class="help-key">H</span><span class="help-desc">Toggle header UI visibility</span></div>
+        <div class="help-row"><span class="help-key">C</span><span class="help-desc">Toggle cover mode (1st page alone)</span></div>
+        <div class="help-row"><span class="help-key">B</span><span class="help-desc">Toggle binding direction (R2L / L2R)</span></div>
+        <div class="help-row"><span class="help-key">Escape</span><span class="help-desc">Show UI / Close modals</span></div>
+        <div class="help-row"><span class="help-key">?</span><span class="help-desc">Show this help</span></div>
+      </div>
+      <div class="help-section">
+        <h3>Mouse / Touch</h3>
+        <div class="help-row"><span class="help-key">Click left 1/3</span><span class="help-desc">Previous page (R2L: next)</span></div>
+        <div class="help-row"><span class="help-key">Click right 1/3</span><span class="help-desc">Next page (R2L: previous)</span></div>
+        <div class="help-row"><span class="help-key">Click center 1/3</span><span class="help-desc">Toggle UI visibility</span></div>
+        <div class="help-row"><span class="help-key">Mouse wheel</span><span class="help-desc">Previous / Next page</span></div>
+        <div class="help-row"><span class="help-key">Swipe left / right</span><span class="help-desc">Next / Previous page</span></div>
+        <div class="help-row"><span class="help-key">Drag (Pan mode)</span><span class="help-desc">Scroll viewport</span></div>
+      </div>
+      <div class="help-section">
+        <h3>Text Mode (PDF)</h3>
+        <div class="help-row"><span class="help-key">Enter / Shift+Enter</span><span class="help-desc">Next / Previous search match</span></div>
+        <div class="help-row"><span class="help-key">Escape</span><span class="help-desc">Exit text mode</span></div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script type="module">
 import * as pdfjsModule from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min.mjs';
@@ -809,6 +891,7 @@ function rotateCanvas(srcCanvas) {
 
 // Get render scale, accounting for spread (two pages side by side)
 function isUIHidden() { return document.body.classList.contains('ui-hidden'); }
+function isScrollMode() { return viewMode.value === 'scroll'; }
 
 function getScale(page, forSpread) {
   const val = scaleSelect.value;
@@ -821,6 +904,9 @@ function getScale(page, forSpread) {
     const sidebarOpen = sidebar.classList.contains('open') && !isUIHidden();
     const sidebarW = sidebarOpen ? 170 : 0;
     const maxW = window.innerWidth - sidebarW - 32;
+    if (isScrollMode()) {
+      return Math.min(maxW / docW, 3);
+    }
     const headerH = isUIHidden() ? 0 : 60;
     const maxH = window.innerHeight - headerH - 24;
     const divisor = forSpread ? 2 : 1;
@@ -902,8 +988,118 @@ async function renderPageToCanvas(pageNum, scale) {
   return canvas;
 }
 
+// ---- Scroll mode ----
+let scrollObserver = null;
+let scrollRendered = new Set();
+
+async function renderScrollView(jumpTo) {
+  if (!pdfDoc) return;
+  rendering = true;
+  try {
+    viewer.innerHTML = '';
+    scrollRendered.clear();
+
+    const container = document.createElement('div');
+    container.className = 'scroll-container';
+
+    for (let i = 1; i <= totalPages; i++) {
+      const page = await pdfDoc.getPage(i);
+      const s = getScale(page, false);
+      const vp = page.getViewport({ scale: 1 });
+      const rot = getRotation();
+      const isRotated = rot === 90 || rot === 270;
+      const w = Math.round((isRotated ? vp.height : vp.width) * s);
+      const h = Math.round((isRotated ? vp.width : vp.height) * s);
+
+      const div = document.createElement('div');
+      div.className = 'scroll-page';
+      div.dataset.page = i;
+      div.style.width = w + 'px';
+      div.style.height = h + 'px';
+      const label = document.createElement('div');
+      label.className = 'page-label';
+      label.textContent = `${i} / ${totalPages}`;
+      div.appendChild(label);
+      container.appendChild(div);
+    }
+
+    viewer.appendChild(container);
+
+    if (scrollObserver) scrollObserver.disconnect();
+    scrollObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          const pn = parseInt(entry.target.dataset.page);
+          if (!scrollRendered.has(pn)) renderScrollPage(pn, entry.target);
+        }
+      }
+      updateScrollCurrentPage();
+    }, { rootMargin: '300px 0px' });
+
+    container.querySelectorAll('.scroll-page').forEach(el => scrollObserver.observe(el));
+
+    prevBtn.disabled = true;
+    nextBtn.disabled = true;
+
+    if (jumpTo && jumpTo > 1) {
+      const target = container.querySelector(`[data-page="${jumpTo}"]`);
+      if (target) setTimeout(() => target.scrollIntoView({ behavior: 'instant', block: 'start' }), 50);
+    }
+  } finally {
+    rendering = false;
+  }
+}
+
+async function renderScrollPage(pageNum, container) {
+  scrollRendered.add(pageNum);
+  const rawCanvas = await renderPageToCanvas(pageNum);
+  const canvas = rotateCanvas(rawCanvas);
+  container.style.width = canvas.width + 'px';
+  container.style.height = canvas.height + 'px';
+  container.style.background = '';
+  const label = container.querySelector('.page-label');
+  container.insertBefore(canvas, label);
+}
+
+function updateScrollCurrentPage() {
+  const pages = viewer.querySelectorAll('.scroll-page');
+  const viewportCenter = window.innerHeight / 2;
+  let closest = null, closestDist = Infinity;
+  for (const page of pages) {
+    const rect = page.getBoundingClientRect();
+    const center = rect.top + rect.height / 2;
+    const dist = Math.abs(center - viewportCenter);
+    if (dist < closestDist) { closestDist = dist; closest = page; }
+  }
+  if (closest) {
+    const num = parseInt(closest.dataset.page);
+    if (num !== currentPage) {
+      currentPage = num;
+      pageInput.value = currentPage;
+      setProgress((currentPage / totalPages) * 100);
+      if (thumbsContainer) {
+        thumbsContainer.querySelectorAll('.thumb').forEach((t, i) => t.classList.toggle('active', i + 1 === currentPage));
+        const active = thumbsContainer.querySelector('.thumb.active');
+        if (active) active.scrollIntoView({ block: 'nearest' });
+      }
+      updateAutoBookmarks(currentPage);
+    }
+  }
+}
+
 async function renderView(num) {
   if (!pdfDoc || rendering) return;
+  if (isScrollMode()) {
+    const needsRebuild = !viewer.querySelector('.scroll-container');
+    if (needsRebuild) {
+      await renderScrollView(num);
+    } else {
+      const target = viewer.querySelector(`[data-page="${num}"]`);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    return;
+  }
+  if (scrollObserver) { scrollObserver.disconnect(); scrollObserver = null; }
   rendering = true;
   try {
     currentPage = canonicalPage(num);
@@ -1374,11 +1570,37 @@ pageInput.addEventListener('change', () => {
 });
 
 // Keyboard navigation
+const helpOverlay = document.getElementById('helpOverlay');
 document.addEventListener('keydown', e => {
+  // Help modal close
+  if (e.key === 'Escape' && helpOverlay.classList.contains('open')) {
+    e.preventDefault(); helpOverlay.classList.remove('open'); return;
+  }
   if (!pdfDoc || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.key === '?') { e.preventDefault(); helpOverlay.classList.toggle('open'); return; }
+  if (e.key === 'c') {
+    e.preventDefault();
+    coverCheck.checked = !coverCheck.checked;
+    coverCheck.dispatchEvent(new Event('change'));
+    showToast('Cover: ' + (coverCheck.checked ? 'ON' : 'OFF'));
+    return;
+  }
+  if (e.key === 'b') {
+    e.preventDefault();
+    bindDir.value = isR2L() ? 'L2R' : 'R2L';
+    bindDir.dispatchEvent(new Event('change'));
+    showToast('Binding: ' + bindDir.value);
+    return;
+  }
+  if (isScrollMode()) {
+    if (e.key === 'Home') { e.preventDefault(); renderView(1); }
+    else if (e.key === 'End') { e.preventDefault(); renderView(totalPages); }
+    else if (e.key === 'Escape') { e.preventDefault(); toggleUI(true); }
+    else if (e.key === 'h' || e.key === 'H') { e.preventDefault(); toggleUI(); }
+    return;
+  }
   if (e.key === 'ArrowLeft') {
     e.preventDefault();
-    // R2L: left = next; L2R: left = prev
     if (isR2L()) {
       const p = nextPage(currentPage);
       if (p !== null) renderView(p);
@@ -1406,12 +1628,16 @@ document.addEventListener('keydown', e => {
 });
 
 // View mode / binding / cover changes
-viewMode.addEventListener('change', () => { if (pdfDoc) renderView(currentPage); });
+viewMode.addEventListener('change', () => {
+  if (!pdfDoc) return;
+  if (isScrollMode()) { renderScrollView(currentPage); }
+  else { if (scrollObserver) { scrollObserver.disconnect(); scrollObserver = null; } renderView(currentPage); }
+});
 bindDir.addEventListener('change', () => { if (pdfDoc) renderView(currentPage); });
 coverCheck.addEventListener('change', () => { if (pdfDoc) renderView(currentPage); });
-scaleSelect.addEventListener('change', () => { if (pdfDoc) renderView(currentPage); });
-rotateSelect.addEventListener('change', () => { if (pdfDoc) renderView(currentPage); });
-hqPdfCheck.addEventListener('change', () => { if (pdfDoc) { renderView(currentPage); renderThumbnails(); } });
+scaleSelect.addEventListener('change', () => { if (pdfDoc && !isScrollMode()) renderView(currentPage); });
+rotateSelect.addEventListener('change', () => { if (pdfDoc && !isScrollMode()) renderView(currentPage); });
+hqPdfCheck.addEventListener('change', () => { if (pdfDoc) { if (!isScrollMode()) renderView(currentPage); renderThumbnails(); } });
 
 // Actions
 saveBtn.addEventListener('click', saveCurrent);
@@ -1441,6 +1667,7 @@ viewer.addEventListener('wheel', e => {
   if (!pdfDoc || rendering) return;
   if (panCheck.checked) return;
   if (textMode) return;
+  if (isScrollMode()) return;
   e.preventDefault();
   if (e.deltaY > 0) {
     const p = nextPage(currentPage);
@@ -1458,6 +1685,7 @@ viewer.addEventListener('click', e => {
   if (e.target.closest('button, input, select, a, label')) return;
   if (panDragged) { panDragged = false; return; }
   if (textMode) return;
+  if (isScrollMode()) return;
   if (panCheck.checked) {
     const rect = viewer.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -1531,6 +1759,7 @@ viewer.addEventListener('touchend', e => {
   if (!pdfDoc) return;
   if (panCheck.checked) return;
   if (textMode) return;
+  if (isScrollMode()) return;
   const t = e.changedTouches[0];
   const dx = t.clientX - touchStartX;
   const dy = t.clientY - touchStartY;
@@ -1669,10 +1898,17 @@ minimapCheck.addEventListener('change', () => {
 });
 
 let minimapScrollRAF = 0;
+let scrollTrackRAF = 0;
 window.addEventListener('scroll', () => {
-  if (!minimapCheck.checked || !pdfDoc) return;
+  if (!pdfDoc) return;
+  if (minimapCheck.checked) {
   cancelAnimationFrame(minimapScrollRAF);
   minimapScrollRAF = requestAnimationFrame(() => updateMinimap());
+  }
+  if (isScrollMode()) {
+    cancelAnimationFrame(scrollTrackRAF);
+    scrollTrackRAF = requestAnimationFrame(() => updateScrollCurrentPage());
+  }
 });
 window.addEventListener('resize', () => {
   if (minimapCheck.checked && pdfDoc) updateMinimap();
@@ -1899,6 +2135,70 @@ document.addEventListener('webkitfullscreenchange', () => {
   if (pdfDoc && scaleSelect.value === 'fit') setTimeout(() => renderView(currentPage), 100);
 });
 
+// ---- Filter ----
+const filterBtn = document.getElementById('filterBtn');
+const filterPopup = document.getElementById('filterPopup');
+const filterBrightness = document.getElementById('filterBrightness');
+const filterContrast = document.getElementById('filterContrast');
+const filterSepia = document.getElementById('filterSepia');
+const filterInvert = document.getElementById('filterInvert');
+
+filterBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  filterPopup.classList.toggle('open');
+  if (filterPopup.classList.contains('open')) {
+    const r = filterBtn.getBoundingClientRect();
+    filterPopup.style.top = (r.bottom + 4) + 'px';
+    filterPopup.style.left = Math.max(4, r.right - filterPopup.offsetWidth) + 'px';
+  }
+});
+document.addEventListener('click', e => {
+  if (!filterPopup.contains(e.target) && e.target !== filterBtn) filterPopup.classList.remove('open');
+});
+
+function applyFilters() {
+  const b = filterBrightness.value;
+  const c = filterContrast.value;
+  const s = filterSepia.value;
+  const inv = filterInvert.value;
+  document.getElementById('filterBrightnessVal').textContent = b + '%';
+  document.getElementById('filterContrastVal').textContent = c + '%';
+  document.getElementById('filterSepiaVal').textContent = s + '%';
+  document.getElementById('filterInvertVal').textContent = inv + '%';
+  const parts = [];
+  if (b !== '100') parts.push(`brightness(${b}%)`);
+  if (c !== '100') parts.push(`contrast(${c}%)`);
+  if (s !== '0') parts.push(`sepia(${s}%)`);
+  if (inv !== '0') parts.push(`invert(${inv}%)`);
+  viewer.style.filter = parts.length ? parts.join(' ') : '';
+}
+
+[filterBrightness, filterContrast, filterSepia, filterInvert].forEach(el => el.addEventListener('input', applyFilters));
+
+document.getElementById('filterReset').addEventListener('click', () => {
+  filterBrightness.value = 100;
+  filterContrast.value = 100;
+  filterSepia.value = 0;
+  filterInvert.value = 0;
+  applyFilters();
+});
+
+// ---- Help modal ----
+document.getElementById('helpBtn').addEventListener('click', () => helpOverlay.classList.toggle('open'));
+document.getElementById('helpClose').addEventListener('click', () => helpOverlay.classList.remove('open'));
+helpOverlay.addEventListener('click', e => { if (e.target === helpOverlay) helpOverlay.classList.remove('open'); });
+
+// ---- Scroll mode: re-render on scale/rotation/HQ change ----
+const origScaleChange = scaleSelect.onchange;
+scaleSelect.addEventListener('change', () => {
+  if (pdfDoc && isScrollMode()) { renderScrollView(currentPage); }
+});
+rotateSelect.addEventListener('change', () => {
+  if (pdfDoc && isScrollMode()) { renderScrollView(currentPage); }
+});
+hqPdfCheck.addEventListener('change', () => {
+  if (pdfDoc && isScrollMode()) { renderScrollView(currentPage); }
+});
 
 </script>
 </body>

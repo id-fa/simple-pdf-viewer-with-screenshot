@@ -123,6 +123,8 @@
 - L2R時: ←キー = 前ページ、→キー = 次ページ (通常方向)
 - Home / End: 最初 / 最後のページ
 - H キー: ヘッダーUI表示/非表示トグル
+- C キー: Cover (表紙モード) トグル
+- B キー: 綴じ方向 (R2L ↔ L2R) トグル
 - Escape: UI再表示
 - 画面左右1/3タップ: ページ送り、中央1/3タップ: UI表示/非表示トグル
 - 左右スワイプ (タッチ): ページ送り (スマートフォン対応)
@@ -243,6 +245,32 @@
 - クリックでモーダル表示: ページ別グループ、タイプ・著者・日時・コメント内容
 - セキュリティ: `textContent` 経由でエスケープし HTML/JS は動作しない
 - comic-viewer.html ではアーカイブ読み込み時にFABを非表示にリセット
+
+### 連続スクロールモード (Scroll、両ビューア共通)
+- viewMode セレクトに **Scroll** オプションを追加
+- 全ページを縦に並べて連続スクロール表示 (Webtoon形式)
+- `isScrollMode()` — スクロールモード判定
+- `renderScrollView(jumpTo)` — 全ページのプレースホルダを生成し、IntersectionObserver で遅延レンダリング
+- `renderScrollPage(pageNum, container)` — 個別ページのcanvasをレンダリング
+- `updateScrollCurrentPage()` — ビューポート中央に最も近いページを currentPage として追跡
+- Fit スケール時は幅フィットのみ (高さ制約なし、縦スクロール前提)
+- ページ送り操作 (wheel, click zones, swipe) は無効化 → ブラウザ標準スクロール
+- Home/End キーで先頭/末尾ページにジャンプ
+- サムネイルクリック・ページ番号入力でのジャンプに対応
+- `<` / `>` ボタンは disabled
+
+### 色調補正フィルター (Filter、両ビューア共通)
+- ヘッダーに **Filter** ボタン + ポップアップ
+- スライダー4種: Brightness (50-150%), Contrast (50-150%), Sepia (0-100%), Invert (0-100%)
+- `applyFilters()` — CSS `filter` プロパティを `.viewer` に適用
+- Reset ボタンで初期値に復帰
+- ポップアップ外クリックで自動クローズ
+
+### ヘルプモーダル (?、両ビューア共通)
+- `?` キーまたはヘッダーの **?** ボタンでモーダル表示
+- キーボードショートカット・マウス/タッチ操作の一覧を表示
+- Escape または背景クリックで閉じる
+- pdf-viewer.html はテキストモード操作の説明も含む
 
 ### 関数
 - `getSpreadPages(pageNum)` — スプレッド構成を返す ([left, right] or [single])
