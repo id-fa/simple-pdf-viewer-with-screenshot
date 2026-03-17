@@ -121,6 +121,8 @@ Open `http://localhost:8000/comic-viewer.html` in your browser.
 | 操作 / Input | 説明 / Description |
 |------|------|
 | 画面中央タップ / `H` キー | UI表示/非表示トグル / Toggle UI visibility |
+| `C` キー | Cover (表紙モード) トグル / Toggle cover mode |
+| `B` キー | 綴じ方向切替 (R2L ↔ L2R) / Toggle binding direction |
 | `Escape` | UI再表示 / Show UI |
 | 左右スワイプ | ページ送り (スマホ対応) / Page navigation (touch) |
 
