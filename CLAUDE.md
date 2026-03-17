@@ -194,6 +194,7 @@
 - **自動しおり**: `lastRead` (最後に表示したページ) / `maxRead` (到達最深ページ) を `renderView()` 時に自動更新
 - **セッション Last Read**: ファイル読み込み時に前回の `lastRead` を `sessionLastRead` に保持。L キーはこの値にジャンプ (リアルタイム更新される `bm.lastRead` ではなく前回セッションの値)
 - ファイル読み込み完了時、`sessionLastRead` が2以上なら `showClickableToast()` で「p.X から再開」トーストを5秒表示。クリックで該当ページにジャンプ
+- `updateAutoBookmarks` は `sessionLastRead` が存在し `pageNum === 1` の場合にスキップ (初回 `renderView(1)` で前回の `lastRead` を上書きしない。ユーザーがページ移動するまで保持)
 - Bookmarksタブ: しおり付きページをサムネイル表示（canvas クローン）、ヘッダーにページ番号・種別表示
 - Thumbsタブ: 従来サムネイル + しおりマーカー、自動しおりはページ番号ラベルのオレンジ背景で表現
 - 管理機能 (Bookmarksタブ下部): Clear this book / Clear all / Export JSON / Import JSON

@@ -531,6 +531,7 @@ function setBookmarkForFile(hash, data) {
 
 function updateAutoBookmarks(pageNum) {
   if (!isBookmarkEnabled() || !currentFileHash) return;
+  if (sessionLastRead && pageNum === 1) return;
   const bm = getBookmarkForFile(currentFileHash);
   bm.lastRead = pageNum;
   bm.maxRead = Math.max(bm.maxRead || 0, pageNum);
