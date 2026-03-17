@@ -191,6 +191,7 @@
 - `BOOKMARK_STORE_FILENAME` 変数 (デフォルト `false`) でファイル名の保存可否を制御（プライバシー保護）
 - **手動しおり**: サムネイル上の `●` マーカークリックでトグル
 - **自動しおり**: `lastRead` (最後に表示したページ) / `maxRead` (到達最深ページ) を `renderView()` 時に自動更新
+- **セッション Last Read**: ファイル読み込み時に前回の `lastRead` を `sessionLastRead` に保持。L キーはこの値にジャンプ (リアルタイム更新される `bm.lastRead` ではなく前回セッションの値)
 - Bookmarksタブ: しおり付きページをサムネイル表示（canvas クローン）、ヘッダーにページ番号・種別表示
 - Thumbsタブ: 従来サムネイル + しおりマーカー、自動しおりはページ番号ラベルのオレンジ背景で表現
 - 管理機能 (Bookmarksタブ下部): Clear this book / Clear all / Export JSON / Import JSON

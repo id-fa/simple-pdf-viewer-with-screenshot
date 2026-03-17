@@ -370,6 +370,7 @@ let totalPages = 0;
 let fileName = '';
 let rendering = false;
 let currentFileHash = null;
+let sessionLastRead = null;
 
 // ---- DOM ----
 const fileInput = document.getElementById('fileInput');
@@ -1974,6 +1975,7 @@ async function loadArchive(file) {
       const combinedData = new TextEncoder().encode(file.name + '|' + file.size + '|' + chosen.name);
       const hashBuf = await crypto.subtle.digest('SHA-256', combinedData);
       currentFileHash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
+      sessionLastRead = isBookmarkEnabled() ? (getBookmarkForFile(currentFileHash).lastRead || null) : null;
 
       const innerLoading = showLoading(`${chosen.name} を展開中...`);
       try {
@@ -2031,6 +2033,7 @@ function getFileType(file) {
 async function openFile(file) {
   if (!file) return;
   currentFileHash = await generateFileHash(file);
+  sessionLastRead = isBookmarkEnabled() ? (getBookmarkForFile(currentFileHash).lastRead || null) : null;
   const type = getFileType(file);
   if (type === 'pdf') {
     const buf = await file.arrayBuffer();
@@ -2117,8 +2120,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'l' || e.key === 'L') {
     e.preventDefault();
     if (!isBookmarkEnabled()) { alert('しおり機能が有効になっていません\nBookmarks is not enabled'); return; }
-    const bm = currentFileHash ? getBookmarkForFile(currentFileHash) : null;
-    if (bm && bm.lastRead) { renderView(bm.lastRead); showToast('Last Read: p.' + bm.lastRead); }
+    if (sessionLastRead) { renderView(sessionLastRead); showToast('Last Read: p.' + sessionLastRead); }
     else showToast('Last Read が記録されていません');
     return;
   }

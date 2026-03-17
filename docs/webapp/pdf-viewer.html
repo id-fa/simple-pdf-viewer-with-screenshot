@@ -364,6 +364,7 @@ let totalPages = 0;
 let fileName = '';
 let rendering = false;
 let currentFileHash = null;
+let sessionLastRead = null;
 let textMode = false;
 let pageTextCache = {};
 let searchMatches = [];
@@ -1535,6 +1536,7 @@ fileInput.addEventListener('change', async e => {
   const file = e.target.files[0];
   if (!file) return;
   currentFileHash = await generateFileHash(file);
+  sessionLastRead = isBookmarkEnabled() ? (getBookmarkForFile(currentFileHash).lastRead || null) : null;
   const buf = await file.arrayBuffer();
   try { await loadPDF(buf, file.name); } catch (err) {
     if (/password/i.test(err.message)) { showToast('PDF を開けませんでした', 3000); return; }
@@ -1559,6 +1561,7 @@ document.addEventListener('drop', async e => {
   const file = e.dataTransfer.files[0];
   if (file && file.type === 'application/pdf') {
     currentFileHash = await generateFileHash(file);
+    sessionLastRead = isBookmarkEnabled() ? (getBookmarkForFile(currentFileHash).lastRead || null) : null;
     const buf = await file.arrayBuffer();
     try { await loadPDF(buf, file.name); } catch (err) {
       if (/password/i.test(err.message)) { showToast('PDF を開けませんでした', 3000); return; }
@@ -1618,8 +1621,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'l' || e.key === 'L') {
     e.preventDefault();
     if (!isBookmarkEnabled()) { alert('しおり機能が有効になっていません\nBookmarks is not enabled'); return; }
-    const bm = currentFileHash ? getBookmarkForFile(currentFileHash) : null;
-    if (bm && bm.lastRead) { renderView(bm.lastRead); showToast('Last Read: p.' + bm.lastRead); }
+    if (sessionLastRead) { renderView(sessionLastRead); showToast('Last Read: p.' + sessionLastRead); }
     else showToast('Last Read が記録されていません');
     return;
   }
