@@ -1107,7 +1107,7 @@ function getScale(dims, forSpread) {
     if (isScrollMode()) {
       return Math.min(maxW / docW, 3);
     }
-    const headerH = isUIHidden() ? 0 : 60;
+    const headerH = isUIHidden() ? 0 : header.offsetHeight;
     const maxH = window.innerHeight - headerH - 24;
     const divisor = forSpread ? 2 : 1;
     return Math.min((maxW / divisor) / docW, maxH / docH, 3);
@@ -2242,7 +2242,15 @@ function updateSidebarTop() {
     progressFill.parentElement.style.top = h;
   }
 }
-new ResizeObserver(updateSidebarTop).observe(header);
+let lastHeaderH = 0;
+new ResizeObserver(() => {
+  updateSidebarTop();
+  const h = header.offsetHeight;
+  if (h !== lastHeaderH) {
+    lastHeaderH = h;
+    if (totalPages > 0 && scaleSelect.value === 'fit') renderView(currentPage);
+  }
+}).observe(header);
 updateSidebarTop();
 
 function toggleUI(forceShow) {
@@ -2455,6 +2463,7 @@ window.addEventListener('scroll', () => {
   }
 });
 window.addEventListener('resize', () => {
+  if (totalPages > 0 && scaleSelect.value === 'fit') renderView(currentPage);
   if (minimapCheck.checked && totalPages > 0) updateMinimap();
 });
 
