@@ -737,13 +737,13 @@ function renderBookmarkList() {
     bookmarkListEl.appendChild(wrapper);
   }
 
-  if (bm.lastRead) {
-    const label = bm.maxRead === bm.lastRead
-      ? `p.${bm.lastRead} last read / max read`
-      : `p.${bm.lastRead} last read`;
-    addBookmarkThumb(bm.lastRead, 'auto', label);
+  if (sessionLastRead) {
+    const label = bm.maxRead === sessionLastRead
+      ? `p.${sessionLastRead} last read / max read`
+      : `p.${sessionLastRead} last read`;
+    addBookmarkThumb(sessionLastRead, 'auto', label);
   }
-  if (bm.maxRead && bm.maxRead !== bm.lastRead) {
+  if (bm.maxRead && bm.maxRead !== sessionLastRead) {
     addBookmarkThumb(bm.maxRead, 'auto', `p.${bm.maxRead} max read`);
   }
   if (bm.manual) {
