@@ -248,6 +248,8 @@ label.check input { cursor: pointer; }
         <div class="filter-row"><span>Sepia</span><input type="range" id="filterSepia" min="0" max="100" value="0"><span class="filter-val" id="filterSepiaVal">0%</span></div>
         <div class="filter-row"><span>Invert</span><input type="range" id="filterInvert" min="0" max="100" value="0"><span class="filter-val" id="filterInvertVal">0%</span></div>
         <button id="filterReset" style="width:100%;font-size:11px;padding:3px;margin-top:4px">Reset</button>
+        <div style="display:flex;gap:4px;margin-top:6px;align-items:center"><span style="font-size:11px;color:#888;min-width:34px">Preset</span><button class="filter-preset-save" data-slot="0" title="Save to slot 1" style="font-size:10px;padding:2px 0;flex:1">Save 1</button><button class="filter-preset-save" data-slot="1" title="Save to slot 2" style="font-size:10px;padding:2px 0;flex:1">Save 2</button><button class="filter-preset-save" data-slot="2" title="Save to slot 3" style="font-size:10px;padding:2px 0;flex:1">Save 3</button></div>
+        <div style="display:flex;gap:4px;margin-top:3px;align-items:center"><span style="font-size:11px;min-width:34px"></span><button class="filter-preset-load" data-slot="0" title="Load from slot 1" style="font-size:10px;padding:2px 0;flex:1" disabled>Load 1</button><button class="filter-preset-load" data-slot="1" title="Load from slot 2" style="font-size:10px;padding:2px 0;flex:1" disabled>Load 2</button><button class="filter-preset-load" data-slot="2" title="Load from slot 3" style="font-size:10px;padding:2px 0;flex:1" disabled>Load 3</button></div>
       </div>
     </div>
     <button id="helpBtn" title="キーボードショートカット一覧 / Keyboard shortcuts (?)" style="padding:6px 8px">?</button>
@@ -2201,6 +2203,44 @@ document.getElementById('filterReset').addEventListener('click', () => {
   filterInvert.value = 0;
   applyFilters();
 });
+
+// Filter presets (3 slots, shared via localStorage)
+const FILTER_PRESET_KEY = 'viewerFilterPresets';
+function getFilterPresets() {
+  try { return JSON.parse(localStorage.getItem(FILTER_PRESET_KEY)) || [null, null, null]; }
+  catch { return [null, null, null]; }
+}
+function saveFilterPresets(presets) { localStorage.setItem(FILTER_PRESET_KEY, JSON.stringify(presets)); }
+function updatePresetLoadButtons() {
+  const presets = getFilterPresets();
+  document.querySelectorAll('.filter-preset-load').forEach(btn => {
+    const slot = +btn.dataset.slot;
+    const p = presets[slot];
+    btn.disabled = !p;
+    if (p) btn.title = `B:${p.b} C:${p.c} S:${p.s} I:${p.i}`;
+    else btn.title = `Slot ${slot + 1}: empty`;
+  });
+}
+document.querySelectorAll('.filter-preset-save').forEach(btn => btn.addEventListener('click', () => {
+  const slot = +btn.dataset.slot;
+  const presets = getFilterPresets();
+  presets[slot] = { b: +filterBrightness.value, c: +filterContrast.value, s: +filterSepia.value, i: +filterInvert.value };
+  saveFilterPresets(presets);
+  updatePresetLoadButtons();
+  showToast(`Filter preset ${slot + 1} saved`);
+}));
+document.querySelectorAll('.filter-preset-load').forEach(btn => btn.addEventListener('click', () => {
+  const slot = +btn.dataset.slot;
+  const p = getFilterPresets()[slot];
+  if (!p) return;
+  filterBrightness.value = p.b;
+  filterContrast.value = p.c;
+  filterSepia.value = p.s;
+  filterInvert.value = p.i;
+  applyFilters();
+  showToast(`Filter preset ${slot + 1} loaded`);
+}));
+updatePresetLoadButtons();
 
 // ---- Help modal ----
 document.getElementById('helpBtn').addEventListener('click', () => helpOverlay.classList.toggle('open'));
