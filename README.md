@@ -95,7 +95,7 @@ Open `http://localhost:8000/comic-viewer.html` in your browser.
 |------|------|
 | `<` / `>` ボタン | ページ送り / Page navigation |
 | ページ番号入力 | 任意ページにジャンプ / Jump to a specific page |
-| Single / Spread | 単ページ / 見開き切替 / Toggle single / two-page spread |
+| Single / Spread / Scroll | 単ページ / 見開き / 連続スクロール切替 / Toggle single / spread / scroll |
 | Right (R2L) / Left (L2R) | 綴じ方向 / Binding direction (R2L=日本漫画, L2R=洋書) |
 | Cover | 表紙を単独ページとして扱う / Treat cover as standalone page |
 | HQ | PDF縮小時の高品質モード / High-quality PDF downscale mode |
@@ -103,6 +103,8 @@ Open `http://localhost:8000/comic-viewer.html` in your browser.
 | 50% ~ 300% / Fit | 表示スケール / Display scale |
 | Pan | ドラッグで画面パン / Drag to pan (scroll) |
 | Map | ミニマップ表示 / Show minimap |
+| Full | フルスクリーン / Fullscreen mode |
+| Filter | 色調補正フィルター (プリセット3スロット保存可) / Color filters (3 preset slots) |
 | Thumbs / Bookmarks | サイドバー切替 / Sidebar tabs |
 
 ### キーボード・タッチ操作 / Keyboard & Touch
@@ -127,7 +129,7 @@ Open `http://localhost:8000/comic-viewer.html` in your browser.
 | ボタン / Button | 動作 / Action |
 |--------|------|
 | Save Page | 現在のページを保存 (見開き時は2ページ結合) / Save current page (merged in spread) |
-| Save 2P | 現在+次ページの見開きを保存 / Save current + next as spread |
+| Save 2P | 現在+次ページの見開きを保存 (スクロールモードでは縦連結) / Save current + next as spread (vertical in scroll mode) |
 | Save All | 全ページを連番で保存 / Save all pages sequentially |
 
 - **出力形式 / Format**: PNG / JPEG 95% / WebP 95%
@@ -141,6 +143,32 @@ Open `http://localhost:8000/comic-viewer.html` in your browser.
 - **しおり一覧**: Bookmarksタブにサムネイル付きで表示、クリックでジャンプ / Displayed with thumbnails in Bookmarks tab
 - **管理**: 現在の本のしおり消去、全消去、JSON export/import / Clear per book, clear all, JSON export/import
 - **データ共有**: 両ビューアで同じ localStorage キーを使用 / Both viewers share the same localStorage keys
+
+### 連続スクロールモード / Scroll Mode
+
+viewMode を **Scroll** に切り替えると、全ページを縦に並べて連続スクロール表示します (Webtoon形式)。
+
+Switch viewMode to **Scroll** to display all pages in a continuous vertical scroll (Webtoon-style).
+
+- Fit スケール時は幅フィット / Width-fit in Fit scale
+- Home / End キーで先頭・末尾にジャンプ / Home/End to jump to first/last page
+- Save 2P は縦連結 (上下) で保存 / Save 2P saves vertically concatenated
+
+### 色調補正フィルター / Color Adjustment Filters
+
+**Filter** ボタンでポップアップを開き、4種のスライダーで色調を調整できます。
+
+Click **Filter** to open the popup and adjust colors with 4 sliders.
+
+| スライダー / Slider | 範囲 / Range |
+|------|------|
+| Brightness | 50% – 150% |
+| Contrast | 50% – 150% |
+| Sepia | 0% – 100% |
+| Invert | 0% – 100% |
+
+- **プリセット保存**: 3スロット (Save 1-3 / Load 1-3)。localStorage に保存され、両ビューアで共有 / 3 preset slots shared between both viewers via localStorage
+- **Reset**: 全スライダーを初期値に戻す / Reset all sliders to default
 
 ### アノテーションコメント (PDF) / Annotation Comments
 
@@ -169,6 +197,16 @@ When a CBZ contains multiple archive files:
 1. 外側を展開し内部アーカイブの一覧を表示 / Extract outer, show list of inner archives
 2. 展開したい内部アーカイブを1つ選択 / Select one inner archive
 3. 選択分のみを展開・表示 / Extract and display only the selected one
+
+### アニメーション画像 / Animated Images
+
+アーカイブ内の GIF / APNG / Animated WebP を自動検出します。該当ページの左下に **▶ Play** バッジが表示され、クリックするとモーダルでアニメーション再生できます。
+
+Animated GIF / APNG / Animated WebP files in archives are auto-detected. A **▶ Play** badge appears on the page; click it to play the animation in a modal.
+
+- canvas 上の表示は静止画 (1フレーム目) です。アニメーション再生はモーダル内のみ / Canvas shows only the first frame; animation plays only in the modal
+- 複数のアニメーション画像の連続再生には対応していません / Continuous playback of multiple animated images is not supported
+- 動画ファイル (MP4, WebM 等) の再生には対応していません / Video files (MP4, WebM, etc.) are not supported
 
 ### ZIPファイル名エンコーディング修正 / ZIP Filename Encoding Fix
 
