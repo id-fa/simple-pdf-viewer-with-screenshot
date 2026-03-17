@@ -1395,18 +1395,28 @@ async function saveSpread() {
   }
 
   const [c1, c2] = await Promise.all([exportPageCanvas(p1), exportPageCanvas(p2)]);
-  const w = c1.width + c2.width;
-  const h = Math.max(c1.height, c2.height);
   const merged = document.createElement('canvas');
-  merged.width = w;
-  merged.height = h;
   const ctx = merged.getContext('2d');
-  if (isR2L()) {
-    ctx.drawImage(c2, 0, 0);
-    ctx.drawImage(c1, c2.width, 0);
+  if (isScrollMode()) {
+    // Scroll mode: vertically concatenate (p1 on top, p2 on bottom)
+    const w = Math.max(c1.width, c2.width);
+    const h = c1.height + c2.height;
+    merged.width = w;
+    merged.height = h;
+    ctx.drawImage(c1, (w - c1.width) / 2, 0);
+    ctx.drawImage(c2, (w - c2.width) / 2, c1.height);
   } else {
-    ctx.drawImage(c1, 0, 0);
-    ctx.drawImage(c2, c1.width, 0);
+    const w = c1.width + c2.width;
+    const h = Math.max(c1.height, c2.height);
+    merged.width = w;
+    merged.height = h;
+    if (isR2L()) {
+      ctx.drawImage(c2, 0, 0);
+      ctx.drawImage(c1, c2.width, 0);
+    } else {
+      ctx.drawImage(c1, 0, 0);
+      ctx.drawImage(c2, c1.width, 0);
+    }
   }
   const s1 = String(p1).padStart(pad, '0');
   const s2 = String(p2).padStart(pad, '0');
