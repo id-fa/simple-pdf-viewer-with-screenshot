@@ -262,7 +262,7 @@ Automatically fixes garbled Shift-JIS filenames in Windows-created ZIP/CBZ files
 - [coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker) v0.1.7 — Cross-Origin Isolation for SharedArrayBuffer (wasm-vips only)
 - [libarchive.js](https://github.com/nika-begiashvili/libarchivejs) v2.0.2 — Archive extraction (CDN, WASM, comic-viewer.html only)
 - Vanilla JavaScript (ES Modules)
-- 単一HTMLファイル、フレームワーク不使用 / Single HTML files, no frameworks
+- 単一HTMLファイル、フレームワーク不使用 (オプション機能利用時を除く) / Single HTML files, no frameworks (except optional features)
 
 ### libarchive.js WASM の CDN 読み込み / Loading WASM from CDN
 
