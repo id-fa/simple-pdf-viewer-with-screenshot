@@ -12,6 +12,7 @@
 - **CDN依存**: 外部ライブラリはCDNから読み込み (ローカルファイル不要)
 - **ES Modules**: `<script type="module">` で記述
 - **Vanilla JS**: フレームワーク不使用
+- **wasm-vips オプション**: `?vips=1` クエリパラメータで wasm-vips による高品質縮小を有効化 (両ビューア共通)
 
 ## pdf-viewer.html
 
@@ -174,16 +175,27 @@
 - エクスポート (`exportPageCanvas()`): レンダリング後に `rotateCanvas()` を適用 → 見開き結合保存にも反映
 
 ### 高品質縮小 (HQ モード)
-- **Pica.js** ベース: Lanczos3 フィルタ + 組み込み unsharp mask で高品質縮小
-- `drawImageHighQuality()` — `picaInstance.resize()` でソース canvas/image をターゲット canvas に縮小描画
+- **Pica.js** ベース (デフォルト): Lanczos3 フィルタ + 組み込み unsharp mask で高品質縮小
+- **wasm-vips** (オプション): `?vips=1` で有効化。thumbnailImage (box shrink + Lanczos3) + vips sharpen
+- `drawImageHighQuality()` — vips が利用可能なら `drawImageVips()` にディスパッチ、そうでなければ `picaInstance.resize()`
+- `drawImageVips()` — `newFromMemory` → `thumbnailImage` → `sharpen` → `writeToMemory`。alpha チャンネル分離・sRGB reinterpret で colorspace エラーを回避。`toDelete` 配列で vips Image オブジェクトのメモリ管理
 - Pica 初期化: `new Pica({ features: ['js', 'wasm'] })` — Web Worker は CDN ESM 環境で動作しないため無効化
-- **アーカイブ画像** (comic-viewer.html): 常時 Pica 経由で縮小、Filter の Sharpen 値が適用される
+- **アーカイブ画像** (comic-viewer.html): 常時 Pica/vips 経由で縮小、Filter の Sharpen 値が適用される
 - **PDF** (両ビューア共通): HQ チェックボックスで切替可能
   - OFF (デフォルト): PDF.js が直接ターゲットスケールでレンダリング (軽量)
-  - ON: PDF.js で 1x レンダリング → Pica で縮小 + Sharpen 適用 (高品質・重い)
+  - ON: PDF.js で 1x レンダリング → Pica/vips で縮小 + Sharpen 適用 (高品質・重い)
   - `s < 1` (Fit, 50%, 75% 等の縮小表示) の場合のみ HQ パスを通る
   - サムネイルにも適用される
   - HQ チェック時に Sharpen が 0 なら自動的にデフォルト値 (80) を設定
+
+### wasm-vips オプション (`?vips=1`、両ビューア共通)
+- **有効化**: URL に `?vips=1` を付加 (例: `comic-viewer.html?vips=1`)
+- **依存ファイル**: `vips-lib/vips-es6.js` (87KB) + `vips-lib/vips.wasm` (5.4MB) — HTML と同階層に配置
+- **coi-serviceworker**: `coi-serviceworker.js` — `?vips=1` 時のみ Service Worker を登録し COEP/COOP ヘッダーを付与 (SharedArrayBuffer 有効化)
+- **初期化**: `dynamicLibraries: []` で不要な JXL/HEIF/RESVG モジュールのロードをスキップ
+- **フォールバック**: vips ロード失敗時は自動的に Pica にフォールバック
+- **ステータス表示**: `?vips=1` 時のみ dropzone に「wasm-vips active」または「vips failed → Pica fallback」を表示
+- **`?vips=1` なしの場合**: coi-serviceworker は登録されず、vips の import も発生しない (動作に一切影響なし)
 
 ### レイアウト中央揃え
 - `.viewer` は `align-items: center` を使わない (拡大時に左端が見切れる問題を回避)

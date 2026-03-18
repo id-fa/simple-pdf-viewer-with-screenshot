@@ -10,10 +10,14 @@ Created by id-fa, built with Claude Code.
 
 ```
 pdf-viewer-with-screenshot/
-├── pdf-viewer.html    # PDF専用ビューア / PDF-only viewer
-├── comic-viewer.html  # 汎用ビューア / Universal viewer (PDF + CBZ/CBR/CB7/EPUB)
-├── README.md          # This file
-└── CLAUDE.md          # AI development guide
+├── pdf-viewer.html        # PDF専用ビューア / PDF-only viewer
+├── comic-viewer.html      # 汎用ビューア / Universal viewer (PDF + CBZ/CBR/CB7/EPUB)
+├── coi-serviceworker.js   # Cross-Origin Isolation SW (wasm-vips用)
+├── vips-lib/              # wasm-vips ファイル (オプション)
+│   ├── vips-es6.js
+│   └── vips.wasm
+├── README.md              # This file
+└── CLAUDE.md              # AI development guide
 ```
 
 ---
@@ -31,6 +35,7 @@ A lightweight PDF-only viewer. No server required, works with `file://`.
 You can use the viewer directly via GitHub Pages without downloading. Google Analytics is used for access analytics, but the contents of files you open are never sent to any server.
 
 → [**Open pdf-viewer**](https://id-fa.github.io/simple-pdf-viewer-with-screenshot/webapp/pdf-viewer.html)
+→ [**Open pdf-viewer (wasm-vips)**](https://id-fa.github.io/simple-pdf-viewer-with-screenshot/webapp/pdf-viewer.html?vips=1) ※初回読み込み時に追加で ~5.5MB / Extra ~5.5MB download on first load
 
 1. `pdf-viewer.html` をブラウザで直接開く / Open `pdf-viewer.html` directly in your browser
 2. 「Open PDF」ボタンまたはドラッグ＆ドロップでPDFを読み込む / Load a PDF via "Open PDF" button or drag & drop
@@ -72,6 +77,7 @@ Image files within archives are automatically detected and displayed.
 Instead of running a local server, you can use the viewer directly via GitHub Pages. Google Analytics is used for access analytics, but the contents of files you open are never sent to any server.
 
 → [**Open comic-viewer**](https://id-fa.github.io/simple-pdf-viewer-with-screenshot/webapp/comic-viewer.html)
+→ [**Open comic-viewer (wasm-vips)**](https://id-fa.github.io/simple-pdf-viewer-with-screenshot/webapp/comic-viewer.html?vips=1) ※初回読み込み時に追加で ~5.5MB / Extra ~5.5MB download on first load
 
 ローカルで起動する場合は、`file://` では WASM Worker が動作しないため HTTP サーバーが必要です。
 
@@ -188,6 +194,18 @@ Click **Filter** to open the popup and adjust colors with 4 sliders.
 - **プリセット保存**: 3スロット (Save 1-3 / Load 1-3)。localStorage に保存され、両ビューアで共有。シャープネス設定も含む / 3 preset slots shared between both viewers via localStorage, including sharpness settings
 - **Reset**: 全スライダーを初期値に戻す / Reset all sliders to default
 
+### wasm-vips (オプション) / wasm-vips (Optional)
+
+`?vips=1` を URL に付加すると、Pica.js の代わりに [wasm-vips](https://www.npmjs.com/package/wasm-vips) (libvips WASM) による高品質画像縮小が有効になります。
+
+Append `?vips=1` to the URL to enable [wasm-vips](https://www.npmjs.com/package/wasm-vips) (libvips WASM) for high-quality image downscaling instead of Pica.js.
+
+- 例 / Example: `comic-viewer.html?vips=1`, `pdf-viewer.html?vips=1`
+- HTTP サーバーが必要 (`file://` では動作しない) / Requires HTTP server (does not work with `file://`)
+- 有効化時、WASM モジュール (~5.5MB) + JS ローダー (~87KB) の追加ダウンロードが発生する / When enabled, an additional ~5.5MB WASM module + ~87KB JS loader will be downloaded
+- vips ロード失敗時は自動的に Pica にフォールバック / Automatically falls back to Pica on load failure
+- `?vips=1` なしの場合、追加ファイルのロードは一切発生しない / No extra files are loaded without `?vips=1`
+
 ### アノテーションコメント (PDF) / Annotation Comments
 
 PDFにアノテーションコメントがある場合、左下にフローティングボタン (💬) が表示されます。クリックでモーダル表示。
@@ -240,6 +258,8 @@ Automatically fixes garbled Shift-JIS filenames in Windows-created ZIP/CBZ files
 
 - [PDF.js](https://mozilla.github.io/pdf.js/) v4.9.155 — PDF rendering (CDN)
 - [Pica.js](https://github.com/nodeca/pica) v9.0.1 — High-quality image downscaling with Lanczos3 + unsharp mask (CDN)
+- [wasm-vips](https://www.npmjs.com/package/wasm-vips) v0.0.16 — Optional high-quality resize via libvips WASM (`?vips=1`)
+- [coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker) v0.1.7 — Cross-Origin Isolation for SharedArrayBuffer (wasm-vips only)
 - [libarchive.js](https://github.com/nika-begiashvili/libarchivejs) v2.0.2 — Archive extraction (CDN, WASM, comic-viewer.html only)
 - Vanilla JavaScript (ES Modules)
 - 単一HTMLファイル、フレームワーク不使用 / Single HTML files, no frameworks
@@ -260,6 +280,6 @@ libarchive.wasm (979KB) ── Worker が CDN から自動 fetch / auto-fetched 
 
 ### 遅延読み込み / Lazy Loading
 
-libarchive.js は初回のアーカイブファイル読み込み時に動的 `import()` されます。PDF のみ使用する場合は WASM のダウンロードは発生しません。
+libarchive.js は初回のアーカイブファイル読み込み時に動的 `import()` されます。PDF のみ使用する場合は WASM のダウンロードは発生しません。初回のアーカイブ読み込み時に合計約 1MB (JS 68KB + WASM 979KB) の追加ダウンロードが発生します。
 
-libarchive.js is dynamically `import()`ed on first archive load. WASM download does not occur if only PDFs are used.
+libarchive.js is dynamically `import()`ed on first archive load. WASM download does not occur if only PDFs are used. On first archive load, approximately 1MB total (JS 68KB + WASM 979KB) is downloaded.

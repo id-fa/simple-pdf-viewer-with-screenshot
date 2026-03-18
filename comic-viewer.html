@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Comic Viewer - PDF/CBZ/CBR/CB7/EPUB</title>
+<script>
+// Enable coi-serviceworker only when ?vips=1 (provides SharedArrayBuffer for wasm-vips)
+window.coi = {
+  shouldRegister: () => new URLSearchParams(location.search).get('vips') === '1',
+  quiet: true
+};
+</script>
+<script src="coi-serviceworker.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; min-height: 100vh; }
@@ -341,6 +349,29 @@ const pdfjsLib = pdfjsModule;
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.mjs';
 
 const picaInstance = new Pica({ features: ['js', 'wasm'] });
+
+// ---- wasm-vips (opt-in via ?vips=1) ----
+const VIPS_ENABLED = new URLSearchParams(location.search).get('vips') === '1';
+let vips = null;
+if (VIPS_ENABLED) {
+  try {
+    const VIPS_BASE = './vips-lib/';
+    const Vips = (await import(VIPS_BASE + 'vips-es6.js')).default;
+    vips = await Vips({ dynamicLibraries: [], locateFile: (f) => VIPS_BASE + f });
+    console.log('[vips] wasm-vips loaded successfully');
+  } catch (e) {
+    console.warn('[vips] wasm-vips failed to load, falling back to Pica:', e.message);
+  }
+}
+// Show vips status in UI (only when vips=1)
+if (VIPS_ENABLED) {
+  const label = vips ? 'wasm-vips active' : 'vips failed → Pica fallback';
+  const color = vips ? '#4a4' : '#a44';
+  const el = document.createElement('p');
+  el.style.cssText = `font-size:11px; color:${color}; margin-top:8px`;
+  el.textContent = `Resize engine: ${label}`;
+  document.querySelector('.dropzone')?.appendChild(el);
+}
 
 // Bookmark config
 const BOOKMARK_STORE_FILENAME = false;
@@ -1132,6 +1163,7 @@ function getScale(dims, forSpread) {
 }
 
 // High-quality downscale using Pica (Lanczos3 + optional unsharp mask)
+// High-quality downscale using wasm-vips (if available) or Pica fallback
 async function drawImageHighQuality(ctx, img, targetW, targetH, sharpenOpts = {}) {
   let src = img;
   if (!(src instanceof HTMLCanvasElement)) {
@@ -1141,7 +1173,38 @@ async function drawImageHighQuality(ctx, img, targetW, targetH, sharpenOpts = {}
     tmp.getContext('2d').drawImage(src, 0, 0);
     src = tmp;
   }
-  await picaInstance.resize(src, ctx.canvas, sharpenOpts);
+  if (vips) {
+    await drawImageVips(ctx, src, targetW, targetH, sharpenOpts);
+  } else {
+    await picaInstance.resize(src, ctx.canvas, sharpenOpts);
+  }
+}
+
+async function drawImageVips(ctx, srcCanvas, targetW, targetH, sharpenOpts) {
+  const srcCtx = srcCanvas.getContext('2d');
+  const imageData = srcCtx.getImageData(0, 0, srcCanvas.width, srcCanvas.height);
+  const toDelete = [];
+  try {
+    let im = vips.Image.newFromMemory(imageData.data, srcCanvas.width, srcCanvas.height, 4, vips.BandFormat.uchar);
+    toDelete.push(im);
+    im = im.thumbnailImage(targetW, { height: targetH, size: vips.Size.force });
+    toDelete.push(im);
+    if (sharpenOpts.unsharpAmount > 0) {
+      const sigma = (sharpenOpts.unsharpRadius || 0.6) * 2;
+      const alpha = im.extractBand(3);
+      const rgb = im.extractBand(0, { n: 3 }).copy({ interpretation: vips.Interpretation.srgb });
+      const sharpened = rgb.sharpen({ sigma });
+      im = sharpened.bandjoin(alpha);
+      toDelete.push(alpha, rgb, sharpened, im);
+    }
+    const result = im.writeToMemory();
+    const out = new ImageData(new Uint8ClampedArray(result.buffer || result), targetW, targetH);
+    ctx.putImageData(out, 0, 0);
+  } finally {
+    for (let i = toDelete.length - 1; i >= 0; i--) {
+      try { toDelete[i].delete(); } catch (_) {}
+    }
+  }
 }
 
 async function renderPageToCanvas(pageNum, scale) {
