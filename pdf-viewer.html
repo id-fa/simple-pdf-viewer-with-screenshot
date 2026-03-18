@@ -984,7 +984,7 @@ async function drawImageHighQuality(ctx, img, targetW, targetH, sharpenOpts = {}
     const tmp = document.createElement('canvas');
     tmp.width = src.naturalWidth || src.width;
     tmp.height = src.naturalHeight || src.height;
-    tmp.getContext('2d').drawImage(src, 0, 0);
+    tmp.getContext('2d', { willReadFrequently: true }).drawImage(src, 0, 0);
     src = tmp;
   }
   if (vips && useVips) {
@@ -999,7 +999,7 @@ async function drawImageHighQuality(ctx, img, targetW, targetH, sharpenOpts = {}
 }
 
 async function drawImageVips(ctx, srcCanvas, targetW, targetH, sharpenOpts) {
-  const srcCtx = srcCanvas.getContext('2d');
+  const srcCtx = srcCanvas.getContext('2d', { willReadFrequently: true });
   const imageData = srcCtx.getImageData(0, 0, srcCanvas.width, srcCanvas.height);
   const toDelete = [];
   try {
