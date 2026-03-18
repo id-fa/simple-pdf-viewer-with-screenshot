@@ -177,9 +177,10 @@
 ### 高品質縮小 (HQ モード)
 - **Pica.js** ベース (デフォルト): Lanczos3 フィルタ + 組み込み unsharp mask で高品質縮小
 - **wasm-vips** (オプション): `?vips=1` で有効化。thumbnailImage (box shrink + Lanczos3) + vips sharpen
-- `drawImageHighQuality()` — vips が利用可能なら `drawImageVips()` にディスパッチ、失敗時 (メモリ不足等) は自動的に Pica にフォールバック
+- `drawImageHighQuality(ctx, img, targetW, targetH, sharpenOpts, useVips)` — vips が利用可能かつ `useVips=true` なら `drawImageVips()` にディスパッチ、失敗時 (メモリ不足等) は自動的に Pica にフォールバック
 - `drawImageVips()` — `newFromMemory` → `thumbnailImage` → `sharpen` → `writeToMemory`。alpha チャンネル分離・sRGB reinterpret で colorspace エラーを回避。`toDelete` 配列で vips Image オブジェクトのメモリ管理
 - Pica 初期化: `new Pica({ features: ['js', 'wasm'] })` — Web Worker は CDN ESM 環境で動作しないため無効化
+- **サムネイル生成**: `renderPageToCanvas(pageNum, scale, false)` で vips をスキップし Pica を使用 (WASM ヒープ節約)
 - **アーカイブ画像** (comic-viewer.html): 常時 Pica/vips 経由で縮小、Filter の Sharpen 値が適用される
 - **PDF** (両ビューア共通): HQ チェックボックスで切替可能
   - OFF (デフォルト): PDF.js が直接ターゲットスケールでレンダリング (軽量)
@@ -192,8 +193,9 @@
 - **有効化**: URL に `?vips=1` を付加 (例: `comic-viewer.html?vips=1`)
 - **依存ファイル**: `vips-lib/vips-es6.js` (87KB) + `vips-lib/vips.wasm` (5.4MB) — HTML と同階層に配置
 - **coi-serviceworker**: `coi-serviceworker.js` — `?vips=1` 時のみ Service Worker を登録し COEP/COOP ヘッダーを付与 (SharedArrayBuffer 有効化)
-- **初期化**: `dynamicLibraries: []` で不要な JXL/HEIF/RESVG モジュールのロードをスキップ
-- **フォールバック**: vips ロード失敗時は自動的に Pica にフォールバック
+- **初期化**: `dynamicLibraries: []` で不要な JXL/HEIF/RESVG モジュールのロードをスキップ。`vips.Cache.max(0)` でオペレーションキャッシュを無効化 (WASM ヒープ節約)
+- **フォールバック**: vips ロード失敗時は自動的に Pica にフォールバック。画像処理中のメモリ不足エラーも per-call で Pica にフォールバック
+- **WASM ヒープ制約**: WASM メモリ空間に上限があるため、高解像度画像で `newFromMemory` がメモリ不足になる場合がある。サムネイル生成では vips をスキップしてヒープを温存
 - **ステータス表示**: `?vips=1` 時のみ dropzone に「wasm-vips active」または「vips failed → Pica fallback」を表示
 - **`?vips=1` なしの場合**: coi-serviceworker は登録されず、vips の import も発生しない (動作に一切影響なし)
 
