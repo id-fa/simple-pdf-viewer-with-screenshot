@@ -977,7 +977,8 @@ function getScale(page, forSpread) {
 
 // High-quality downscale using Pica (Lanczos3 + optional unsharp mask)
 // High-quality downscale using wasm-vips (if available) or Pica fallback
-async function drawImageHighQuality(ctx, img, targetW, targetH, sharpenOpts = {}) {
+// Set useVips=false to force Pica (e.g. for thumbnails to save WASM heap)
+async function drawImageHighQuality(ctx, img, targetW, targetH, sharpenOpts = {}, useVips = true) {
   let src = img;
   if (!(src instanceof HTMLCanvasElement)) {
     const tmp = document.createElement('canvas');
@@ -986,7 +987,7 @@ async function drawImageHighQuality(ctx, img, targetW, targetH, sharpenOpts = {}
     tmp.getContext('2d').drawImage(src, 0, 0);
     src = tmp;
   }
-  if (vips) {
+  if (vips && useVips) {
     try {
       await drawImageVips(ctx, src, targetW, targetH, sharpenOpts);
       return;

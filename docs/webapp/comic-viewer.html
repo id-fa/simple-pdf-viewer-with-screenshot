@@ -1175,7 +1175,8 @@ function getScale(dims, forSpread) {
 
 // High-quality downscale using Pica (Lanczos3 + optional unsharp mask)
 // High-quality downscale using wasm-vips (if available) or Pica fallback
-async function drawImageHighQuality(ctx, img, targetW, targetH, sharpenOpts = {}) {
+// Set useVips=false to force Pica (e.g. for thumbnails to save WASM heap)
+async function drawImageHighQuality(ctx, img, targetW, targetH, sharpenOpts = {}, useVips = true) {
   let src = img;
   if (!(src instanceof HTMLCanvasElement)) {
     const tmp = document.createElement('canvas');
@@ -1184,7 +1185,7 @@ async function drawImageHighQuality(ctx, img, targetW, targetH, sharpenOpts = {}
     tmp.getContext('2d').drawImage(src, 0, 0);
     src = tmp;
   }
-  if (vips) {
+  if (vips && useVips) {
     try {
       await drawImageVips(ctx, src, targetW, targetH, sharpenOpts);
       return;
@@ -1222,7 +1223,7 @@ async function drawImageVips(ctx, srcCanvas, targetW, targetH, sharpenOpts) {
   }
 }
 
-async function renderPageToCanvas(pageNum, scale) {
+async function renderPageToCanvas(pageNum, scale, useVips = true) {
   if (docType === 'pdf') {
     const page = await pdfDoc.getPage(pageNum);
     const dims = { width: page.getViewport({ scale: 1 }).width, height: page.getViewport({ scale: 1 }).height };
@@ -1241,7 +1242,7 @@ async function renderPageToCanvas(pageNum, scale) {
       canvas.width = targetW;
       canvas.height = targetH;
       const ctx = canvas.getContext('2d');
-      await drawImageHighQuality(ctx, fullCanvas, targetW, targetH, getSharpenOpts());
+      await drawImageHighQuality(ctx, fullCanvas, targetW, targetH, getSharpenOpts(), useVips);
       return canvas;
     }
     const viewport = page.getViewport({ scale: s });
@@ -1259,7 +1260,7 @@ async function renderPageToCanvas(pageNum, scale) {
     canvas.width = Math.round(dims.width * s);
     canvas.height = Math.round(dims.height * s);
     const ctx = canvas.getContext('2d');
-    await drawImageHighQuality(ctx, entry.img, canvas.width, canvas.height, getSharpenOpts());
+    await drawImageHighQuality(ctx, entry.img, canvas.width, canvas.height, getSharpenOpts(), useVips);
     return canvas;
   }
 }
@@ -1480,7 +1481,7 @@ async function renderThumbnails() {
   for (let i = 1; i <= totalPages; i++) {
     const dims = await getPageDimensions(i);
     const scale = 140 / dims.width;
-    const canvas = await renderPageToCanvas(i, scale);
+    const canvas = await renderPageToCanvas(i, scale, false);
 
     const div = document.createElement('div');
     div.className = 'thumb' + (i === currentPage ? ' active' : '');
