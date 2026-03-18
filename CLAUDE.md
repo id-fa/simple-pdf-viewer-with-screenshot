@@ -177,7 +177,7 @@
 ### 高品質縮小 (HQ モード)
 - **Pica.js** ベース (デフォルト): Lanczos3 フィルタ + 組み込み unsharp mask で高品質縮小
 - **wasm-vips** (オプション): `?vips=1` で有効化。thumbnailImage (box shrink + Lanczos3) + vips sharpen
-- `drawImageHighQuality()` — vips が利用可能なら `drawImageVips()` にディスパッチ、そうでなければ `picaInstance.resize()`
+- `drawImageHighQuality()` — vips が利用可能なら `drawImageVips()` にディスパッチ、失敗時 (メモリ不足等) は自動的に Pica にフォールバック
 - `drawImageVips()` — `newFromMemory` → `thumbnailImage` → `sharpen` → `writeToMemory`。alpha チャンネル分離・sRGB reinterpret で colorspace エラーを回避。`toDelete` 配列で vips Image オブジェクトのメモリ管理
 - Pica 初期化: `new Pica({ features: ['js', 'wasm'] })` — Web Worker は CDN ESM 環境で動作しないため無効化
 - **アーカイブ画像** (comic-viewer.html): 常時 Pica/vips 経由で縮小、Filter の Sharpen 値が適用される

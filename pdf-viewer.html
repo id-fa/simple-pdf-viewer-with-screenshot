@@ -370,6 +370,8 @@ if (VIPS_ENABLED) {
     const VIPS_BASE = './vips-lib/';
     const Vips = (await import(VIPS_BASE + 'vips-es6.js')).default;
     vips = await Vips({ dynamicLibraries: [], locateFile: (f) => VIPS_BASE + f });
+    // Disable vips operation cache to reduce WASM heap pressure
+    vips.Cache.max(0);
     console.log('[vips] wasm-vips loaded successfully');
   } catch (e) {
     console.warn('[vips] wasm-vips failed to load, falling back to Pica:', e.message);
@@ -985,10 +987,14 @@ async function drawImageHighQuality(ctx, img, targetW, targetH, sharpenOpts = {}
     src = tmp;
   }
   if (vips) {
-    await drawImageVips(ctx, src, targetW, targetH, sharpenOpts);
-  } else {
-    await picaInstance.resize(src, ctx.canvas, sharpenOpts);
+    try {
+      await drawImageVips(ctx, src, targetW, targetH, sharpenOpts);
+      return;
+    } catch (e) {
+      console.warn('[vips] fallback to Pica:', e.message);
+    }
   }
+  await picaInstance.resize(src, ctx.canvas, sharpenOpts);
 }
 
 async function drawImageVips(ctx, srcCanvas, targetW, targetH, sharpenOpts) {
