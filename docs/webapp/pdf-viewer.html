@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="ブラウザ上で動作する画像保存機能付きPDFビューア - Browser-based PDF viewer with image export">
 <title>PDF Viewer - Image Exporter</title>
 <script>
 // Enable coi-serviceworker only when ?vips=1 (provides SharedArrayBuffer for wasm-vips)
@@ -985,6 +986,7 @@ function getScale(page, forSpread) {
 }
 
 // High-quality downscale using Pica (Lanczos3 + optional unsharp mask)
+// High-quality downscale using wasm-vips (if available) or Pica fallback
 // Set useVips=false to force Pica (e.g. for thumbnails to save WASM heap)
 async function drawImageHighQuality(ctx, img, targetW, targetH, sharpenOpts = {}, useVips = true) {
   let src = img;
