@@ -459,6 +459,7 @@ async function collectAnnotations() {
     const page = await pdfDoc.getPage(i);
     const annots = await page.getAnnotations();
     for (const a of annots) {
+      if (a.subtype === 'Popup') continue;
       const contents = a.contentsObj?.str || a.contents || '';
       const author = a.titleObj?.str || a.title || '';
       if (contents.trim()) {
