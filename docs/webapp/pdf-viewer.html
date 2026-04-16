@@ -10,24 +10,29 @@
 <link rel="apple-touch-icon" href="./icons/icon-192.png">
 <title>PDF Viewer - Image Exporter</title>
 <script>
-// Sync URL ?vips=1 with localStorage preference (runs before SW registration)
+// Capture launch files early — location.replace/reload would drop the launchQueue
+window.__launchFiles = null;
+window.__handleLaunch = (files) => { window.__launchFiles = files; };
+if ('launchQueue' in window) {
+  launchQueue.setConsumer((params) => {
+    if (params && params.files && params.files.length) window.__handleLaunch(params.files);
+  });
+}
+
+// URL ?vips=1 is a one-shot to set the preference (no redirect needed thereafter)
 (() => {
-  const params = new URLSearchParams(location.search);
-  const urlVips = params.get('vips') === '1';
-  const savedVips = localStorage.getItem('vipsEnabled') === '1';
-  if (urlVips && !savedVips) {
+  if (new URLSearchParams(location.search).get('vips') === '1') {
     localStorage.setItem('vipsEnabled', '1');
-  } else if (!urlVips && savedVips) {
-    params.set('vips', '1');
-    location.replace(location.pathname + '?' + params.toString() + location.hash);
   }
 })();
 (async () => {
   if (!('serviceWorker' in navigator)) return;
-  const vipsRequested = new URLSearchParams(location.search).get('vips') === '1';
+  const vipsDesired = localStorage.getItem('vipsEnabled') === '1';
   try {
     const reg = await navigator.serviceWorker.register('./sw.js');
-    if (vipsRequested && !self.crossOriginIsolated) {
+    // vips requires crossOriginIsolated. On first load the SW isn't controlling yet,
+    // so wait for control and reload to pick up COOP/COEP headers.
+    if (vipsDesired && !self.crossOriginIsolated && !window.__launchFiles) {
       if (!navigator.serviceWorker.controller) {
         await new Promise((resolve) => {
           navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true });
@@ -399,8 +404,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdfjs/pdf.worker.min.mjs';
 
 const picaInstance = new Pica({ features: ['js', 'wasm'] });
 
-// ---- wasm-vips (opt-in via ?vips=1) ----
-const VIPS_ENABLED = new URLSearchParams(location.search).get('vips') === '1';
+// ---- wasm-vips (opt-in via localStorage 'vipsEnabled') ----
+const VIPS_ENABLED = localStorage.getItem('vipsEnabled') === '1';
 let vips = null;
 if (VIPS_ENABLED) {
   try {
@@ -465,6 +470,12 @@ const fileInfo = document.getElementById('fileInfo');
 const progressFill = document.getElementById('progressFill');
 const toast = document.getElementById('toast');
 const hqPdfCheck = document.getElementById('hqPdfCheck');
+// Restore persisted view mode / HQ
+{
+  const savedViewMode = localStorage.getItem('viewerViewMode');
+  if (savedViewMode && ['single', 'spread', 'scroll'].includes(savedViewMode)) viewMode.value = savedViewMode;
+  hqPdfCheck.checked = localStorage.getItem('viewerHQ') === '1';
+}
 const panCheck = document.getElementById('panCheck');
 const minimapCheck = document.getElementById('minimapCheck');
 const minimapEl = document.getElementById('minimap');
@@ -1659,14 +1670,16 @@ document.addEventListener('drop', async e => {
 });
 
 // File Handling API (installed PWA)
-if ('launchQueue' in window) {
-  window.launchQueue.setConsumer(async (params) => {
-    if (!params.files || !params.files.length) return;
-    const handle = params.files[0];
-    const file = await handle.getFile();
-    await openPdfFile(file);
-  });
+async function handleLaunchFiles(files) {
+  if (!files || !files.length) return;
+  const file = await files[0].getFile();
+  await openPdfFile(file);
 }
+if (window.__launchFiles) {
+  handleLaunchFiles(window.__launchFiles);
+  window.__launchFiles = null;
+}
+window.__handleLaunch = handleLaunchFiles;
 
 // Navigation
 prevBtn.addEventListener('click', () => {
@@ -1789,6 +1802,7 @@ document.addEventListener('keydown', e => {
 
 // View mode / binding / cover changes
 viewMode.addEventListener('change', () => {
+  localStorage.setItem('viewerViewMode', viewMode.value);
   if (!pdfDoc) return;
   if (isScrollMode()) { renderScrollView(currentPage); }
   else { if (scrollObserver) { scrollObserver.disconnect(); scrollObserver = null; } renderView(currentPage); }
@@ -1798,6 +1812,8 @@ coverCheck.addEventListener('change', () => { if (pdfDoc) renderView(currentPage
 scaleSelect.addEventListener('change', () => { if (pdfDoc && !isScrollMode()) renderView(currentPage); });
 rotateSelect.addEventListener('change', () => { if (pdfDoc && !isScrollMode()) renderView(currentPage); });
 hqPdfCheck.addEventListener('change', () => {
+  if (hqPdfCheck.checked) localStorage.setItem('viewerHQ', '1');
+  else localStorage.removeItem('viewerHQ');
   if (hqPdfCheck.checked && +filterSharpen.value === 0) {
     filterSharpen.value = 80;
     applyFilters();
@@ -2398,16 +2414,13 @@ document.getElementById('filterReset').addEventListener('click', () => {
   if (prevSharpen !== '0') rerenderForSharpen();
 });
 
-// HQ engine toggle (wasm-vips). Persists via localStorage and reloads with ?vips=1.
+// HQ engine toggle (wasm-vips). Persists via localStorage; reload to apply.
 const vipsToggle = document.getElementById('vipsToggle');
 vipsToggle.checked = VIPS_ENABLED;
 vipsToggle.addEventListener('change', () => {
   if (vipsToggle.checked) localStorage.setItem('vipsEnabled', '1');
   else localStorage.removeItem('vipsEnabled');
-  const params = new URLSearchParams(location.search);
-  if (vipsToggle.checked) params.set('vips', '1'); else params.delete('vips');
-  const qs = params.toString();
-  location.replace(location.pathname + (qs ? '?' + qs : '') + location.hash);
+  location.reload();
 });
 
 // Filter presets (3 slots, shared via localStorage)

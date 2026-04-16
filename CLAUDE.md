@@ -195,12 +195,12 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
   - サムネイルにも適用される
   - HQ チェック時に Sharpen が 0 なら自動的にデフォルト値 (80) を設定
 
-### wasm-vips オプション (`?vips=1`、両ビューア共通)
+### wasm-vips オプション (localStorage `vipsEnabled`、両ビューア共通)
 - **有効化方法 (3通り)**:
-  1. URL クエリ: `?vips=1` を付加 (例: `comic-viewer.html?vips=1`)
+  1. URL クエリ: `?vips=1` を付加 (例: `comic-viewer.html?vips=1`) — 初回アクセス時の設定スイッチ
   2. アプリ内トグル: Filter ポップアップ末尾「HQ engine: wasm-vips」チェック
   3. Manifest shortcut: PWAインストール後、ランチャー長押し → 「Comic HQ」「PDF HQ」
-- **永続化**: 上記いずれかで有効化すると `localStorage.vipsEnabled = '1'` を保存。以降 `?vips=1` なしでアクセスしても起動時スクリプトが自動的に `?vips=1` を付加してリダイレクト。トグルOFFで削除
+- **設定のソースは localStorage**: `VIPS_ENABLED = localStorage.getItem('vipsEnabled') === '1'`。`?vips=1` は単に localStorage に書き込むためのワンショット。URL の `?vips=1` 付け替えリダイレクトは行わない (cold start launchQueue を保護するため)。トグルOFFで localStorage から削除 + reload
 - **依存ファイル**: `vendor/vips/vips-es6.js` (87KB) + `vendor/vips/vips.wasm` (5.4MB)
 - **COOP/COEP 付与**: `sw.js` が全レスポンスに `Cross-Origin-Embedder-Policy: require-corp` / `Cross-Origin-Opener-Policy: same-origin` / `Cross-Origin-Resource-Policy: cross-origin` を付与 (SharedArrayBuffer 有効化)。初回ロード時は SW が controller になるまで `controllerchange` を待ってリロード
 - **初期化**: `dynamicLibraries: []` で不要な JXL/HEIF/RESVG モジュールのロードをスキップ。`vips.Cache.max(0)` でオペレーションキャッシュを無効化 (WASM ヒープ節約)
@@ -320,6 +320,13 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
   - Save ボタンで現在のスライダー値を保存、Load ボタンで復元・即時適用
   - 未保存スロットの Load ボタンは disabled、保存済みスロットはツールチップに設定値を表示
 
+### UI 設定の永続化 (localStorage、両ビューア共通)
+- `viewerViewMode` — Single / Spread / Scroll の選択状態 (起動時に復元、変更時に保存)
+- `viewerHQ` — HQ チェックボックスの状態 (`'1'` で ON、未設定で OFF)
+- `vipsEnabled` — wasm-vips 有効化フラグ (HQ engine トグル)
+- `viewerFilterPresets` — Filter プリセット 3 スロット
+- ブックマーク系キー (ファイルハッシュ → bookmark オブジェクト)
+
 ### ヘルプモーダル (?、両ビューア共通)
 - `?` キーまたはヘッダーの **?** ボタンでモーダル表示
 - キーボードショートカット・マウス/タッチ操作の一覧を表示
@@ -334,7 +341,7 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
 ## PWA / Service Worker
 
 ### `sw.js`
-- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v5`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v8`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
 - **`SHARE_CACHE`**: `share-stash-v1` — Web Share Target で受信したファイルを一時保存する専用キャッシュ (activate 時も削除対象外)
 - **`PRECACHE_URLS`**: インストール時に一括取得するリソース (HTML 2種、vendor/ 配下全ファイル、manifest、icons)。`fetch(url, { cache: 'reload' })` でブラウザキャッシュをバイパス
 - **`activate`**: `CACHE_NAME` と `SHARE_CACHE` 以外の旧キャッシュを削除し `self.clients.claim()`
@@ -356,16 +363,17 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
 
 ### OS ファイル関連付け / 共有ターゲット (インストール済み PWA)
 - **File Handling API**: 両 HTML で `window.launchQueue.setConsumer()` を登録。OS から関連付けで起動されると `params.files[0].getFile()` で File を取得し、`openPdfFile()` / `openFile()` に渡す
+- **Cold start の launchQueue 保護**: `<head>` 冒頭で launchQueue に一次コンシューマを登録し、受け取ったファイルを `window.__launchFiles` に退避。`controllerchange` リロードは launch ドキュメントを破棄してファイル情報を失うため、`__launchFiles` が存在するときは**スキップ**する (その起動は vips 無効のまま処理、次回から COI 確立)。本体スクリプトロード後に `window.__handleLaunch` を `openPdfFile`/`openFile` に差し替えて hot launch に対応
 - **Web Share Target**: Android 等で共有メニューから送られた POST を SW が傍受 (`handleShareTarget`) → `share-stash-v1` キャッシュに保存 → `?share=1` 付きでリダイレクト
 - **comic-viewer.html の `?share=1` ハンドラ**: ページ起動時に `caches.open('share-stash-v1')` を開き、meta.json を読み、先頭エントリの Blob を File に復元して `openFile()` に渡す。処理後は該当エントリと meta.json を削除、`history.replaceState` で URL から `?share=1` を除去
 - **重要**: share_target も file_handlers も `comic-viewer.html` を action にしているので POST/GET 双方を 1 つの URL で処理する (SW が method で分岐)
 
 ### HTML側の登録
-- `<head>` 冒頭のスクリプトで 2段階処理:
-  1. `localStorage.vipsEnabled === '1'` かつ URL に `?vips=1` なし → `?vips=1` を付加して `location.replace()`
-  2. `?vips=1` あり かつ未保存 → `localStorage.setItem('vipsEnabled', '1')`
-- その後 `navigator.serviceWorker.register('./sw.js')` で SW 登録
-- `?vips=1` 指定時は `self.crossOriginIsolated` になるまで `controllerchange` を待って `location.reload()` (初回のみ)
+- `<head>` 冒頭のスクリプト:
+  1. `?vips=1` があれば `localStorage.setItem('vipsEnabled', '1')` (ワンショットの設定書き込み)
+  2. `navigator.serviceWorker.register('./sw.js')` で SW 登録
+  3. `localStorage.vipsEnabled === '1'` かつ `!crossOriginIsolated` の場合のみ、`controllerchange` を待って `location.reload()` (初回のみ、COOP/COEP を反映)
+- **URL リダイレクトは行わない**: 設定は localStorage に永続化されるだけ、URL は変更しない (cold start の launchQueue を保護するため)
 - **ファイル読み込みエントリポイント**: `pdf-viewer.html` は `openPdfFile(file)`、`comic-viewer.html` は `openFile(file)` (PDF / アーカイブ自動判別)。file input / drag&drop / launchQueue / share_target すべてこれらを経由
 
 ### アイコン生成
