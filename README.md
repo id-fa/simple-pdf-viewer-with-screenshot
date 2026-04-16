@@ -12,10 +12,14 @@ Created by id-fa, built with Claude Code.
 pdf-viewer-with-screenshot/
 ├── pdf-viewer.html        # PDF専用ビューア / PDF-only viewer
 ├── comic-viewer.html      # 汎用ビューア / Universal viewer (PDF + CBZ/CBR/CB7/EPUB)
-├── coi-serviceworker.js   # Cross-Origin Isolation SW (wasm-vips用)
-├── vips-lib/              # wasm-vips ファイル (オプション)
-│   ├── vips-es6.js
-│   └── vips.wasm
+├── sw.js                  # Service Worker (precache + COOP/COEP)
+├── manifest.webmanifest   # PWA manifest
+├── vendor/                # Vendored libraries (no CDN required)
+│   ├── pdfjs/             #   PDF.js v4.9.155
+│   ├── pica/              #   Pica.js v9.0.1
+│   ├── libarchive/        #   libarchive.js v2.0.2
+│   └── vips/              #   wasm-vips (optional, used with ?vips=1)
+├── icons/                 # PWA icons + generator
 ├── README.md              # This file
 └── CLAUDE.md              # AI development guide
 ```

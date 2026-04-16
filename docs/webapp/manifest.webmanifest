@@ -1,0 +1,43 @@
+{
+  "name": "Comic & PDF Viewer",
+  "short_name": "ComicViewer",
+  "description": "Browser-based PDF / CBZ / CBR / CB7 / EPUB viewer with screenshot and bookmark support.",
+  "start_url": "./comic-viewer.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1e293b",
+  "theme_color": "#1e293b",
+  "lang": "en",
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Comic Viewer",
+      "short_name": "Comic",
+      "url": "./comic-viewer.html",
+      "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Comic Viewer (HQ)",
+      "short_name": "Comic HQ",
+      "url": "./comic-viewer.html?vips=1",
+      "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "PDF Viewer",
+      "short_name": "PDF",
+      "url": "./pdf-viewer.html",
+      "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "PDF Viewer (HQ)",
+      "short_name": "PDF HQ",
+      "url": "./pdf-viewer.html?vips=1",
+      "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}

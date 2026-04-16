@@ -1,24 +1,33 @@
 # PDF Viewer with Screenshot
 
 ## プロジェクト概要
-ブラウザベースのビューア＋画像エクスポートツール群。単一HTMLファイルで完結する設計。
+ブラウザベースのビューア＋画像エクスポートツール群。PWA としてインストール可能、オフライン動作対応。
 
 ## ファイル構成
-- `pdf-viewer.html` — PDF専用ビューア (PDF.js + Pica.js 依存)
-- `comic-viewer.html` — 汎用コミックビューア (PDF + CBZ/CBR/CB7対応、PDF.js + Pica.js + libarchive.js 依存)
+- `pdf-viewer.html` — PDF専用ビューア
+- `comic-viewer.html` — 汎用コミックビューア (PDF + CBZ/CBR/CB7/EPUB対応)
+- `sw.js` — Service Worker (プリキャッシュ + COOP/COEP ヘッダー付与)
+- `manifest.webmanifest` — PWA マニフェスト
+- `vendor/` — ベンダー化された外部ライブラリ (CDN不要)
+  - `pdfjs/pdf.min.mjs` `pdf.worker.min.mjs` — PDF.js v4.9.155
+  - `pica/pica.js` — Pica.js v9.0.1
+  - `libarchive/libarchive.js` `worker-bundle.js` `libarchive.wasm` — libarchive.js v2.0.2
+  - `vips/vips-es6.js` `vips.wasm` — wasm-vips (`?vips=1` 時のみロード)
+- `icons/` — PWA アイコン (192 / 512 / maskable) + 生成スクリプト `_generate.py`
+- `Firefly_Gemini_icon_776910.png` — アイコン右下に合成する意匠素材
 
 ## 共通アーキテクチャ
-- **単一ファイル構成**: 各HTMLファイルにHTML/CSS/JSを全て内包
-- **CDN依存**: 外部ライブラリはCDNから読み込み (ローカルファイル不要)
+- **PWA**: Service Worker によるプリキャッシュでオフライン動作、ホーム画面にインストール可
+- **ローカル資産のみ**: CDN 依存なし (全ライブラリを `vendor/` に同梱)
 - **ES Modules**: `<script type="module">` で記述
 - **Vanilla JS**: フレームワーク不使用
-- **wasm-vips オプション**: `?vips=1` クエリパラメータで wasm-vips による高品質縮小を有効化 (両ビューア共通)
+- **wasm-vips オプション**: `?vips=1` クエリパラメータ / Filter ポップアップのトグル / manifest shortcut で切替可能 (両ビューア共通)
 
 ## pdf-viewer.html
 
 ### 依存
-- **PDF.js** v4.9.155 — CDN (`cdnjs.cloudflare.com`) から ES Module
-- **Pica.js** v9.0.1 — CDN (`cdn.jsdelivr.net`) から ES Module — 高品質画像縮小 (Lanczos3 + unsharp mask)
+- **PDF.js** v4.9.155 — `vendor/pdfjs/` からローカル読み込み
+- **Pica.js** v9.0.1 — `vendor/pica/pica.js` — 高品質画像縮小 (Lanczos3 + unsharp mask)
 
 ### 状態管理
 - `pdfDoc` — PDF.js のドキュメントオブジェクト
@@ -36,9 +45,9 @@
 ## comic-viewer.html
 
 ### 依存
-- **PDF.js** v4.9.155 — CDN (`cdnjs.cloudflare.com`)
-- **Pica.js** v9.0.1 — CDN (`cdn.jsdelivr.net`) から ES Module — 高品質画像縮小 (Lanczos3 + unsharp mask)
-- **libarchive.js** v2.0.2 — CDN (`cdn.jsdelivr.net`) — WASM ベース、遅延読み込み
+- **PDF.js** v4.9.155 — `vendor/pdfjs/` からローカル読み込み
+- **Pica.js** v9.0.1 — `vendor/pica/pica.js`
+- **libarchive.js** v2.0.2 — `vendor/libarchive/` — WASM ベース、遅延読み込み
 
 ### 対応形式
 - PDF — PDF.js でレンダリング
@@ -47,13 +56,10 @@
 - CB7 / 7z — libarchive.js (WASM) で展開
 - EPUB — libarchive.js (WASM) で展開 ※固定レイアウト(画像ベース)のみ対応
 
-### WASM Worker のクロスオリジン対策
-ブラウザはクロスオリジン URL から直接 Worker を生成できないため:
-1. `worker-bundle.js` を CDN から `fetch()` でテキスト取得
-2. コード内の `import.meta.url` を CDN の実 URL 文字列に置換
-3. 置換済みコードから `Blob` → `blob:` URL を生成
-4. `Archive.init({ getWorker })` でカスタム Worker ファクトリを登録
-→ Worker 内から WASM ファイルのパスが正しく CDN に解決される
+### libarchive Worker
+同一オリジンなので `new Worker(workerUrl, { type: 'module' })` で直接生成。
+`LIBARCHIVE_BASE = './vendor/libarchive/'` + `location.href` でワーカーURLを絶対URLに解決し、
+Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM ファイルに到達する。
 
 ### 状態管理
 - `docType` — `'pdf'` | `'archive'`
@@ -103,8 +109,8 @@
 
 ### 実行要件
 - ローカル HTTP サーバー必須 (`python -m http.server`, `php -S localhost:8000` 等)
-- `file://` では WASM Worker が動作しない
-- インターネット接続必須 (CDN から PDF.js + libarchive.js を読み込み)
+- `file://` では WASM Worker / Service Worker が動作しない
+- インターネット接続は**不要** (全ライブラリを `vendor/` にベンダー化済み、PWA初回インストール後はオフラインで全機能利用可)
 
 ## 共通: 見開き表示ロジック
 
@@ -190,14 +196,18 @@
   - HQ チェック時に Sharpen が 0 なら自動的にデフォルト値 (80) を設定
 
 ### wasm-vips オプション (`?vips=1`、両ビューア共通)
-- **有効化**: URL に `?vips=1` を付加 (例: `comic-viewer.html?vips=1`)
-- **依存ファイル**: `vips-lib/vips-es6.js` (87KB) + `vips-lib/vips.wasm` (5.4MB) — HTML と同階層に配置
-- **coi-serviceworker**: `coi-serviceworker.js` — `?vips=1` 時のみ Service Worker を登録し COEP/COOP ヘッダーを付与 (SharedArrayBuffer 有効化)
+- **有効化方法 (3通り)**:
+  1. URL クエリ: `?vips=1` を付加 (例: `comic-viewer.html?vips=1`)
+  2. アプリ内トグル: Filter ポップアップ末尾「HQ engine: wasm-vips」チェック
+  3. Manifest shortcut: PWAインストール後、ランチャー長押し → 「Comic HQ」「PDF HQ」
+- **永続化**: 上記いずれかで有効化すると `localStorage.vipsEnabled = '1'` を保存。以降 `?vips=1` なしでアクセスしても起動時スクリプトが自動的に `?vips=1` を付加してリダイレクト。トグルOFFで削除
+- **依存ファイル**: `vendor/vips/vips-es6.js` (87KB) + `vendor/vips/vips.wasm` (5.4MB)
+- **COOP/COEP 付与**: `sw.js` が全レスポンスに `Cross-Origin-Embedder-Policy: require-corp` / `Cross-Origin-Opener-Policy: same-origin` / `Cross-Origin-Resource-Policy: cross-origin` を付与 (SharedArrayBuffer 有効化)。初回ロード時は SW が controller になるまで `controllerchange` を待ってリロード
 - **初期化**: `dynamicLibraries: []` で不要な JXL/HEIF/RESVG モジュールのロードをスキップ。`vips.Cache.max(0)` でオペレーションキャッシュを無効化 (WASM ヒープ節約)
 - **フォールバック**: vips ロード失敗時は自動的に Pica にフォールバック。画像処理中のメモリ不足エラーも per-call で Pica にフォールバック
 - **WASM ヒープ制約**: WASM メモリ空間に上限があるため、高解像度画像で `newFromMemory` がメモリ不足になる場合がある。サムネイル生成では vips をスキップしてヒープを温存
 - **ステータス表示**: `?vips=1` 時のみ dropzone に「wasm-vips active」または「vips failed → Pica fallback」を表示
-- **`?vips=1` なしの場合**: coi-serviceworker は登録されず、vips の import も発生しない (動作に一切影響なし)
+- **`?vips=1` なしの場合**: vips の import は発生しない (COOP/COEP は付与されるが動作に影響なし)
 
 ### レイアウト中央揃え
 - `.viewer` は `align-items: center` を使わない (拡大時に左端が見切れる問題を回避)
@@ -321,8 +331,42 @@
 - `canonicalPage(pageNum)` — ページ番号をペアの先頭に正規化
 - `prevPageNum()` / `nextPageNum()` — ナビゲーション計算
 
+## PWA / Service Worker
+
+### `sw.js`
+- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v2`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`PRECACHE_URLS`**: インストール時に一括取得するリソース (HTML 2種、vendor/ 配下全ファイル、manifest、icons)。`fetch(url, { cache: 'reload' })` でブラウザキャッシュをバイパス
+- **`activate`**: 旧バージョンのキャッシュを削除し `self.clients.claim()`
+- **fetch 戦略**: 同一オリジン GET に対してのみ cache-first。キャッシュヒット時も `withCoiHeaders()` で COOP/COEP/CORP ヘッダーを付与してから返す。キャッシュミスはネットワーク取得＋成功時は自動キャッシュ
+- **オフライン時**: キャッシュされていない同一オリジンリソースは 503 "Offline" を返す
+- **外部オリジン**: `respondWith` しないのでブラウザのデフォルト挙動 (PWAでは通常発生しない)
+
+### `manifest.webmanifest`
+- **`start_url`**: `./comic-viewer.html` (ホーム画面アイコンから起動する画面)
+- **`display`**: `standalone`、**`theme_color`**/**`background_color`**: `#1e293b` (slate-800)
+- **`icons`**: 192/512 (`any` purpose) + 512 (`maskable`)
+- **`shortcuts`** (長押しメニュー): Comic / Comic HQ (`?vips=1`) / PDF / PDF HQ (`?vips=1`)
+
+### HTML側の登録
+- `<head>` 冒頭のスクリプトで 2段階処理:
+  1. `localStorage.vipsEnabled === '1'` かつ URL に `?vips=1` なし → `?vips=1` を付加して `location.replace()`
+  2. `?vips=1` あり かつ未保存 → `localStorage.setItem('vipsEnabled', '1')`
+- その後 `navigator.serviceWorker.register('./sw.js')` で SW 登録
+- `?vips=1` 指定時は `self.crossOriginIsolated` になるまで `controllerchange` を待って `location.reload()` (初回のみ)
+
+### アイコン生成
+- `icons/_generate.py` (Pillow) で 3サイズを再生成 (192 / 512 / maskable-512)
+- ドキュメント型 + 右下に `Firefly_Gemini_icon_776910.png` を白キーで透過合成
+- maskable 版は safe zone (円形クロップ) を考慮して内側に配置
+
+## docs/webapp/
+GitHub Pages 配信用の同期コピー。ルートと同じ構成 (HTML / sw.js / manifest / vendor / icons) を持つ。
+ルートに変更を加えたら docs/webapp/ にも同期が必要 (HTMLは一部 diff あり: Google Analytics の gtag が入っている)。
+
 ## 開発規約
 - Vanilla JS のみ、フレームワーク不使用
-- 単一HTMLファイルを維持 (外部ファイル分割しない)
+- HTML ファイルは単一ファイルを維持 (外部 JS/CSS に分割しない)
+- ライブラリは `vendor/` に配置 (CDN に依存しない、オフラインで動作)
 - ES Modules (`type="module"`) で記述
 - Chrome DevTools MCP で動作確認可能
+- アセット更新時は `sw.js` の `CACHE_NAME` をインクリメント
