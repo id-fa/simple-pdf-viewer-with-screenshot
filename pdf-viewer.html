@@ -1615,9 +1615,7 @@ async function loadPDF(data, name) {
   }
 }
 
-// File input
-fileInput.addEventListener('change', async e => {
-  const file = e.target.files[0];
+async function openPdfFile(file) {
   if (!file) return;
   currentFileHash = await generateFileHash(file);
   sessionLastRead = isBookmarkEnabled() ? (getBookmarkForFile(currentFileHash).lastRead || null) : null;
@@ -1626,6 +1624,11 @@ fileInput.addEventListener('change', async e => {
     if (/password/i.test(err.message)) { showToast('PDF を開けませんでした', 3000); return; }
     throw err;
   }
+}
+
+// File input
+fileInput.addEventListener('change', async e => {
+  await openPdfFile(e.target.files[0]);
 });
 
 // Drag & drop
@@ -1643,16 +1646,18 @@ document.addEventListener('drop', async e => {
   const dz = document.getElementById('dropzone');
   if (dz) dz.classList.remove('dragover');
   const file = e.dataTransfer.files[0];
-  if (file && file.type === 'application/pdf') {
-    currentFileHash = await generateFileHash(file);
-    sessionLastRead = isBookmarkEnabled() ? (getBookmarkForFile(currentFileHash).lastRead || null) : null;
-    const buf = await file.arrayBuffer();
-    try { await loadPDF(buf, file.name); } catch (err) {
-      if (/password/i.test(err.message)) { showToast('PDF を開けませんでした', 3000); return; }
-      throw err;
-    }
-  }
+  if (file && file.type === 'application/pdf') await openPdfFile(file);
 });
+
+// File Handling API (installed PWA)
+if ('launchQueue' in window) {
+  window.launchQueue.setConsumer(async (params) => {
+    if (!params.files || !params.files.length) return;
+    const handle = params.files[0];
+    const file = await handle.getFile();
+    await openPdfFile(file);
+  });
+}
 
 // Navigation
 prevBtn.addEventListener('click', () => {

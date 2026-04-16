@@ -39,5 +39,53 @@
       "url": "./pdf-viewer.html?vips=1",
       "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }
-  ]
+  ],
+  "launch_handler": { "client_mode": "focus-existing" },
+  "file_handlers": [
+    {
+      "action": "./pdf-viewer.html",
+      "accept": { "application/pdf": [".pdf"] },
+      "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "action": "./comic-viewer.html",
+      "accept": {
+        "application/vnd.comicbook+zip": [".cbz"],
+        "application/vnd.comicbook-rar": [".cbr"],
+        "application/x-cbr": [".cbr"],
+        "application/x-cb7": [".cb7"],
+        "application/epub+zip": [".epub"],
+        "application/zip": [".zip"],
+        "application/vnd.rar": [".rar"],
+        "application/x-rar-compressed": [".rar"],
+        "application/x-7z-compressed": [".7z"]
+      },
+      "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ],
+  "share_target": {
+    "action": "./comic-viewer.html",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [
+        {
+          "name": "file",
+          "accept": [
+            "application/pdf",
+            "application/zip",
+            "application/vnd.comicbook+zip",
+            "application/vnd.comicbook-rar",
+            "application/x-cbr",
+            "application/x-cb7",
+            "application/epub+zip",
+            "application/vnd.rar",
+            "application/x-rar-compressed",
+            "application/x-7z-compressed",
+            ".pdf", ".cbz", ".cbr", ".cb7", ".epub", ".zip", ".rar", ".7z"
+          ]
+        }
+      ]
+    }
+  }
 }

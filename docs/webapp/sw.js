@@ -1,4 +1,5 @@
-const CACHE_NAME = 'pdf-viewer-v3';
+const CACHE_NAME = 'pdf-viewer-v5';
+const SHARE_CACHE = 'share-stash-v1';
 const PRECACHE_URLS = [
   './',
   './pdf-viewer.html',
@@ -35,7 +36,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)));
+    await Promise.all(keys.filter((k) => k !== CACHE_NAME && k !== SHARE_CACHE).map((k) => caches.delete(k)));
     await self.clients.claim();
   })());
 });
@@ -57,11 +58,33 @@ function withCoiHeaders(response) {
   });
 }
 
+async function handleShareTarget(request) {
+  const formData = await request.formData();
+  const files = formData.getAll('file').filter((f) => f && typeof f === 'object' && 'size' in f);
+  const cache = await caches.open(SHARE_CACHE);
+  const meta = [];
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    const key = `/__share__/${Date.now()}-${i}`;
+    await cache.put(key, new Response(f, { headers: { 'content-type': f.type || 'application/octet-stream' } }));
+    meta.push({ key, name: f.name || `shared-${i}`, type: f.type || '', size: f.size });
+  }
+  await cache.put('/__share__/meta.json', new Response(JSON.stringify(meta), { headers: { 'content-type': 'application/json' } }));
+  return Response.redirect('./comic-viewer.html?share=1', 303);
+}
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
-  if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
+
+  // share_target POST handler
+  if (req.method === 'POST' && url.pathname.endsWith('/comic-viewer.html')) {
+    event.respondWith(handleShareTarget(req));
+    return;
+  }
+
+  if (req.method !== 'GET') return;
 
   event.respondWith((async () => {
     const cache = await caches.open(CACHE_NAME);

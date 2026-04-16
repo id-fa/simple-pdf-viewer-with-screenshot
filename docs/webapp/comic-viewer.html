@@ -2159,6 +2159,38 @@ document.addEventListener('drop', async e => {
   await openFile(file);
 });
 
+// ---- File Handling API (installed PWA) ----
+if ('launchQueue' in window) {
+  window.launchQueue.setConsumer(async (params) => {
+    if (!params.files || !params.files.length) return;
+    const handle = params.files[0];
+    const file = await handle.getFile();
+    await openFile(file);
+  });
+}
+
+// ---- Web Share Target ----
+(async () => {
+  const sp = new URLSearchParams(location.search);
+  if (sp.get('share') !== '1') return;
+  try {
+    const cache = await caches.open('share-stash-v1');
+    const metaResp = await cache.match('/__share__/meta.json');
+    if (!metaResp) return;
+    const meta = await metaResp.json();
+    if (!meta.length) return;
+    const m = meta[0];
+    const fileResp = await cache.match(m.key);
+    if (!fileResp) return;
+    const blob = await fileResp.blob();
+    const file = new File([blob], m.name, { type: m.type || blob.type });
+    await openFile(file);
+    await Promise.all(meta.map((it) => cache.delete(it.key)));
+    await cache.delete('/__share__/meta.json');
+    history.replaceState(null, '', location.pathname);
+  } catch (e) { console.warn('[share] failed:', e); }
+})();
+
 // ---- Navigation ----
 prevBtn.addEventListener('click', () => {
   if (isR2L()) {

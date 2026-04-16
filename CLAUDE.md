@@ -334,10 +334,12 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
 ## PWA / Service Worker
 
 ### `sw.js`
-- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v2`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v5`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`SHARE_CACHE`**: `share-stash-v1` — Web Share Target で受信したファイルを一時保存する専用キャッシュ (activate 時も削除対象外)
 - **`PRECACHE_URLS`**: インストール時に一括取得するリソース (HTML 2種、vendor/ 配下全ファイル、manifest、icons)。`fetch(url, { cache: 'reload' })` でブラウザキャッシュをバイパス
-- **`activate`**: 旧バージョンのキャッシュを削除し `self.clients.claim()`
+- **`activate`**: `CACHE_NAME` と `SHARE_CACHE` 以外の旧キャッシュを削除し `self.clients.claim()`
 - **fetch 戦略**: 同一オリジン GET に対してのみ cache-first。キャッシュヒット時も `withCoiHeaders()` で COOP/COEP/CORP ヘッダーを付与してから返す。キャッシュミスはネットワーク取得＋成功時は自動キャッシュ
+- **`handleShareTarget(request)`**: `POST` + `comic-viewer.html` 宛リクエストを傍受。`formData.getAll('file')` したファイルを `SHARE_CACHE` に `/__share__/{timestamp}-{i}` キーで保存、meta.json にファイル名/MIME/サイズを記録、`./comic-viewer.html?share=1` へ 303 リダイレクト
 - **オフライン時**: キャッシュされていない同一オリジンリソースは 503 "Offline" を返す
 - **外部オリジン**: `respondWith` しないのでブラウザのデフォルト挙動 (PWAでは通常発生しない)
 
@@ -346,6 +348,17 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
 - **`display`**: `standalone`、**`theme_color`**/**`background_color`**: `#1e293b` (slate-800)
 - **`icons`**: 192/512 (`any` purpose) + 512 (`maskable`)
 - **`shortcuts`** (長押しメニュー): Comic / Comic HQ (`?vips=1`) / PDF / PDF HQ (`?vips=1`)
+- **`launch_handler`**: `{ client_mode: "focus-existing" }` — 既存ウィンドウを再利用してファイルを開く
+- **`file_handlers`** (OS ファイル関連付け):
+  - `./pdf-viewer.html` → `application/pdf` + `.pdf`
+  - `./comic-viewer.html` → `.cbz/.cbr/.cb7/.epub/.zip/.rar/.7z` とそれぞれの MIME タイプ
+- **`share_target`** (OS 共有メニュー受信): `action=./comic-viewer.html`、`method=POST`、`enctype=multipart/form-data`、`files` パラメータ (name=file) で PDF/アーカイブ系の MIME + 拡張子を accept
+
+### OS ファイル関連付け / 共有ターゲット (インストール済み PWA)
+- **File Handling API**: 両 HTML で `window.launchQueue.setConsumer()` を登録。OS から関連付けで起動されると `params.files[0].getFile()` で File を取得し、`openPdfFile()` / `openFile()` に渡す
+- **Web Share Target**: Android 等で共有メニューから送られた POST を SW が傍受 (`handleShareTarget`) → `share-stash-v1` キャッシュに保存 → `?share=1` 付きでリダイレクト
+- **comic-viewer.html の `?share=1` ハンドラ**: ページ起動時に `caches.open('share-stash-v1')` を開き、meta.json を読み、先頭エントリの Blob を File に復元して `openFile()` に渡す。処理後は該当エントリと meta.json を削除、`history.replaceState` で URL から `?share=1` を除去
+- **重要**: share_target も file_handlers も `comic-viewer.html` を action にしているので POST/GET 双方を 1 つの URL で処理する (SW が method で分岐)
 
 ### HTML側の登録
 - `<head>` 冒頭のスクリプトで 2段階処理:
@@ -353,6 +366,7 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
   2. `?vips=1` あり かつ未保存 → `localStorage.setItem('vipsEnabled', '1')`
 - その後 `navigator.serviceWorker.register('./sw.js')` で SW 登録
 - `?vips=1` 指定時は `self.crossOriginIsolated` になるまで `controllerchange` を待って `location.reload()` (初回のみ)
+- **ファイル読み込みエントリポイント**: `pdf-viewer.html` は `openPdfFile(file)`、`comic-viewer.html` は `openFile(file)` (PDF / アーカイブ自動判別)。file input / drag&drop / launchQueue / share_target すべてこれらを経由
 
 ### アイコン生成
 - `icons/_generate.py` (Pillow) で 3サイズを再生成 (192 / 512 / maskable-512)
