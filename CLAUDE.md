@@ -108,10 +108,10 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
 - WASM サンドボックスにより libarchive 本体のバッファオーバーフロー等の CVE は RCE に繋がらない
 
 ### ローディング表示フロー
-- `showLoading("{ファイル名} を展開中...")` のオーバーレイは**最初のページ描画が完了するまで**表示し続ける (展開完了 → 初回 `renderView(1)` 完了後に `hideLoading`)
-- 実装: `onDocLoaded` は async で `await renderView(1)` し、`loadPDF` / `loadImageEntries` もそれを await。`loadArchive` の `finally { hideLoading }` が初回描画完了後に走る
-- 理由: 関連付け cold start 時、展開完了でトーストを消すとレンダリングの freeze 中に progress bar が中途半端に見えてしまい「まだ使えない」感が出る。トースト消去＝画面が使える状態に揃える
-- `renderThumbnails()` は await しない (全ページ分のサムネ生成は重く、バックグラウンド継続で OK。pdf-viewer.html の挙動と揃えた)
+- `showLoading("{ファイル名} を展開中...")` のオーバーレイは**初回ページ描画＋全サムネイル生成が完了するまで**表示し続ける (展開完了 → `renderView(1)` → `renderThumbnails()` 完了後に `hideLoading`)
+- 実装: `onDocLoaded` は async で `await renderView(1)` 後、`docType === 'archive'` のときのみ `await renderThumbnails()` する。PDF (loading overlay 無し) は従来通り非 await でバックグラウンド生成
+- 理由: 関連付け cold start 時、`renderThumbnails` がメインスレッドを 3 秒〜占有するため、トーストだけ先に消えると「フリーズした UI」と「中途半端な progress bar」がユーザーに見えてしまう (CSS transition がメインスレッド占有で更新できず止まる)。サムネ完了までトーストを残せば「展開中 → 即操作可能」のクリーンな遷移になる
+- `loadPDF` / `loadImageEntries` も `await onDocLoaded()` する。`loadArchive` の `finally { hideLoading }` が全描画完了後に走る
 
 ### 実行要件
 - ローカル HTTP サーバー必須 (`python -m http.server`, `php -S localhost:8000` 等)
@@ -347,7 +347,7 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
 ## PWA / Service Worker
 
 ### `sw.js`
-- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v10`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v11`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
 - **`SHARE_CACHE`**: `share-stash-v1` — Web Share Target で受信したファイルを一時保存する専用キャッシュ (activate 時も削除対象外)
 - **`PRECACHE_URLS`**: インストール時に一括取得するリソース (HTML 2種、vendor/ 配下全ファイル、manifest、icons)。`fetch(url, { cache: 'reload' })` でブラウザキャッシュをバイパス
 - **`activate`**: `CACHE_NAME` と `SHARE_CACHE` 以外の旧キャッシュを削除し `self.clients.claim()`

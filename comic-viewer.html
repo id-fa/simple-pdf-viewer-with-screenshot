@@ -2105,7 +2105,14 @@ async function onDocLoaded() {
   [saveBtn, saveLBtn, saveRBtn, spreadBtn, saveAllBtn, thumbToggle].forEach(b => b.disabled = false);
   updateFormatButtons();
   await renderView(1);
-  renderThumbnails();
+  // Archive case shows a loading overlay; wait for thumbnails so the overlay
+  // stays visible until the main thread is fully free (otherwise the user
+  // sees the toast disappear but the UI is frozen during thumbnail render)
+  if (docType === 'archive') {
+    await renderThumbnails();
+  } else {
+    renderThumbnails();
+  }
   if (sessionLastRead && sessionLastRead > 1) {
     showClickableToast(`p.${sessionLastRead} から再開 / Resume from p.${sessionLastRead}`, () => renderView(sessionLastRead));
   }
