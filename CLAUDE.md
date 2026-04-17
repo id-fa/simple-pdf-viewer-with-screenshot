@@ -107,6 +107,12 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
 - **展開サイズ制限**: `ARCHIVE_MAX_TOTAL_SIZE` (2 GB) 超過で展開中断・エラー表示 (Zip Bomb 対策)
 - WASM サンドボックスにより libarchive 本体のバッファオーバーフロー等の CVE は RCE に繋がらない
 
+### ローディング表示フロー
+- `showLoading("{ファイル名} を展開中...")` のオーバーレイは**最初のページ描画が完了するまで**表示し続ける (展開完了 → 初回 `renderView(1)` 完了後に `hideLoading`)
+- 実装: `onDocLoaded` は async で `await renderView(1)` し、`loadPDF` / `loadImageEntries` もそれを await。`loadArchive` の `finally { hideLoading }` が初回描画完了後に走る
+- 理由: 関連付け cold start 時、展開完了でトーストを消すとレンダリングの freeze 中に progress bar が中途半端に見えてしまい「まだ使えない」感が出る。トースト消去＝画面が使える状態に揃える
+- `renderThumbnails()` は await しない (全ページ分のサムネ生成は重く、バックグラウンド継続で OK。pdf-viewer.html の挙動と揃えた)
+
 ### 実行要件
 - ローカル HTTP サーバー必須 (`python -m http.server`, `php -S localhost:8000` 等)
 - `file://` では WASM Worker / Service Worker が動作しない
@@ -341,7 +347,7 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
 ## PWA / Service Worker
 
 ### `sw.js`
-- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v8`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v10`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
 - **`SHARE_CACHE`**: `share-stash-v1` — Web Share Target で受信したファイルを一時保存する専用キャッシュ (activate 時も削除対象外)
 - **`PRECACHE_URLS`**: インストール時に一括取得するリソース (HTML 2種、vendor/ 配下全ファイル、manifest、icons)。`fetch(url, { cache: 'reload' })` でブラウザキャッシュをバイパス
 - **`activate`**: `CACHE_NAME` と `SHARE_CACHE` 以外の旧キャッシュを削除し `self.clients.claim()`

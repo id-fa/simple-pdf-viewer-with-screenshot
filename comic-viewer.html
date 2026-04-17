@@ -1739,7 +1739,7 @@ async function loadPDF(data, name) {
   totalPages = pdfDoc.numPages;
   fileName = name || 'document.pdf';
   currentPage = 1;
-  onDocLoaded();
+  await onDocLoaded();
   collectAnnotations();
 }
 
@@ -1982,7 +1982,7 @@ async function loadImageEntries(imageFiles, archiveFileName) {
   fileName = archiveFileName;
   currentPage = 1;
   sortSelect.style.display = '';
-  onDocLoaded();
+  await onDocLoaded();
 }
 
 // Open archive, prompt for password if encrypted, and extract files.
@@ -2097,14 +2097,14 @@ async function loadArchive(file) {
   }
 }
 
-function onDocLoaded() {
+async function onDocLoaded() {
   pageCount.textContent = `/ ${totalPages}`;
   pageInput.max = totalPages;
   pageInput.disabled = false;
   fileInfo.textContent = `${fileName} (${totalPages}p)`;
   [saveBtn, saveLBtn, saveRBtn, spreadBtn, saveAllBtn, thumbToggle].forEach(b => b.disabled = false);
   updateFormatButtons();
-  renderView(1);
+  await renderView(1);
   renderThumbnails();
   if (sessionLastRead && sessionLastRead > 1) {
     showClickableToast(`p.${sessionLastRead} から再開 / Resume from p.${sessionLastRead}`, () => renderView(sessionLastRead));
