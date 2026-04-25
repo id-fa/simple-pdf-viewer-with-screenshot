@@ -14,6 +14,22 @@
     { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "./icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
+  "screenshots": [
+    {
+      "src": "./screenshots/wide-1280x800.png",
+      "sizes": "1280x800",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Comic Viewer dropzone on desktop"
+    },
+    {
+      "src": "./screenshots/narrow-540x960.png",
+      "sizes": "540x960",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Comic Viewer dropzone on mobile"
+    }
+  ],
   "shortcuts": [
     {
       "name": "Comic Viewer",
