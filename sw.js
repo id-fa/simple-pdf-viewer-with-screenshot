@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pdf-viewer-v12';
+const CACHE_NAME = 'pdf-viewer-v13';
 const SHARE_CACHE = 'share-stash-v1';
 const PRECACHE_URLS = [
   './',
@@ -9,7 +9,7 @@ const PRECACHE_URLS = [
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
   './screenshots/wide-1280x800.png',
-  './screenshots/narrow-540x960.png',
+  './screenshots/narrow-540x953.png',
   './vendor/pdfjs/pdf.min.mjs',
   './vendor/pdfjs/pdf.worker.min.mjs',
   './vendor/pica/pica.js',

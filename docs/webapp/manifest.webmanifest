@@ -23,8 +23,8 @@
       "label": "Comic Viewer dropzone on desktop"
     },
     {
-      "src": "./screenshots/narrow-540x960.png",
-      "sizes": "540x960",
+      "src": "./screenshots/narrow-540x953.png",
+      "sizes": "540x953",
       "type": "image/png",
       "form_factor": "narrow",
       "label": "Comic Viewer dropzone on mobile"
