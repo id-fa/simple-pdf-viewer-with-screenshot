@@ -177,9 +177,12 @@ label.check input { cursor: pointer; }
 
 /* Scroll mode */
 .scroll-container { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 16px; }
+.scroll-container.gapless { gap: 0; padding: 0; }
 .scroll-page { position: relative; background: #222; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+.scroll-container.gapless .scroll-page { box-shadow: none; }
 .scroll-page canvas { display: block; }
 .scroll-page .page-label { position: absolute; bottom: -22px; left: 50%; transform: translateX(-50%); font-size: 12px; color: #888; white-space: nowrap; }
+.scroll-container.gapless .scroll-page .page-label { display: none; }
 
 /* Filter popup */
 .filter-wrap { display: inline-block; }
@@ -231,6 +234,10 @@ label.check input { cursor: pointer; }
       <option value="R2L">Right (R2L)</option>
       <option value="L2R">Left (L2R)</option>
     </select>
+    <label class="check" id="gaplessLabel" style="display:none" title="ページ境界の余白・影・番号ラベルを除去して連結表示 / Remove gaps, shadows, and labels between pages (Webtoon-style continuous flow)">
+      <input type="checkbox" id="gaplessCheck">
+      Gapless
+    </label>
     <label class="check" title="表紙モード: ONで1ページ目を単独表示 / Cover mode: Page 1 displayed alone when ON">
       <input type="checkbox" id="coverCheck" checked>
       Cover
@@ -453,12 +460,21 @@ const rotateSelect = document.getElementById('rotateSelect');
 const formatSelect = document.getElementById('formatSelect');
 const sortSelect = document.getElementById('sortSelect');
 const hqPdfCheck = document.getElementById('hqPdfCheck');
-// Restore persisted view mode / HQ
+const gaplessCheck = document.getElementById('gaplessCheck');
+const gaplessLabel = document.getElementById('gaplessLabel');
+// Restore persisted view mode / HQ / Gapless
 {
   const savedViewMode = localStorage.getItem('viewerViewMode');
   if (savedViewMode && ['single', 'spread', 'scroll'].includes(savedViewMode)) viewMode.value = savedViewMode;
   hqPdfCheck.checked = localStorage.getItem('viewerHQ') === '1';
+  gaplessCheck.checked = localStorage.getItem('viewerScrollGapless') === '1';
 }
+function updateScrollControls() {
+  const scroll = viewMode.value === 'scroll';
+  bindDir.style.display = scroll ? 'none' : '';
+  gaplessLabel.style.display = scroll ? '' : 'none';
+}
+updateScrollControls();
 const panCheck = document.getElementById('panCheck');
 const minimapCheck = document.getElementById('minimapCheck');
 const minimapEl = document.getElementById('minimap');
@@ -1309,7 +1325,7 @@ async function renderScrollView(jumpTo) {
     scrollRendered.clear();
 
     const container = document.createElement('div');
-    container.className = 'scroll-container';
+    container.className = 'scroll-container' + (gaplessCheck.checked ? ' gapless' : '');
 
     for (let i = 1; i <= totalPages; i++) {
       const dims = await getPageDimensions(i);
@@ -2323,11 +2339,18 @@ document.addEventListener('keydown', e => {
 // ---- View mode changes ----
 viewMode.addEventListener('change', () => {
   localStorage.setItem('viewerViewMode', viewMode.value);
+  updateScrollControls();
   if (totalPages === 0) return;
   if (isScrollMode()) { renderScrollView(currentPage); }
   else { if (scrollObserver) { scrollObserver.disconnect(); scrollObserver = null; } renderView(currentPage); }
 });
 bindDir.addEventListener('change', () => { if (totalPages > 0) renderView(currentPage); });
+gaplessCheck.addEventListener('change', () => {
+  if (gaplessCheck.checked) localStorage.setItem('viewerScrollGapless', '1');
+  else localStorage.removeItem('viewerScrollGapless');
+  const sc = viewer.querySelector('.scroll-container');
+  if (sc) sc.classList.toggle('gapless', gaplessCheck.checked);
+});
 coverCheck.addEventListener('change', () => { if (totalPages > 0) renderView(currentPage); });
 scaleSelect.addEventListener('change', () => { if (totalPages > 0 && !isScrollMode()) renderView(currentPage); });
 rotateSelect.addEventListener('change', () => { if (totalPages > 0 && !isScrollMode()) renderView(currentPage); });

@@ -307,6 +307,10 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
 - サムネイルクリック・ページ番号入力でのジャンプに対応
 - `<` / `>` ボタンは disabled
 - **Save 2P**: 通常モードでは横に結合するが、Scrollモードでは縦に連結して保存 (p1が上、p2が下、幅が異なる場合は中央揃え)
+- **Gapless チェックボックス**: Scroll モード時のみヘッダーに表示 (R2L/L2R セレクトは Scroll では無意味なので非表示にし、同じ位置に出す)
+  - ON で `.scroll-container` に `gapless` クラスを付与し、ページ間の `gap (16px) / padding (16px) / box-shadow / page-label` をすべて 0/none/非表示 にしてピクセル境界なしの連結表示 (Webtoon 風)
+  - トグル時は再レンダリング不要 (CSS クラス付け外しのみ)
+  - `updateScrollControls()` が viewMode の change で `bindDir` ↔ `gaplessLabel` の表示を切替
 
 ### 色調補正フィルター (Filter、両ビューア共通)
 - ヘッダーに **Filter** ボタン + ポップアップ
@@ -329,6 +333,7 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
 ### UI 設定の永続化 (localStorage、両ビューア共通)
 - `viewerViewMode` — Single / Spread / Scroll の選択状態 (起動時に復元、変更時に保存)
 - `viewerHQ` — HQ チェックボックスの状態 (`'1'` で ON、未設定で OFF)
+- `viewerScrollGapless` — Scroll モードの Gapless チェックボックス状態 (`'1'` で ON、未設定で OFF)
 - `vipsEnabled` — wasm-vips 有効化フラグ (HQ engine トグル)
 - `viewerFilterPresets` — Filter プリセット 3 スロット
 - ブックマーク系キー (ファイルハッシュ → bookmark オブジェクト)
@@ -347,7 +352,7 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
 ## PWA / Service Worker
 
 ### `sw.js`
-- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v11`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v14`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
 - **`SHARE_CACHE`**: `share-stash-v1` — Web Share Target で受信したファイルを一時保存する専用キャッシュ (activate 時も削除対象外)
 - **`PRECACHE_URLS`**: インストール時に一括取得するリソース (HTML 2種、vendor/ 配下全ファイル、manifest、icons)。`fetch(url, { cache: 'reload' })` でブラウザキャッシュをバイパス
 - **`activate`**: `CACHE_NAME` と `SHARE_CACHE` 以外の旧キャッシュを削除し `self.clients.claim()`
