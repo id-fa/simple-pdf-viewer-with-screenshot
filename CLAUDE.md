@@ -10,6 +10,8 @@
 - `manifest.webmanifest` — PWA マニフェスト
 - `vendor/` — ベンダー化された外部ライブラリ (CDN不要)
   - `pdfjs/pdf.min.mjs` `pdf.worker.min.mjs` — PDF.js v4.9.155
+  - `pdfjs/cmaps/*.bcmap` — CJK (日中韓) 用の CMap データ (169 ファイル、~1.5MB)。フォント未埋め込み CJK PDF の文字解決に使用。on-demand ロード (PRECACHE 非対象 / 初回ネット使用時に `sw.js` の fetch ハンドラが自動キャッシュ)
+  - `pdfjs/standard_fonts/` — Foxit/Liberation 製の代替フォント (16 ファイル、~800KB)。標準14フォント (Helvetica/Times 等) 未埋め込み PDF の代替に使用。on-demand ロード
   - `pica/pica.js` — Pica.js v9.0.1
   - `libarchive/libarchive.js` `worker-bundle.js` `libarchive.wasm` — libarchive.js v2.0.2
   - `vips/vips-es6.js` `vips.wasm` — wasm-vips (`?vips=1` 時のみロード)
@@ -28,6 +30,11 @@
 ### 依存
 - **PDF.js** v4.9.155 — `vendor/pdfjs/` からローカル読み込み
 - **Pica.js** v9.0.1 — `vendor/pica/pica.js` — 高品質画像縮小 (Lanczos3 + unsharp mask)
+
+### getDocument オプション (両ビューア共通)
+- `cMapUrl: './vendor/pdfjs/cmaps/'` + `cMapPacked: true` — フォント未埋め込み CJK PDF (日本語/中国語/韓国語) の文字描画に必要。指定が無いと iPhone Safari 等で文字が表示されない (グリフ不一致)
+- `standardFontDataUrl: './vendor/pdfjs/standard_fonts/'` — 標準14フォント (Helvetica/Times-Roman/Courier 等) 未埋め込み PDF の代替フォント (Foxit 製) ロード
+- CMap/standard_fonts は PDF が要求した時のみ on-demand fetch される (ASCII のみの PDF では追加ダウンロード無し)
 
 ### 状態管理
 - `pdfDoc` — PDF.js のドキュメントオブジェクト

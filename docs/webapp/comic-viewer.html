@@ -1751,7 +1751,12 @@ async function loadPDF(data, name) {
   archiveImages = [];
   archiveImagesUnsorted = [];
   sortSelect.style.display = 'none';
-  const loadingTask = pdfjsLib.getDocument({ data });
+  const loadingTask = pdfjsLib.getDocument({
+    data,
+    cMapUrl: './vendor/pdfjs/cmaps/',
+    cMapPacked: true,
+    standardFontDataUrl: './vendor/pdfjs/standard_fonts/',
+  });
   loadingTask.onPassword = (updatePassword, reason) => {
     const msg = reason === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD
       ? 'パスワードが正しくありません。再入力してください。' : null;
