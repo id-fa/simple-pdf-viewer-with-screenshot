@@ -1760,6 +1760,12 @@ async function loadPDF(data, name) {
     });
   };
   pdfDoc = await loadingTask.promise;
+
+  // Reset scroll-mode DOM/state from any previous document (see pdf-viewer.html for rationale)
+  if (scrollObserver) { scrollObserver.disconnect(); scrollObserver = null; }
+  scrollRendered.clear();
+  viewer.innerHTML = '';
+
   totalPages = pdfDoc.numPages;
   fileName = name || 'document.pdf';
   currentPage = 1;
@@ -1999,6 +2005,11 @@ async function loadImageEntries(imageFiles, archiveFileName) {
     sortSelect.value = 'lexical';
   }
   applySortOrder();
+
+  // Reset scroll-mode DOM/state from any previous document (see pdf-viewer.html for rationale)
+  if (scrollObserver) { scrollObserver.disconnect(); scrollObserver = null; }
+  scrollRendered.clear();
+  viewer.innerHTML = '';
 
   docType = 'archive';
   pdfDoc = null;

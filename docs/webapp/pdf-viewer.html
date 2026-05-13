@@ -1636,6 +1636,15 @@ async function loadPDF(data, name) {
     });
   };
   pdfDoc = await loadingTask.promise;
+
+  // Reset scroll-mode DOM/state from any previous document.
+  // renderView の Scroll 分岐は `.scroll-container` の存在で再構築要否を判定するため、
+  // ここで明示的に消さないと前ファイルのコンテナが残り、IntersectionObserver が
+  // 新 pdfDoc を参照して古いプレースホルダに 1 枚だけ canvas を挿入してしまう。
+  if (scrollObserver) { scrollObserver.disconnect(); scrollObserver = null; }
+  scrollRendered.clear();
+  viewer.innerHTML = '';
+
   totalPages = pdfDoc.numPages;
   fileName = name || 'document.pdf';
   currentPage = 1;
