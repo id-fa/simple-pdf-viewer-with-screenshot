@@ -32,8 +32,10 @@
 - **Pica.js** v9.0.1 — `vendor/pica/pica.js` — 高品質画像縮小 (Lanczos3 + unsharp mask)
 
 ### getDocument オプション (両ビューア共通)
-- `cMapUrl: './vendor/pdfjs/cmaps/'` + `cMapPacked: true` — フォント未埋め込み CJK PDF (日本語/中国語/韓国語) の文字描画に必要。指定が無いと iPhone Safari 等で文字が表示されない (グリフ不一致)
-- `standardFontDataUrl: './vendor/pdfjs/standard_fonts/'` — 標準14フォント (Helvetica/Times-Roman/Courier 等) 未埋め込み PDF の代替フォント (Foxit 製) ロード
+- `cMapUrl` — フォント未埋め込み CJK PDF (日本語/中国語/韓国語) の文字描画に必要。指定が無いと iPhone Safari 等で文字が表示されない (グリフ不一致)
+- `cMapPacked: true` — `.bcmap` (バイナリ圧縮版) を使う宣言
+- `standardFontDataUrl` — 標準14フォント (Helvetica/Times-Roman/Courier 等) 未埋め込み PDF の代替フォント (Foxit 製) ロード
+- **重要**: `cMapUrl` / `standardFontDataUrl` は **Worker 内で fetch される**ため、相対パスはワーカー (`/vendor/pdfjs/pdf.worker.min.mjs`) を起点に解決されてしまう。`./vendor/...` を渡すと `/vendor/pdfjs/vendor/pdfjs/cmaps/...` のような二重パスになり 404。`new URL('./vendor/pdfjs/cmaps/', location.href).href` で**ページを起点とした絶対URL**に変換して渡すこと
 - CMap/standard_fonts は PDF が要求した時のみ on-demand fetch される (ASCII のみの PDF では追加ダウンロード無し)
 
 ### 状態管理

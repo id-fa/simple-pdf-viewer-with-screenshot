@@ -1753,9 +1753,10 @@ async function loadPDF(data, name) {
   sortSelect.style.display = 'none';
   const loadingTask = pdfjsLib.getDocument({
     data,
-    cMapUrl: './vendor/pdfjs/cmaps/',
+    // Worker から fetch されるので、ワーカーの location ではなくページ起点になるよう絶対URL化
+    cMapUrl: new URL('./vendor/pdfjs/cmaps/', location.href).href,
     cMapPacked: true,
-    standardFontDataUrl: './vendor/pdfjs/standard_fonts/',
+    standardFontDataUrl: new URL('./vendor/pdfjs/standard_fonts/', location.href).href,
   });
   loadingTask.onPassword = (updatePassword, reason) => {
     const msg = reason === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD
