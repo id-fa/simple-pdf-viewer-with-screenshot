@@ -321,6 +321,7 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
   - ON で `.scroll-container` に `gapless` クラスを付与し、ページ間の `gap (16px) / padding (16px) / box-shadow / page-label` をすべて 0/none/非表示 にしてピクセル境界なしの連結表示 (Webtoon 風)
   - トグル時は再レンダリング不要 (CSS クラス付け外しのみ)
   - `updateScrollControls()` が viewMode の change で `bindDir` ↔ `gaplessLabel` の表示を切替
+- **新ドキュメント読み込み時の状態リセット** (重要): `renderView` の Scroll 分岐は `.scroll-container` の存在で再構築要否を判定する最適化が入っているため、`loadPDF` / `loadImageEntries` で `pdfDoc` だけ差し替えると DOM/observer に前ファイルの状態が残り、古いプレースホルダに新 pdfDoc のページが 1 枚挿入されるバグが出る (10MB以上のPDFで再現しやすい)。各 load 関数のドキュメントロード成功直後に明示的に `scrollObserver.disconnect()` + `scrollRendered.clear()` + `viewer.innerHTML = ''` でリセットする (エラー時は手前で例外が飛ぶので前の表示は維持される)
 
 ### 色調補正フィルター (Filter、両ビューア共通)
 - ヘッダーに **Filter** ボタン + ポップアップ
