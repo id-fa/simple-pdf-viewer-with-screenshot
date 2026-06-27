@@ -309,7 +309,7 @@ label.check input { cursor: pointer; }
     <select id="formatSelect" title="保存形式 / Export image format">
       <option value="image/png">PNG</option>
       <option value="image/jpeg">JPEG 95%</option>
-      <option value="image/webp">WebP 95%</option>
+      <option value="image/webp" selected>WebP 95%</option>
       <option value="clipboard-view">Clipboard (View)</option>
       <option value="clipboard-page">Clipboard (Page)</option>
     </select>
@@ -928,6 +928,23 @@ function setProgress(pct) {
   progressFill.style.width = pct + '%';
 }
 
+// Yield control back to the browser's event loop so long-running loops
+// (image decoding, thumbnail rendering) don't block the main thread and
+// trigger Chrome's "Page Unresponsive" dialog. Time-budgeted to keep the
+// overhead low: only actually yields if >40ms elapsed since the last yield.
+let _lastYieldAt = 0;
+async function yieldToMain(force = false) {
+  const now = performance.now();
+  if (!force && now - _lastYieldAt < 40) return;
+  _lastYieldAt = now;
+  if (window.scheduler && typeof scheduler.yield === 'function') {
+    await scheduler.yield();
+  } else {
+    await new Promise(r => setTimeout(r));
+  }
+  _lastYieldAt = performance.now();
+}
+
 function showLoading(msg) {
   const el = document.createElement('div');
   el.className = 'loading-overlay';
@@ -1527,6 +1544,7 @@ async function renderThumbnails() {
   if (!thumbsContainer) return;
   thumbsContainer.innerHTML = '';
   for (let i = 1; i <= totalPages; i++) {
+    await yieldToMain();
     const dims = await getPageDimensions(i);
     const scale = 140 / dims.width;
     const canvas = await renderPageToCanvas(i, scale, false);
@@ -1993,6 +2011,7 @@ async function loadImageEntries(imageFiles, archiveFileName) {
   archiveImagesUnsorted = [];
   for (let i = 0; i < imageFiles.length; i++) {
     setProgress(((i + 1) / imageFiles.length) * 100);
+    await yieldToMain();
     const f = imageFiles[i];
     let img;
     try { img = await loadImageFromBlob(f.file); } catch { continue; } // skip unsupported formats

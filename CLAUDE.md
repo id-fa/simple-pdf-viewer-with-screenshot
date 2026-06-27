@@ -122,6 +122,15 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
 - 理由: 関連付け cold start 時、`renderThumbnails` がメインスレッドを 3 秒〜占有するため、トーストだけ先に消えると「フリーズした UI」と「中途半端な progress bar」がユーザーに見えてしまう (CSS transition がメインスレッド占有で更新できず止まる)。サムネ完了までトーストを残せば「展開中 → 即操作可能」のクリーンな遷移になる
 - `loadPDF` / `loadImageEntries` も `await onDocLoaded()` する。`loadArchive` の `finally { hideLoading }` が全描画完了後に走る
 
+### メインスレッド占有対策 (Page Unresponsive 防止、comic-viewer.html)
+- **問題**: 少し大きめのアーカイブを展開すると、展開後の重いループがメインスレッドを長時間ブロックし、Chrome が「ページが応答していません (待機/離れる)」ダイアログを表示する。展開本体 (`archive.extractFiles()`) は libarchive Worker 側なので無関係。原因は展開後にメインスレッドで走る2つのループ:
+  1. `loadImageEntries` — 全画像のデコード (`loadImageFromBlob`) + アニメ判定 (`isAnimatedImage` が大きい画像のバイト列を同期スキャン)
+  2. `renderThumbnails` — 全ページのサムネイルを Pica で縮小描画 (上述の通り 3 秒〜占有)
+- **対策**: `yieldToMain()` ヘルパーでループ途中に定期的にイベントループへ制御を返す。`scheduler.yield()` (対応ブラウザ) を優先し、非対応時は `new Promise(r => setTimeout(r))` フォールバック。これで Chrome の応答性チェックがリセットされダイアログが出なくなり、同時に progress bar / loading 表示も実際に更新されるようになる (従来はメインスレッド占有で CSS transition が止まって見えていた)
+- **時間バジェット制御**: `yieldToMain()` は前回 yield から 40ms 未満なら即 return (`performance.now()` で計測)。`loadImageEntries` / `renderThumbnails` の各ループ先頭で `await yieldToMain()` を呼ぶが、小さいファイルでは追加待機がほぼ発生せず従来通り高速
+- **重要**: 「ダミー出力で誤魔化す」のは無効。メインスレッドがブロックされている間は描画も出力も反映されないため、yield (真のマクロタスク境界) でしか解決しない
+- pdf-viewer.html は対象外 (PDF サムネイル描画は PDF.js Worker 経由で本質的に非同期 yield するため同様の問題は起きにくい)。必要なら同じヘルパーを移植可能
+
 ### 実行要件
 - ローカル HTTP サーバー必須 (`python -m http.server`, `php -S localhost:8000` 等)
 - `file://` では WASM Worker / Service Worker が動作しない
@@ -256,6 +265,10 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
   - ヘッダーで暗号化を検出できないケース (ZIP個別エントリ暗号化等): `extractFiles()` のエラーメッセージで検出しリトライ
   - 二重アーカイブの内部アーカイブもパスワード付きに対応
   - ※暗号化ファイル名の7zは libarchive の制限で非対応の可能性あり
+
+### 保存形式 (formatSelect、両ビューア共通)
+- 選択肢: PNG / JPEG 95% / **WebP 95% (デフォルト)** / Clipboard (View) / Clipboard (Page)
+- **デフォルトは WebP** (`<option value="image/webp" selected>`)。`getExt()` / `getQuality()` が MIME から拡張子・品質を導出 (PNG は quality `undefined`、JPEG/WebP は 0.95)
 
 ### クリップボードコピー (両ビューア共通)
 - `formatSelect` に **Clipboard (View)** と **Clipboard (Page)** の2つのオプションを追加
