@@ -239,6 +239,25 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
 - 代わりに `.spread-container` / `.page-container` に `margin-left: auto; margin-right: auto` で中央揃え
 - コンテンツが画面内に収まる時は中央配置、画面より大きい時は左端(0,0)からスクロール可能
 
+### メモリ管理 (黒画面=canvas/GPUメモリ枯渇 対策、両ビューア共通)
+- **症状**: インストール済み PWA (standalone) で、ページを送っていくと N ページ目以降が**例外を出さず黒画面**になる (Chrome タブでは GPU 予算に余裕があり再現しにくい)。`page.render()` は成功 resolve するのに中身が黒い canvas が返る = canvas/GPU メモリ確保の無言失敗。HQ ON だと1ページあたりの canvas 生成量が多く、より早い番号で限界に達する
+- **原因**: ①PDF.js はページを表示するたびデコード済み画像/オペレータリストを内部キャッシュに保持し続ける ②差し替えた古い canvas の backing store を明示解放しないと GC まで GPU メモリに残る。両者がページ送りで累積して上限に当たる
+- **対策ヘルパー** (`renderedPageNums` Set でメインビュー描画ページを追跡):
+  - `cleanupPdfPagesExcept(keepSet)` — 表示中以外のページの `page.cleanup()` を呼び PDF.js キャッシュを解放 (`renderView` の描画後に呼ぶ)。アーカイブ時 (`pdfDoc===null`) は no-op
+  - `renderThumbnails` も各サムネ描画後に `page.cleanup()` (bitmap は canvas に残るので解放してよい)。読み込み時に全ページ分が蓄積するのを防ぐ
+  - `releaseCanvases(root)` / `releaseCanvasList(list)` — canvas の `width=height=0` で backing store を即時解放
+  - HQ パスの中間 `fullCanvas` (画面に出さず pica/vips が読み戻すだけ) は `getContext('2d', { willReadFrequently: true })` で CPU バッキングにし GPU 予算から外す + 使用後に即解放
+- **ダブルバッファリング** (暗転=チカチカ 防止): `renderView` は描画前に `viewer.innerHTML=''` で消すと、新ページの非同期レンダリング完了まで空白フレームが見えて暗転する。代わりに**新ページを `newNodes[]` に組み立ててから `viewer.replaceChildren(...newNodes)` で原子的に差し替え**、旧 canvas は差し替え後に `releaseCanvasList()` で解放する。これでメモリ解放を有効にしたまま暗転が出ない
+- **`FREE_PAGE_CACHE` 定数** (各HTML先頭、デフォルト `true`): メモリ解放処理 (`releaseCanvases`/`releaseCanvasList`/`cleanupPdfPagesExcept`) の有効/無効を1箇所で切替。`false` で全解放を no-op 化 (暗転皆無だがメモリ累積)。解放は常に描画後なので `true` でも暗転は出ない
+
+### リサイズ振動ループ対策 (Spread+Fit+特定解像度で再描画暴走、両ビューア共通)
+- **症状**: Spread + Fit + 特定ウィンドウ幅で `renderView` が無限再描画され、canvas を量産してメモリ増大→黒画面。ウィンドウ幅を変えると直る
+- **原因**: `getScale()` の幅計算は `window.innerWidth` (縦スクロールバー幅**込み**)、ヘッダーの実レイアウトは `clientWidth` (スクロールバー幅**除く**) で約15px ずれる。Spread+Fit でコンテンツ高さがビューポート境界付近にあると縦スクロールバーが出入りし、その15px で `.header` の `.controls` (`flex-wrap`) が折り返したり戻ったりしてヘッダー高さが2値振動 → `maxH` 変化 → スケール変化 → スクロールバー再トグル … の自己持続ループ。ResizeObserver の `h !== lastHeaderH` ガードは2値振動には無力
+- **対策**:
+  - **`html { scrollbar-gutter: stable; }`** (根本対策) — スクロールバー領域を常時確保し、出入りによる幅変動を排除。ヘッダーが再折り返ししなくなりループの起点が消える
+  - ヘッダー ResizeObserver の再描画を `requestAnimationFrame` でコアレス (保険)
+  - `window.resize` の再描画を 120ms デバウンス (ドラッグリサイズ中の canvas 量産抑制)
+
 ### しおり（ブックマーク）機能
 - サイドバーを「Bookmarks」「Thumbs」の排他タブに分割
 - localStorage にファイルハッシュ (SHA-256先頭16文字、`file.name + '|' + file.size`) とページ番号を保存
@@ -376,7 +395,7 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
 ## PWA / Service Worker
 
 ### `sw.js`
-- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v14`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v21`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
 - **`SHARE_CACHE`**: `share-stash-v1` — Web Share Target で受信したファイルを一時保存する専用キャッシュ (activate 時も削除対象外)
 - **`PRECACHE_URLS`**: インストール時に一括取得するリソース (HTML 2種、vendor/ 配下全ファイル、manifest、icons)。`fetch(url, { cache: 'reload' })` でブラウザキャッシュをバイパス
 - **`activate`**: `CACHE_NAME` と `SHARE_CACHE` 以外の旧キャッシュを削除し `self.clients.claim()`
