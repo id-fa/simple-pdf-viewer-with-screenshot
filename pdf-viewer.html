@@ -442,6 +442,10 @@ let totalPages = 0;
 let fileName = '';
 let rendering = false;
 let renderedPageNums = new Set(); // メインビューに描画した PDF ページ番号 (cleanup 対象の追跡)
+// ページめくり時のメモリ解放 (PDF.js キャッシュ + 旧 canvas backing store) の有効/無効。
+// true: メモリ累積を防ぎ黒画面を回避 (推奨)。false: 解放を一切行わない (暗転皆無だが大量ページで
+// メモリ増大→黒画面の恐れ)。解放は常に「新ページ描画後」に行うため true でも暗転は発生しない。
+const FREE_PAGE_CACHE = true;
 let currentFileHash = null;
 let sessionLastRead = null;
 let zoomStash = null;
@@ -1015,15 +1019,21 @@ function rotateCanvas(srcCanvas) {
 // PWA standalone は canvas メモリ予算が厳しく、解放しないとページ送りで累積して
 // やがて canvas 確保に失敗し「黒画面」になるため、差し替え前に明示的に縮退させる。
 function releaseCanvases(root) {
-  if (!root) return;
+  if (!FREE_PAGE_CACHE || !root) return;
   root.querySelectorAll('canvas').forEach(c => { c.width = 0; c.height = 0; });
+}
+
+// canvas 要素の配列を直接解放する (ダブルバッファ後に旧 canvas を手放す用)。
+function releaseCanvasList(list) {
+  if (!FREE_PAGE_CACHE) return;
+  for (const c of list) { c.width = 0; c.height = 0; }
 }
 
 // 現在表示していない PDF ページの PDF.js 内部キャッシュ (デコード済み画像/オペレータ
 // リスト) を解放する。これを呼ばないとページを進むほどキャッシュが累積し、上記の
 // canvas メモリ枯渇と相まって黒画面の主因になる。
 function cleanupPdfPagesExcept(keepSet) {
-  if (!pdfDoc) return;
+  if (!FREE_PAGE_CACHE || !pdfDoc) return;
   for (const n of [...renderedPageNums]) {
     if (keepSet.has(n)) continue;
     renderedPageNums.delete(n);
@@ -1268,8 +1278,10 @@ async function renderView(num) {
     }
 
     const pages = getSpreadPages(currentPage);
-    releaseCanvases(viewer);
-    viewer.innerHTML = '';
+    // ダブルバッファ: 新ページを描画し終えるまで旧表示を残し、最後にまとめて差し替える。
+    // 描画中に viewer を空にすると暗転 (チカチカ) するため。旧 canvas は差し替え後に解放。
+    const oldCanvases = [...viewer.querySelectorAll('canvas')];
+    const newNodes = [];
 
     if (pages.length === 2) {
       // Spread view - two pages
@@ -1302,8 +1314,7 @@ async function renderView(num) {
       overallLabel.style.cssText = 'text-align:center; font-size:12px; color:#888; margin-top:28px;';
       overallLabel.textContent = `${sortedPages[0]}-${sortedPages[1]} / ${totalPages}`;
 
-      viewer.appendChild(spreadWrap);
-      viewer.appendChild(overallLabel);
+      newNodes.push(spreadWrap, overallLabel);
     } else {
       // Single page
       const container = document.createElement('div');
@@ -1318,8 +1329,12 @@ async function renderView(num) {
       label.className = 'page-label';
       label.textContent = `${pages[0]} / ${totalPages}`;
       container.appendChild(label);
-      viewer.appendChild(container);
+      newNodes.push(container);
     }
+
+    // 新ノードが揃ってから一括差し替え (暗転なし) → 旧 canvas を解放
+    viewer.replaceChildren(...newNodes);
+    releaseCanvasList(oldCanvases);
 
     // Update save buttons for spread/single
     if (pages.length === 2) {
