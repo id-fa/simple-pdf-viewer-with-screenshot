@@ -438,6 +438,7 @@ let currentPage = 1;
 let totalPages = 0;
 let fileName = '';
 let rendering = false;
+let renderedPageNums = new Set(); // メインビューに描画した PDF ページ番号 (cleanup 対象の追跡)
 let currentFileHash = null;
 let sessionLastRead = null;
 let zoomStash = null;
@@ -1007,6 +1008,26 @@ function rotateCanvas(srcCanvas) {
   return rc;
 }
 
+// canvas の backing store を即時解放する (GC 待ちにせず GPU/canvas メモリを手放す)。
+// PWA standalone は canvas メモリ予算が厳しく、解放しないとページ送りで累積して
+// やがて canvas 確保に失敗し「黒画面」になるため、差し替え前に明示的に縮退させる。
+function releaseCanvases(root) {
+  if (!root) return;
+  root.querySelectorAll('canvas').forEach(c => { c.width = 0; c.height = 0; });
+}
+
+// 現在表示していない PDF ページの PDF.js 内部キャッシュ (デコード済み画像/オペレータ
+// リスト) を解放する。これを呼ばないとページを進むほどキャッシュが累積し、上記の
+// canvas メモリ枯渇と相まって黒画面の主因になる。
+function cleanupPdfPagesExcept(keepSet) {
+  if (!pdfDoc) return;
+  for (const n of [...renderedPageNums]) {
+    if (keepSet.has(n)) continue;
+    renderedPageNums.delete(n);
+    pdfDoc.getPage(n).then(p => { try { p.cleanup(); } catch (_) {} }).catch(() => {});
+  }
+}
+
 // Get render scale, accounting for spread (two pages side by side)
 function isUIHidden() { return document.body.classList.contains('ui-hidden'); }
 function isScrollMode() { return viewMode.value === 'scroll'; }
@@ -1085,6 +1106,7 @@ async function drawImageVips(ctx, srcCanvas, targetW, targetH, sharpenOpts) {
 
 async function renderPageToCanvas(pageNum, scale) {
   const page = await pdfDoc.getPage(pageNum);
+  renderedPageNums.add(pageNum);
   const s = scale || getScale(page, isSpread() && getSpreadPages(currentPage).length === 2);
   // HQ mode: render at 1x then downscale as image
   if (hqPdfCheck.checked && s < 1) {
@@ -1092,7 +1114,9 @@ async function renderPageToCanvas(pageNum, scale) {
     const fullCanvas = document.createElement('canvas');
     fullCanvas.width = fullVp.width;
     fullCanvas.height = fullVp.height;
-    const fullCtx = fullCanvas.getContext('2d');
+    // 画面には出さず pica/vips が getImageData で読み戻すだけの中間 canvas。
+    // willReadFrequently で CPU バッキングにし、GPU メモリ予算から外す。
+    const fullCtx = fullCanvas.getContext('2d', { willReadFrequently: true });
     await page.render({ canvasContext: fullCtx, viewport: fullVp }).promise;
     const targetW = Math.round(fullVp.width * s);
     const targetH = Math.round(fullVp.height * s);
@@ -1101,6 +1125,7 @@ async function renderPageToCanvas(pageNum, scale) {
     canvas.height = targetH;
     const ctx = canvas.getContext('2d');
     await drawImageHighQuality(ctx, fullCanvas, targetW, targetH, getSharpenOpts());
+    fullCanvas.width = fullCanvas.height = 0; // 中間 canvas を即時解放
     return canvas;
   }
   const viewport = page.getViewport({ scale: s });
@@ -1120,6 +1145,7 @@ async function renderScrollView(jumpTo) {
   if (!pdfDoc) return;
   rendering = true;
   try {
+    releaseCanvases(viewer);
     viewer.innerHTML = '';
     scrollRendered.clear();
 
@@ -1239,6 +1265,7 @@ async function renderView(num) {
     }
 
     const pages = getSpreadPages(currentPage);
+    releaseCanvases(viewer);
     viewer.innerHTML = '';
 
     if (pages.length === 2) {
@@ -1320,6 +1347,9 @@ async function renderView(num) {
     updateAutoBookmarks(currentPage);
     updateBookmarkUI();
 
+    // 表示中以外のページの PDF.js キャッシュを解放してメモリ累積を防ぐ
+    cleanupPdfPagesExcept(new Set(pages));
+
     requestAnimationFrame(() => updateMinimap());
   } finally {
     rendering = false;
@@ -1339,6 +1369,8 @@ async function renderThumbnails() {
     canvas.height = viewport.height;
     const ctx = canvas.getContext('2d');
     await page.render({ canvasContext: ctx, viewport }).promise;
+    // サムネイル bitmap は canvas に残るので、PDF.js 側のページキャッシュは解放してよい
+    try { page.cleanup(); } catch (_) {}
 
     const div = document.createElement('div');
     div.className = 'thumb' + (i === currentPage ? ' active' : '');
@@ -1634,6 +1666,8 @@ async function loadPDF(data, name) {
   // 新 pdfDoc を参照して古いプレースホルダに 1 枚だけ canvas を挿入してしまう。
   if (scrollObserver) { scrollObserver.disconnect(); scrollObserver = null; }
   scrollRendered.clear();
+  renderedPageNums.clear();
+  releaseCanvases(viewer);
   viewer.innerHTML = '';
 
   totalPages = pdfDoc.numPages;
