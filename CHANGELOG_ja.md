@@ -76,5 +76,8 @@
  - Pica.js を v9.0.1 から v10.0.2 に更新
    - Chrome の createImageBitmap の Exif orientation バグ回避、Safari の判定修正
    - canvas context を willReadFrequently 付きで生成するようになり、縮小処理が高速化
+ - 縮小処理を Web Worker に移動 (メインスレッドのブロック解消)
+   - 12ページのアーカイブ読み込みで、UIが固まる最長時間が 305ms → 76ms に短縮
+   - 読み込み中もページ送りやスクロールが引っかからなくなる
 
 

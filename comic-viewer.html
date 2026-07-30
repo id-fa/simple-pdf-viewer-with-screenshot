@@ -393,7 +393,10 @@ import { Pica } from './vendor/pica/pica.js';
 const pdfjsLib = pdfjsModule;
 pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdfjs/pdf.worker.min.mjs';
 
-const picaInstance = new Pica({ features: ['js', 'wasm'] });
+// 'ww' = Web Worker。縮小処理をメインスレッドから外し Page Unresponsive を防ぐ。
+// tile は既定 1024 だと worker タイラーの継ぎ目バグ (境界に 1px の差、concurrency>1 で非決定的)
+// が出るため 2048 に上げている。2048 なら出力は決定的で継ぎ目も実用上不可視。
+const picaInstance = new Pica({ features: ['js', 'wasm', 'ww'], tile: 2048 });
 
 // ---- wasm-vips (opt-in via localStorage 'vipsEnabled') ----
 const VIPS_ENABLED = localStorage.getItem('vipsEnabled') === '1';

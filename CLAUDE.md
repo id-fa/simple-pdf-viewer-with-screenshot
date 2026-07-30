@@ -210,10 +210,12 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
 - **wasm-vips** (オプション): `?vips=1` で有効化。thumbnailImage (box shrink + Lanczos3) + vips sharpen
 - `drawImageHighQuality(ctx, img, targetW, targetH, sharpenOpts, useVips)` — vips が利用可能かつ `useVips=true` なら `drawImageVips()` にディスパッチ、失敗時 (メモリ不足等) は自動的に Pica にフォールバック
 - `drawImageVips()` — `newFromMemory` → `thumbnailImage` → `sharpen` → `writeToMemory`。alpha チャンネル分離・sRGB reinterpret で colorspace エラーを回避。`toDelete` 配列で vips Image オブジェクトのメモリ管理
-- Pica 初期化: `import { Pica } from './vendor/pica/pica.js'` → `new Pica({ features: ['js', 'wasm'] })`
+- Pica 初期化: `import { Pica } from './vendor/pica/pica.js'` → `new Pica({ features: ['js', 'wasm', 'ww'], tile: 2048 })`
   - **v10 以降は default export がクラスではなくファクトリ関数 `pica(options)`** に変わっている。`export { Pica, pica as default }` なので、クラスを使うには**名前付き import が必須** (v9 までの `import Pica from ...` は壊れる)
-  - `features` から `'ww'` を外して Web Worker を無効化している。v10 で `workerURL` オプションと split build (`pica_main.mjs` + `pica_worker.js`) が追加されたので、同一オリジンに `pica_worker.js` を置けば Worker を有効化できる (縮小処理をメインスレッドから外せる。未実施)
-  - **更新手順**: npm パッケージ `pica` の tarball から `package/dist/pica.min.mjs` を `vendor/pica/pica.js` と `docs/webapp/vendor/pica/pica.js` にコピー (自己完結型 ESM、`glur` / `multimath` はバンドル済み)。先頭にバージョン明記のバナーコメントを付ける (minified 本体にはバージョン文字列が無いため)
+  - **`'ww'` (Web Worker) を有効化済み** — 縮小処理がメインスレッドから外れる。combined build (`pica.min.mjs`) は worker を文字列で内包し blob URL で起動するので、`workerURL` 指定も split build も**不要**。COOP/COEP (`crossOriginIsolated`) 下でも問題なく動作する
+  - **`tile: 2048` は必須 (既定 1024 のままにしてはいけない)**: Pica 10.0.2 の worker タイラーには**タイル境界に継ぎ目を作る欠陥**がある。境界に 1px 幅の差 (高周波パターンで最大 27/255、なだらかな階調では最大 1/255) が出て、しかも `concurrency > 1` では**実行ごとに結果が変わる** (毎回 600〜1400px が変化)。非 worker 経路にはこの問題は無く、`concurrency: 1` に落としても継ぎ目自体は残るので競合だけが原因ではない。tile を 2048 に上げるとタイル数が減って出力が決定的になり、継ぎ目も実用上不可視になる。単一タイル (tile 4096+) なら継ぎ目は完全に消えるが、大きい画像でタイル分割によるメモリ上限が外れるため採用していない
+  - 実測 (12ページ CBZ / 2000×2900 スクリーントーン / HQ ON、全サムネイル生成完了まで): **最長フレーム間隔 305ms → 76ms、50ms 超の long task 14回 → 3回**、所要時間 12.6s → 11.3s。`yieldToMain()` によるメインスレッド占有対策と併用する
+  - **更新手順**: npm パッケージ `pica` の tarball から `package/dist/pica.min.mjs` を `vendor/pica/pica.js` と `docs/webapp/vendor/pica/pica.js` にコピー (自己完結型 ESM、`glur` / `multimath` はバンドル済み)。先頭にバージョン明記のバナーコメントを付ける (minified 本体にはバージョン文字列が無いため)。**更新時は上記の継ぎ目バグが直っているか確認し、直っていれば `tile` 指定を外して既定 1024 に戻すと約2倍速くなる**
 - **サムネイル生成**: `renderPageToCanvas(pageNum, scale, false)` で vips をスキップし Pica を使用 (WASM ヒープ節約)
 - **アーカイブ画像** (comic-viewer.html): 常時 Pica/vips 経由で縮小、Filter の Sharpen 値が適用される
 - **PDF** (両ビューア共通): HQ チェックボックスで切替可能
