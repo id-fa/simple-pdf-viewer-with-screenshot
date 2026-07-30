@@ -226,7 +226,8 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
   2. アプリ内トグル: Filter ポップアップ末尾「HQ engine: wasm-vips」チェック
   3. Manifest shortcut: PWAインストール後、ランチャー長押し → 「Comic HQ」「PDF HQ」
 - **設定のソースは localStorage**: `VIPS_ENABLED = localStorage.getItem('vipsEnabled') === '1'`。`?vips=1` は単に localStorage に書き込むためのワンショット。URL の `?vips=1` 付け替えリダイレクトは行わない (cold start launchQueue を保護するため)。トグルOFFで localStorage から削除 + reload
-- **依存ファイル**: `vendor/vips/vips-es6.js` (87KB) + `vendor/vips/vips.wasm` (5.4MB)
+- **依存ファイル**: `vendor/vips/vips-es6.js` (78KB) + `vendor/vips/vips.wasm` (4.8MB) — wasm-vips v0.0.18 / libvips 8.18.3
+- **更新手順**: npm パッケージ `wasm-vips` の tarball から `package/lib/vips-es6.js` と `package/lib/vips.wasm` の2ファイルだけを `vendor/vips/` と `docs/webapp/vendor/vips/` にコピーし、`sw.js` の `CACHE_NAME` をインクリメントする。`vips-heif.wasm` / `vips-jxl.wasm` / `vips-resvg.wasm` は `dynamicLibraries: []` のため不要。v0.0.18 は WebAssembly Exception Handling が既定で有効 (Chrome 95+ / Safari 15.2+ / Firefox 131+ が必要)
 - **COOP/COEP 付与**: `sw.js` が全レスポンスに `Cross-Origin-Embedder-Policy: require-corp` / `Cross-Origin-Opener-Policy: same-origin` / `Cross-Origin-Resource-Policy: cross-origin` を付与 (SharedArrayBuffer 有効化)。初回ロード時は SW が controller になるまで `controllerchange` を待ってリロード
 - **初期化**: `dynamicLibraries: []` で不要な JXL/HEIF/RESVG モジュールのロードをスキップ。`vips.Cache.max(0)` でオペレーションキャッシュを無効化 (WASM ヒープ節約)
 - **フォールバック**: vips ロード失敗時は自動的に Pica にフォールバック。画像処理中のメモリ不足エラーも per-call で Pica にフォールバック
