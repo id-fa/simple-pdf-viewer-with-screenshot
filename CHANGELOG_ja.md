@@ -77,7 +77,8 @@
    - Chrome の createImageBitmap の Exif orientation バグ回避、Safari の判定修正
    - canvas context を willReadFrequently 付きで生成するようになり、縮小処理が高速化
  - 縮小処理を Web Worker に移動 (メインスレッドのブロック解消)
-   - 12ページのアーカイブ読み込みで、UIが固まる最長時間が 305ms → 76ms に短縮
+   - 12ページのアーカイブ読み込みで、所要時間が 2.5秒 → 1.1秒、UIが固まる最長時間が 316ms → 66ms に短縮
    - 読み込み中もページ送りやスクロールが引っかからなくなる
+   - Chrome でタイル境界に筋が入る Pica の不具合 (nodeca/pica#223 の再発) を回避済み。画質は Worker 化前と完全に同一
 
 

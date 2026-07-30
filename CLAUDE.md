@@ -210,12 +210,25 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
 - **wasm-vips** (オプション): `?vips=1` で有効化。thumbnailImage (box shrink + Lanczos3) + vips sharpen
 - `drawImageHighQuality(ctx, img, targetW, targetH, sharpenOpts, useVips)` — vips が利用可能かつ `useVips=true` なら `drawImageVips()` にディスパッチ、失敗時 (メモリ不足等) は自動的に Pica にフォールバック
 - `drawImageVips()` — `newFromMemory` → `thumbnailImage` → `sharpen` → `writeToMemory`。alpha チャンネル分離・sRGB reinterpret で colorspace エラーを回避。`toDelete` 配列で vips Image オブジェクトのメモリ管理
-- Pica 初期化: `import { Pica } from './vendor/pica/pica.js'` → `new Pica({ features: ['js', 'wasm', 'ww'], tile: 2048 })`
+- Pica 初期化: `import { Pica } from './vendor/pica/pica.js'` → `new Pica({ features: ['js', 'wasm', 'ww'] })`
   - **v10 以降は default export がクラスではなくファクトリ関数 `pica(options)`** に変わっている。`export { Pica, pica as default }` なので、クラスを使うには**名前付き import が必須** (v9 までの `import Pica from ...` は壊れる)
   - **`'ww'` (Web Worker) を有効化済み** — 縮小処理がメインスレッドから外れる。combined build (`pica.min.mjs`) は worker を文字列で内包し blob URL で起動するので、`workerURL` 指定も split build も**不要**。COOP/COEP (`crossOriginIsolated`) 下でも問題なく動作する
-  - **`tile: 2048` は必須 (既定 1024 のままにしてはいけない)**: Pica 10.0.2 の worker タイラーには**タイル境界に継ぎ目を作る欠陥**がある。境界に 1px 幅の差 (高周波パターンで最大 27/255、なだらかな階調では最大 1/255) が出て、しかも `concurrency > 1` では**実行ごとに結果が変わる** (毎回 600〜1400px が変化)。非 worker 経路にはこの問題は無く、`concurrency: 1` に落としても継ぎ目自体は残るので競合だけが原因ではない。tile を 2048 に上げるとタイル数が減って出力が決定的になり、継ぎ目も実用上不可視になる。単一タイル (tile 4096+) なら継ぎ目は完全に消えるが、大きい画像でタイル分割によるメモリ上限が外れるため採用していない
-  - 実測 (12ページ CBZ / 2000×2900 スクリーントーン / HQ ON、全サムネイル生成完了まで): **最長フレーム間隔 305ms → 76ms、50ms 超の long task 14回 → 3回**、所要時間 12.6s → 11.3s。`yieldToMain()` によるメインスレッド占有対策と併用する
-  - **更新手順**: npm パッケージ `pica` の tarball から `package/dist/pica.min.mjs` を `vendor/pica/pica.js` と `docs/webapp/vendor/pica/pica.js` にコピー (自己完結型 ESM、`glur` / `multimath` はバンドル済み)。先頭にバージョン明記のバナーコメントを付ける (minified 本体にはバージョン文字列が無いため)。**更新時は上記の継ぎ目バグが直っているか確認し、直っていれば `tile` 指定を外して既定 1024 に戻すと約2倍速くなる**
+  - **`ensurePicaReady()` で `capabilities.ww_offscreen_canvas = false` を強制すること (nodeca/pica#223 の workaround)**:
+    - v10 の `__extractTileData` は `ww && ww_offscreen_canvas` が真だと tile を `transferToImageBitmap()` で worker へ渡す (`kind: 'bitmap'`)。Chrome はこの ImageBitmap 往復で**タイル境界を壊す** — 境界に 1px 幅の差 (高周波パターンで最大 27/255、なだらかな階調では最大 1/255) が出て、`concurrency > 1` では**実行ごとに結果が変わる** (毎回 600〜1400px が変化)。差分を増幅するとタイル境界の格子線と完全に一致する
+    - これは **2021年に upstream が #223 として修正済みだった不具合の再発**。v7.1.1 のコミット `da292f78` "Force WW always return typed array (Chrome workaround)" で `returnBitmap = true` をコメントアウトしていたが、**v10 の書き直しでこの workaround が失われた** (v10.0.2 には `#223` への言及も `returnBitmap` ガードも無い)
+    - `ww_offscreen_canvas` を偽にすると `getImageData` による `kind: 'array'` 経路になり、**出力が非 worker 経路とビット完全一致** (差 0)、かつ決定的になる。この capability は `createCanvas()` では最終フォールバックにしか使われず document 環境では到達不能、別フラグの `offscreen_canvas` は真のままなので副作用は無い
+    - `init()` 後に上書きする必要がある (feature detection が `init()` 内で値を書き込むため、事前設定では上書きされてしまう)。`init()` は `__initPromise` をキャッシュするので `resize()` 内部の再 init で戻ることはない。トップレベル await は cold start の launchQueue 処理を遅らせるので使わず、初回 `resize` の直前に `await ensurePicaReady()` する遅延ゲート方式にしている
+  - 実測 (12ページ CBZ / 2000×2900 スクリーントーン / HQ ON、`fileInput` の change から全サムネイル生成完了まで):
+
+    | 構成 | 所要 | 最長フレーム間隔 | long task >50ms | 出力 |
+    |---|---|---|---|---|
+    | worker 無効 | 2497ms | 316ms | 14回 | 基準 |
+    | ww + bitmap 経路 | 2150ms | 70ms | 3回 | 継ぎ目あり・非決定的 |
+    | **ww + array 経路 (採用)** | **1118ms** | **66ms** | 4回 | **基準とビット一致** |
+
+    `yieldToMain()` によるメインスレッド占有対策と併用する
+  - **更新手順**: npm パッケージ `pica` の tarball から `package/dist/pica.min.mjs` を `vendor/pica/pica.js` と `docs/webapp/vendor/pica/pica.js` にコピー (自己完結型 ESM、`glur` / `multimath` はバンドル済み)。先頭にバージョン明記のバナーコメントを付ける (minified 本体にはバージョン文字列が無いため)。**更新時は #223 が上流で再修正されたか確認する**。修正されていれば `ensurePicaReady()` の capability 上書きは不要になる (残っていても無害)
+  - **注意**: Pica の既定フィルタは v8.0.0 以降 `mks2013` で、Lanczos3 ではない。`resize` に `filter` を渡していないので実際に効いているのは mks2013
 - **サムネイル生成**: `renderPageToCanvas(pageNum, scale, false)` で vips をスキップし Pica を使用 (WASM ヒープ節約)
 - **アーカイブ画像** (comic-viewer.html): 常時 Pica/vips 経由で縮小、Filter の Sharpen 値が適用される
 - **PDF** (両ビューア共通): HQ チェックボックスで切替可能

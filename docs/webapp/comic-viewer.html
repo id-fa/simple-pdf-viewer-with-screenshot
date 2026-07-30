@@ -403,9 +403,26 @@ const pdfjsLib = pdfjsModule;
 pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdfjs/pdf.worker.min.mjs';
 
 // 'ww' = Web Worker。縮小処理をメインスレッドから外し Page Unresponsive を防ぐ。
-// tile は既定 1024 だと worker タイラーの継ぎ目バグ (境界に 1px の差、concurrency>1 で非決定的)
-// が出るため 2048 に上げている。2048 なら出力は決定的で継ぎ目も実用上不可視。
-const picaInstance = new Pica({ features: ['js', 'wasm', 'ww'], tile: 2048 });
+const picaInstance = new Pica({ features: ['js', 'wasm', 'ww'] });
+
+// nodeca/pica#223 の workaround。Pica v10 の書き直しで失われた (v7.1.1 の da292f78 で
+// 入っていた `returnBitmap` 無効化が v10 には無い) ため外から再適用する。
+// ww_offscreen_canvas が真だと __extractTileData が tile を transferToImageBitmap() で
+// worker へ渡すが、Chrome はこの ImageBitmap 往復でタイル境界を壊す (境界に 1px の差、
+// 高周波パターンで最大 27/255。concurrency>1 では実行ごとに結果が変わる)。偽にすると
+// getImageData による typed array 経路になり、出力が非 worker 経路とビット一致する。
+// この capability は createCanvas() では最終フォールバックにしか使われず (document 環境では
+// 到達不能)、別フラグの offscreen_canvas は真のままなので副作用は無い。
+let picaReady = null;
+function ensurePicaReady() {
+  if (!picaReady) {
+    picaReady = picaInstance.init().then((p) => {
+      p.capabilities.ww_offscreen_canvas = false;
+      return p;
+    });
+  }
+  return picaReady;
+}
 
 // ---- wasm-vips (opt-in via localStorage 'vipsEnabled') ----
 const VIPS_ENABLED = localStorage.getItem('vipsEnabled') === '1';
@@ -1294,6 +1311,7 @@ async function drawImageHighQuality(ctx, img, targetW, targetH, sharpenOpts = {}
       console.warn('[vips] fallback to Pica:', e.message);
     }
   }
+  await ensurePicaReady();
   await picaInstance.resize(src, ctx.canvas, sharpenOpts);
 }
 
