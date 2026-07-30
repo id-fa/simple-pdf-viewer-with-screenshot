@@ -73,5 +73,8 @@
  - wasm-vips を v0.0.16 (libvips 8.17.3) から v0.0.18 (libvips 8.18.3) に更新
    - libvips の脆弱性 CVE-2026-33327 / 33328 / 35590 / 35591 を修正済みのバージョンに追随
    - 副次効果: WASM バイナリが約9%小型化 (5.4MB → 4.8MB)、大きな画像の処理速度改善
+ - Pica.js を v9.0.1 から v10.0.2 に更新
+   - Chrome の createImageBitmap の Exif orientation バグ回避、Safari の判定修正
+   - canvas context を willReadFrequently 付きで生成するようになり、縮小処理が高速化
 
 

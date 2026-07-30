@@ -409,7 +409,7 @@ label.check input { cursor: pointer; }
 
 <script type="module">
 import * as pdfjsModule from './vendor/pdfjs/pdf.min.mjs';
-import Pica from './vendor/pica/pica.js';
+import { Pica } from './vendor/pica/pica.js';
 
 const pdfjsLib = pdfjsModule;
 pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdfjs/pdf.worker.min.mjs';

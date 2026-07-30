@@ -12,7 +12,7 @@
   - `pdfjs/pdf.min.mjs` `pdf.worker.min.mjs` — PDF.js v4.9.155
   - `pdfjs/cmaps/*.bcmap` — CJK (日中韓) 用の CMap データ (169 ファイル、~1.5MB)。フォント未埋め込み CJK PDF の文字解決に使用。on-demand ロード (PRECACHE 非対象 / 初回ネット使用時に `sw.js` の fetch ハンドラが自動キャッシュ)
   - `pdfjs/standard_fonts/` — Foxit/Liberation 製の代替フォント (16 ファイル、~800KB)。標準14フォント (Helvetica/Times 等) 未埋め込み PDF の代替に使用。on-demand ロード
-  - `pica/pica.js` — Pica.js v9.0.1
+  - `pica/pica.js` — Pica.js v10.0.2
   - `libarchive/libarchive.js` `worker-bundle.js` `libarchive.wasm` — libarchive.js v2.0.2
   - `vips/vips-es6.js` `vips.wasm` — wasm-vips (`?vips=1` 時のみロード)
 - `icons/` — PWA アイコン (192 / 512 / maskable) + 生成スクリプト `_generate.py`
@@ -29,7 +29,7 @@
 
 ### 依存
 - **PDF.js** v4.9.155 — `vendor/pdfjs/` からローカル読み込み
-- **Pica.js** v9.0.1 — `vendor/pica/pica.js` — 高品質画像縮小 (Lanczos3 + unsharp mask)
+- **Pica.js** v10.0.2 — `vendor/pica/pica.js` — 高品質画像縮小 (Lanczos3 + unsharp mask)
 
 ### getDocument オプション (両ビューア共通)
 - `cMapUrl` — フォント未埋め込み CJK PDF (日本語/中国語/韓国語) の文字描画に必要。指定が無いと iPhone Safari 等で文字が表示されない (グリフ不一致)
@@ -55,7 +55,7 @@
 
 ### 依存
 - **PDF.js** v4.9.155 — `vendor/pdfjs/` からローカル読み込み
-- **Pica.js** v9.0.1 — `vendor/pica/pica.js`
+- **Pica.js** v10.0.2 — `vendor/pica/pica.js`
 - **libarchive.js** v2.0.2 — `vendor/libarchive/` — WASM ベース、遅延読み込み
 
 ### 対応形式
@@ -210,7 +210,10 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
 - **wasm-vips** (オプション): `?vips=1` で有効化。thumbnailImage (box shrink + Lanczos3) + vips sharpen
 - `drawImageHighQuality(ctx, img, targetW, targetH, sharpenOpts, useVips)` — vips が利用可能かつ `useVips=true` なら `drawImageVips()` にディスパッチ、失敗時 (メモリ不足等) は自動的に Pica にフォールバック
 - `drawImageVips()` — `newFromMemory` → `thumbnailImage` → `sharpen` → `writeToMemory`。alpha チャンネル分離・sRGB reinterpret で colorspace エラーを回避。`toDelete` 配列で vips Image オブジェクトのメモリ管理
-- Pica 初期化: `new Pica({ features: ['js', 'wasm'] })` — Web Worker は CDN ESM 環境で動作しないため無効化
+- Pica 初期化: `import { Pica } from './vendor/pica/pica.js'` → `new Pica({ features: ['js', 'wasm'] })`
+  - **v10 以降は default export がクラスではなくファクトリ関数 `pica(options)`** に変わっている。`export { Pica, pica as default }` なので、クラスを使うには**名前付き import が必須** (v9 までの `import Pica from ...` は壊れる)
+  - `features` から `'ww'` を外して Web Worker を無効化している。v10 で `workerURL` オプションと split build (`pica_main.mjs` + `pica_worker.js`) が追加されたので、同一オリジンに `pica_worker.js` を置けば Worker を有効化できる (縮小処理をメインスレッドから外せる。未実施)
+  - **更新手順**: npm パッケージ `pica` の tarball から `package/dist/pica.min.mjs` を `vendor/pica/pica.js` と `docs/webapp/vendor/pica/pica.js` にコピー (自己完結型 ESM、`glur` / `multimath` はバンドル済み)。先頭にバージョン明記のバナーコメントを付ける (minified 本体にはバージョン文字列が無いため)
 - **サムネイル生成**: `renderPageToCanvas(pageNum, scale, false)` で vips をスキップし Pica を使用 (WASM ヒープ節約)
 - **アーカイブ画像** (comic-viewer.html): 常時 Pica/vips 経由で縮小、Filter の Sharpen 値が適用される
 - **PDF** (両ビューア共通): HQ チェックボックスで切替可能
