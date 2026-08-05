@@ -105,7 +105,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - **EPUB2 NCX にフォールバック**: `spine[toc]` → NCX、無ければ `application/x-dtbncx+xml` / `*.ncx` を探し `navMap > navPoint` を辿る。階層は `navPoint` の祖先数
 - **ページ番号の解決**: spine を辿る際に「ドキュメント → そのページの先頭画像」を `docFirstImage` に記録。画像を持たない章は後続ページを引き継ぐ (逆順走査)。spine 経由で解決できなかった項目は、その XHTML を個別に読んで先頭画像を得る (manifest フォールバック時の目次用)
 - 各項目に `p.N` を表示、クリックで `renderView(N)`。ページを解決できなかった項目は `.no-page` で淡色・クリック不可
-- `updateTocActive()` が `renderView` / `updateScrollCurrentPage` から呼ばれ、`currentPage` 以下で最大ページの項目をハイライト
+- `updateTocActive()` が `renderView` / `updateScrollCurrentPage` から呼ばれてハイライトを更新する。**判定は `currentPage` ではなく「表示中の最大ページ」** (`Math.max(...getSpreadPages(currentPage))`) で行う: 見開きでは `currentPage` がペアの小さい方なので、右ページ始まりの章を選んでも1つ前の項目が光ってしまうため。さらに、クリックで飛んだ項目は `tocClickedEl` に保持し、そのページが表示範囲に残っている間はハイライトを維持する (同じペア内に複数の章があるとき、クリックした方を優先するため)。`tocClickedEl` は表示範囲から外れた時点と `renderToc()` で破棄
 
 ### 二重アーカイブ対応
 外側アーカイブに内部アーカイブ (`.cbz/.zip/.cbr/.rar/.cb7/.7z`) が含まれる場合:

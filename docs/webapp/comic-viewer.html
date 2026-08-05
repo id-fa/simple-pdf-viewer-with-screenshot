@@ -492,6 +492,7 @@ let archiveImagesUnsorted = []; // original extracted order, for re-sorting
 let epubEntries = [];      // [{name, file}] structural (text) entries: container.xml / opf / ncx / xhtml
 let epubPageOrder = null;  // normalized image paths in reading order (null = not analyzed)
 let epubToc = [];          // [{label, depth, page}] table of contents
+let tocClickedEl = null;   // クリックで飛んだ TOC 項目 (見開き時のハイライト維持用)
 let currentPage = 1;
 let totalPages = 0;
 let fileName = '';
@@ -1394,6 +1395,7 @@ async function runEpubAnalysis() {
 function renderToc() {
   if (!tocListEl) return;
   tocListEl.innerHTML = '';
+  tocClickedEl = null;
   if (epubToc.length === 0) {
     tocTab.hidden = true;
     sidebarTabBar.classList.remove('has-toc');
@@ -1417,7 +1419,7 @@ function renderToc() {
       row.appendChild(pg);
       row.dataset.page = t.page;
       row.title = `${t.label} → p.${t.page}`;
-      row.addEventListener('click', () => renderView(t.page));
+      row.addEventListener('click', () => { tocClickedEl = row; renderView(t.page); });
     } else {
       row.title = t.label;
     }
@@ -1426,14 +1428,24 @@ function renderToc() {
   updateTocActive();
 }
 
-// 現在ページを含む (= currentPage 以下で最大ページの) 項目をハイライト
+// 表示中のページを含む項目をハイライト。
+// 見開きでは画面に2ページ出るが currentPage はペアの小さい方なので、判定を currentPage で
+// 行うと右ページ始まりの章をクリックしたときに1つ前の項目が光ってしまう。表示中の最大ページで
+// 判定し、さらにクリックで飛んだ項目はそのページが画面に残っている間ハイライトを維持する
+// (同じペア内に複数の章がある場合にクリックした方を優先するため)。
 function updateTocActive() {
   if (!tocListEl || epubToc.length === 0) return;
-  let bestEl = null, bestPage = -1;
+  const visible = getSpreadPages(currentPage);
+  const maxVisible = Math.max(...visible);
+  if (tocClickedEl && (!tocListEl.contains(tocClickedEl) || !visible.includes(+tocClickedEl.dataset.page))) {
+    tocClickedEl = null;
+  }
+  let bestEl = tocClickedEl, bestPage = -1;
   tocListEl.querySelectorAll('.toc-item[data-page]').forEach(el => {
     el.classList.remove('active');
+    if (tocClickedEl) return; // クリック指定が生きている間は最大ページ判定を行わない
     const p = +el.dataset.page;
-    if (p <= currentPage && p > bestPage) { bestPage = p; bestEl = el; }
+    if (p <= maxVisible && p > bestPage) { bestPage = p; bestEl = el; }
   });
   if (bestEl) {
     bestEl.classList.add('active');
