@@ -157,8 +157,8 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - pdf-viewer.html は対象外 (PDF サムネイル描画は PDF.js Worker 経由で本質的に非同期 yield するため同様の問題は起きにくい)。必要なら同じヘルパーを移植可能
 
 ### 実行要件
-- ローカル HTTP サーバー必須 (`python -m http.server`, `php -S localhost:8000` 等)
-- `file://` では WASM Worker / Service Worker が動作しない
+- ローカル HTTP サーバー必須 (`python -m http.server`, `php -S localhost:8000` 等)。**pdf-viewer.html も同様** (`file://` では `vendor/` の ES モジュール import が CORS でブロックされ、PDF.js / Pica が読めない)
+- `file://` では ES モジュールの import / WASM Worker / Service Worker のいずれも動作しない
 - インターネット接続は**不要** (全ライブラリを `vendor/` にベンダー化済み、PWA初回インストール後はオフラインで全機能利用可)
 
 ## 共通: 見開き表示ロジック

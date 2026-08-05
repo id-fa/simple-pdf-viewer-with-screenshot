@@ -1,8 +1,8 @@
 # PDF Viewer with Screenshot
 
-ブラウザベースのビューア＋画像エクスポートツール群。単一HTMLファイルで完結する設計。
+ブラウザベースのビューア＋画像エクスポートツール群。PWA としてインストール可能、オフラインで動作する。
 
-A browser-based viewer + image export toolkit. Each viewer is self-contained in a single HTML file.
+A browser-based viewer + image export toolkit. Installable as a PWA and fully functional offline.
 
 Created by id-fa, built with Claude Code.
 
@@ -28,9 +28,9 @@ pdf-viewer-with-screenshot/
 
 ## pdf-viewer.html
 
-PDF専用の軽量ビューア。サーバー不要、`file://` で動作する。
+PDF専用の軽量ビューア。
 
-A lightweight PDF-only viewer. No server required, works with `file://`.
+A lightweight PDF-only viewer.
 
 ### 使い方 / Usage
 
@@ -41,7 +41,11 @@ You can use the viewer directly via GitHub Pages without downloading. Google Ana
 → [**Open pdf-viewer**](https://id-fa.github.io/simple-pdf-viewer-with-screenshot/webapp/pdf-viewer.html)
 → [**Open pdf-viewer (wasm-vips)**](https://id-fa.github.io/simple-pdf-viewer-with-screenshot/webapp/pdf-viewer.html?vips=1) ※wasm-vips 版 (初回アクセス時に vendor 一式 ~8MB をキャッシュ) / wasm-vips build (~8MB of vendored assets cached on first visit)
 
-1. `pdf-viewer.html` をブラウザで直接開く / Open `pdf-viewer.html` directly in your browser
+ローカルに置いて使う場合は、`vendor/` の ES モジュールが `file://` では CORS でブロックされるため HTTP サーバーが必要です (comic-viewer.html と同じ、下記「起動 / Getting Started」を参照)。
+
+To use it locally, an HTTP server is required — the ES modules under `vendor/` are blocked by CORS on `file://` (same as comic-viewer.html; see "Getting Started" below).
+
+1. `http://localhost:8000/pdf-viewer.html` をブラウザで開く / Open `http://localhost:8000/pdf-viewer.html` in your browser
 2. 「Open PDF」ボタンまたはドラッグ＆ドロップでPDFを読み込む / Load a PDF via "Open PDF" button or drag & drop
 3. ページを閲覧・画像として保存 / Browse pages and save as images
 
@@ -277,7 +281,7 @@ Automatically fixes garbled Shift-JIS filenames in Windows-created ZIP/CBZ files
 - `sw.js` (self-hosted Service Worker) — Precache for offline use + COOP/COEP headers for SharedArrayBuffer (wasm-vips only)
 - [libarchive.js](https://github.com/nika-begiashvili/libarchivejs) v2.0.2 — Archive extraction (vendored, WASM, comic-viewer.html only)
 - Vanilla JavaScript (ES Modules)
-- 単一HTMLファイル、フレームワーク不使用 (オプション機能利用時を除く) / Single HTML files, no frameworks (except optional features)
+- ビューア本体は HTML 1枚 (JS/CSS を外部ファイルに分割しない)、フレームワーク不使用。ライブラリのみ `vendor/` に配置 / Each viewer is a single HTML file (no split-out JS/CSS) with no frameworks; only third-party libraries live under `vendor/`
 
 ### ベンダー化 / Vendored Libraries
 
