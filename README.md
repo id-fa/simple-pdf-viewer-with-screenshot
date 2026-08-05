@@ -16,9 +16,9 @@ pdf-viewer-with-screenshot/
 ├── manifest.webmanifest   # PWA manifest
 ├── vendor/                # Vendored libraries (no CDN required)
 │   ├── pdfjs/             #   PDF.js v4.9.155
-│   ├── pica/              #   Pica.js v9.0.1
+│   ├── pica/              #   Pica.js v10.0.2
 │   ├── libarchive/        #   libarchive.js v2.0.2
-│   └── vips/              #   wasm-vips (optional, used with ?vips=1)
+│   └── vips/              #   wasm-vips v0.0.18 (optional, used with ?vips=1)
 ├── icons/                 # PWA icons + generator
 ├── README.md              # This file
 └── CLAUDE.md              # AI development guide
@@ -39,7 +39,7 @@ A lightweight PDF-only viewer. No server required, works with `file://`.
 You can use the viewer directly via GitHub Pages without downloading. Google Analytics is used for access analytics, but the contents of files you open are never sent to any server.
 
 → [**Open pdf-viewer**](https://id-fa.github.io/simple-pdf-viewer-with-screenshot/webapp/pdf-viewer.html)
-→ [**Open pdf-viewer (wasm-vips)**](https://id-fa.github.io/simple-pdf-viewer-with-screenshot/webapp/pdf-viewer.html?vips=1) ※初回読み込み時に追加で ~5.5MB / Extra ~5.5MB download on first load
+→ [**Open pdf-viewer (wasm-vips)**](https://id-fa.github.io/simple-pdf-viewer-with-screenshot/webapp/pdf-viewer.html?vips=1) ※wasm-vips 版 (初回アクセス時に vendor 一式 ~8MB をキャッシュ) / wasm-vips build (~8MB of vendored assets cached on first visit)
 
 1. `pdf-viewer.html` をブラウザで直接開く / Open `pdf-viewer.html` directly in your browser
 2. 「Open PDF」ボタンまたはドラッグ＆ドロップでPDFを読み込む / Load a PDF via "Open PDF" button or drag & drop
@@ -47,8 +47,8 @@ You can use the viewer directly via GitHub Pages without downloading. Google Ana
 
 ### 依存 / Dependencies
 
-- [PDF.js](https://mozilla.github.io/pdf.js/) v4.9.155 (CDN)
-- [Pica.js](https://github.com/nodeca/pica) v9.0.1 (CDN) — 高品質画像縮小 (Lanczos3 + unsharp mask) / High-quality image downscaling
+- [PDF.js](https://mozilla.github.io/pdf.js/) v4.9.155 (`vendor/` に同梱 / vendored)
+- [Pica.js](https://github.com/nodeca/pica) v10.0.2 (`vendor/` に同梱 / vendored) — 高品質画像縮小 (unsharp mask、Web Worker で実行) / High-quality image downscaling, runs in a Web Worker
 
 ---
 
@@ -81,7 +81,7 @@ Image files within archives are automatically detected and displayed.
 Instead of running a local server, you can use the viewer directly via GitHub Pages. Google Analytics is used for access analytics, but the contents of files you open are never sent to any server.
 
 → [**Open comic-viewer**](https://id-fa.github.io/simple-pdf-viewer-with-screenshot/webapp/comic-viewer.html)
-→ [**Open comic-viewer (wasm-vips)**](https://id-fa.github.io/simple-pdf-viewer-with-screenshot/webapp/comic-viewer.html?vips=1) ※初回読み込み時に追加で ~5.5MB / Extra ~5.5MB download on first load
+→ [**Open comic-viewer (wasm-vips)**](https://id-fa.github.io/simple-pdf-viewer-with-screenshot/webapp/comic-viewer.html?vips=1) ※wasm-vips 版 (初回アクセス時に vendor 一式 ~8MB をキャッシュ) / wasm-vips build (~8MB of vendored assets cached on first visit)
 
 ローカルで起動する場合は、`file://` では WASM Worker が動作しないため HTTP サーバーが必要です。
 
@@ -117,14 +117,14 @@ Open `http://localhost:8000/comic-viewer.html` in your browser.
 | Single / Spread / Scroll | 単ページ / 見開き / 連続スクロール切替 / Toggle single / spread / scroll |
 | Right (R2L) / Left (L2R) | 綴じ方向 / Binding direction (R2L=日本漫画, L2R=洋書) |
 | Cover | 表紙を単独ページとして扱う / Treat cover as standalone page |
-| HQ | 高品質縮小モード (Pica.js Lanczos3) / High-quality downscale mode (Pica.js Lanczos3) |
+| HQ | 高品質縮小モード (Pica.js) / High-quality downscale mode (Pica.js) |
 | 0° / 90° / 180° / 270° | ページ回転 / Page rotation |
 | 50% ~ 300% / Fit | 表示スケール / Display scale |
 | Pan | ドラッグで画面パン / Drag to pan (scroll) |
 | Map | ミニマップ表示 / Show minimap |
 | Full | フルスクリーン / Fullscreen mode |
 | Filter | 色調補正フィルター (プリセット3スロット保存可) / Color filters (3 preset slots) |
-| Thumbs / Bookmarks | サイドバー切替 / Sidebar tabs |
+| Thumbs / Bookmarks / TOC | サイドバー切替 (TOC は EPUB 構造解析後のみ) / Sidebar tabs (TOC appears only after EPUB analysis) |
 
 ### キーボード・タッチ操作 / Keyboard & Touch
 
@@ -217,9 +217,9 @@ Append `?vips=1` to the URL to enable [wasm-vips](https://www.npmjs.com/package/
 
 - 例 / Example: `comic-viewer.html?vips=1`, `pdf-viewer.html?vips=1`
 - HTTP サーバーが必要 (`file://` では動作しない) / Requires HTTP server (does not work with `file://`)
-- 有効化時、WASM モジュール (~5.5MB) + JS ローダー (~87KB) の追加ダウンロードが発生する / When enabled, an additional ~5.5MB WASM module + ~87KB JS loader will be downloaded
-- vips ロード失敗時は自動的に Pica にフォールバック / Automatically falls back to Pica on load failure
-- `?vips=1` なしの場合、追加ファイルのロードは一切発生しない / No extra files are loaded without `?vips=1`
+- 設定は localStorage (`vipsEnabled`) に保存され、Filter ポップアップ末尾のトグルでも切替可能。`?vips=1` は書き込み用のワンショット / The setting is stored in localStorage (`vipsEnabled`) and can also be toggled at the bottom of the Filter popup; `?vips=1` is just a one-shot way to write it
+- WASM モジュール (~4.8MB) + JS ローダー (~78KB) は、オフライン動作のため `?vips=1` の有無にかかわらず Service Worker がプリキャッシュする。`?vips=1` が無効な間はロード・実行されないだけ / The WASM module (~4.8MB) + JS loader (~78KB) are precached by the Service Worker regardless of `?vips=1` so that offline mode works; without `?vips=1` they are simply never loaded or executed
+- vips ロード失敗時、および画像処理中のメモリ不足時は自動的に Pica にフォールバック / Falls back to Pica automatically on load failure, and per-call on out-of-memory during processing
 
 ### アノテーションコメント (PDF) / Annotation Comments
 
@@ -271,30 +271,44 @@ Automatically fixes garbled Shift-JIS filenames in Windows-created ZIP/CBZ files
 
 ### 技術スタック / Tech Stack
 
-- [PDF.js](https://mozilla.github.io/pdf.js/) v4.9.155 — PDF rendering (CDN)
-- [Pica.js](https://github.com/nodeca/pica) v9.0.1 — High-quality image downscaling with Lanczos3 + unsharp mask (CDN)
-- [wasm-vips](https://www.npmjs.com/package/wasm-vips) v0.0.16 — Optional high-quality resize via libvips WASM (`?vips=1`)
-- [coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker) v0.1.7 — Cross-Origin Isolation for SharedArrayBuffer (wasm-vips only)
-- [libarchive.js](https://github.com/nika-begiashvili/libarchivejs) v2.0.2 — Archive extraction (CDN, WASM, comic-viewer.html only)
+- [PDF.js](https://mozilla.github.io/pdf.js/) v4.9.155 — PDF rendering (vendored)
+- [Pica.js](https://github.com/nodeca/pica) v10.0.2 — High-quality image downscaling with unsharp mask, runs in a Web Worker (vendored)
+- [wasm-vips](https://www.npmjs.com/package/wasm-vips) v0.0.18 (libvips 8.18.3) — Optional high-quality resize via libvips WASM (`?vips=1`, vendored)
+- `sw.js` (self-hosted Service Worker) — Precache for offline use + COOP/COEP headers for SharedArrayBuffer (wasm-vips only)
+- [libarchive.js](https://github.com/nika-begiashvili/libarchivejs) v2.0.2 — Archive extraction (vendored, WASM, comic-viewer.html only)
 - Vanilla JavaScript (ES Modules)
 - 単一HTMLファイル、フレームワーク不使用 (オプション機能利用時を除く) / Single HTML files, no frameworks (except optional features)
 
-### libarchive.js WASM の CDN 読み込み / Loading WASM from CDN
+### ベンダー化 / Vendored Libraries
 
-クロスオリジン制約のワークアラウンド: / Cross-origin workaround:
+外部ライブラリはすべて `vendor/` に同梱されており、CDN への接続は発生しません。PWA としてインストールした後は、インターネット接続なしで全機能が利用できます。
 
-1. `worker-bundle.js` を CDN から `fetch()` でテキスト取得 / Fetch as text from CDN
-2. `import.meta.url` を CDN URL に置換 / Replace with actual CDN URL
-3. `Blob` → `blob:` URL で Worker 起動 / Launch Worker via blob: URL
+All third-party libraries are bundled under `vendor/`; no CDN requests are made. Once installed as a PWA, every feature works fully offline.
 
+| ファイル / File | サイズ / Size | 用途 / Purpose |
+|------|------|------|
+| `vendor/pdfjs/pdf.min.mjs` + `pdf.worker.min.mjs` | ~1.6MB | PDF レンダリング / PDF rendering |
+| `vendor/pdfjs/cmaps/*.bcmap` | ~1.5MB (169 files) | フォント未埋め込み CJK PDF 用 CMap / CMaps for CJK PDFs without embedded fonts |
+| `vendor/pdfjs/standard_fonts/` | ~800KB (16 files) | 標準14フォント未埋め込み PDF の代替フォント / Substitute fonts for the standard 14 |
+| `vendor/pica/pica.js` | 53KB | 高品質縮小 (自己完結型 ESM、Worker をバンドル済み) / High-quality downscaling (self-contained ESM with bundled worker) |
+| `vendor/libarchive/` | ~1MB (JS 68KB + WASM 979KB) | アーカイブ展開 / Archive extraction |
+| `vendor/vips/` | ~4.9MB (JS 78KB + WASM 4.8MB) | wasm-vips (`?vips=1` 時のみ使用) / wasm-vips (only used with `?vips=1`) |
+
+libarchive.js の Worker は同一オリジンから直接起動します (CDN 時代に必要だった `fetch` → `import.meta.url` 差し替え → `blob:` URL のワークアラウンドは不要になりました)。
+
+The libarchive.js worker is launched directly from the same origin — the old CDN workaround (fetch as text → patch `import.meta.url` → run from a `blob:` URL) is no longer needed.
+
+```js
+const workerUrl = new URL('./vendor/libarchive/worker-bundle.js', location.href).href;
+Archive.init({ getWorker: () => new Worker(workerUrl, { type: 'module' }) });
 ```
-libarchive.js (7.9KB) ── import ──→ CDN module
-worker-bundle.js (60KB) ── fetch → patch → blob: URL → Worker
-libarchive.wasm (979KB) ── Worker が CDN から自動 fetch / auto-fetched by Worker
-```
 
-### 遅延読み込み / Lazy Loading
+### 読み込みタイミング / Load Timing
 
-libarchive.js は初回のアーカイブファイル読み込み時に動的 `import()` されます。PDF のみ使用する場合は WASM のダウンロードは発生しません。初回のアーカイブ読み込み時に合計約 1MB (JS 68KB + WASM 979KB) の追加ダウンロードが発生します。
+ページ実行時のモジュールロードは遅延します。libarchive.js は**初回のアーカイブ読み込み時**、wasm-vips は **`?vips=1` が有効なとき**にのみ動的 `import()` されます。PDF だけを開く場合、これらは評価されません。
 
-libarchive.js is dynamically `import()`ed on first archive load. WASM download does not occur if only PDFs are used. On first archive load, approximately 1MB total (JS 68KB + WASM 979KB) is downloaded.
+Module loading at runtime is lazy: libarchive.js is dynamically `import()`ed **on the first archive load**, and wasm-vips **only when `?vips=1` is enabled**. Neither is evaluated if you only open PDFs.
+
+ただし Service Worker は登録時 (初回アクセス時) に `vendor/` 配下の主要ファイルを**一括プリキャッシュ**します。これにはオフライン動作のため `libarchive.wasm` と `vips.wasm` も含まれるため、初回アクセス時のネットワーク転送量は用途にかかわらず約 8MB になります。CMap と standard_fonts はプリキャッシュ対象外で、PDF が要求したときにのみ取得・キャッシュされます。
+
+Note that the Service Worker **precaches** the main `vendor/` files when it installs (on first visit). For offline support this includes `libarchive.wasm` and `vips.wasm`, so the first visit transfers roughly 8MB regardless of what you use it for. CMaps and standard fonts are excluded from the precache and are fetched (and cached) on demand only when a PDF requires them.
