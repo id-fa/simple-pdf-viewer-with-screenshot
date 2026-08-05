@@ -145,6 +145,8 @@ Open `http://localhost:8000/comic-viewer.html` in your browser.
 | `Z` キー | ズームトグル (300% + Pan + Map) / Toggle zoom (300% + Pan + Map) |
 | `L` キー | Last Read ページにジャンプ / Jump to last read page |
 | `M` キー | Max Read ページにジャンプ / Jump to max read page |
+| `E` キー | EPUB 構造解析 (ページ順の修正) / Analyze EPUB structure (fix page order) |
+| `T` キー | EPUB 目次の開閉 / Toggle EPUB table of contents |
 | `Escape` | UI再表示 / Show UI |
 | 左右スワイプ | ページ送り (スマホ対応) / Page navigation (touch) |
 
@@ -167,6 +169,15 @@ Open `http://localhost:8000/comic-viewer.html` in your browser.
 - **しおり一覧**: Bookmarksタブにサムネイル付きで表示、クリックでジャンプ / Displayed with thumbnails in Bookmarks tab
 - **管理**: 現在の本のしおり消去、全消去、JSON export/import / Clear per book, clear all, JSON export/import
 - **データ共有**: 両ビューアで同じ localStorage キーを使用 / Both viewers share the same localStorage keys
+
+### EPUB 構造解析・目次 / EPUB Structure & TOC
+
+EPUB はファイル名順が読み順と一致しないことがあります。`E` キーで EPUB 内部の構造 (`container.xml` → `content.opf` の spine) を解析し、正しいページ順に並べ替えます。処理が重いため自動実行はせず、キー操作でのみ実行します。
+EPUB filenames often don't match reading order. Press `E` to analyze the EPUB structure (`container.xml` → OPF spine) and reorder pages correctly. This is opt-in because the analysis is expensive.
+
+- spine の XHTML を辿って `<img>` を文書順に収集。spine から画像が取れない場合は manifest の `image/*` の記述順にフォールバック / Walks the spine's XHTML for `<img>` in document order; falls back to manifest `image/*` order
+- 解析後は並び順プルダウンに `Sort: EPUB` が追加され、他の並び順にいつでも戻せる / Adds a `Sort: EPUB` option so you can switch back anytime
+- 目次が定義されていればサイドバーに `TOC` タブが出現 (`T` キーで開閉)。EPUB3 nav / EPUB2 NCX の両方に対応、階層表示・ページ番号付き・クリックでジャンプ / A `TOC` tab appears when a table of contents exists (`T` to toggle); supports both EPUB3 nav and EPUB2 NCX
 
 ### 連続スクロールモード / Scroll Mode
 

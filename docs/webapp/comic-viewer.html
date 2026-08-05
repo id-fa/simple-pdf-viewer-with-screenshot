@@ -129,6 +129,17 @@ label.check input { cursor: pointer; }
 .sidebar-tab.active { color: #e0e0e0; border-bottom-color: #4a9eff; }
 .sidebar-panel { flex: 1; overflow-y: auto; display: none; padding: 8px; }
 .sidebar-panel.active { display: block; }
+/* TOC タブが出ると3タブになり 160px 幅では窮屈なので詰める */
+.sidebar-tabs.has-toc .sidebar-tab { font-size: 11px; padding: 6px 2px; }
+
+/* EPUB TOC */
+.toc-item { display: flex; gap: 4px; align-items: baseline; padding: 4px 4px; font-size: 12px; color: #bbb; cursor: pointer; border-radius: 4px; border-left: 2px solid transparent; }
+.toc-item:hover { background: #1a1a2a; color: #e0e0e0; }
+.toc-item.active { background: #17253f; color: #e0e0e0; border-left-color: #4a9eff; }
+.toc-item .toc-label { flex: 1; overflow-wrap: anywhere; line-height: 1.35; }
+.toc-item .toc-page { flex-shrink: 0; font-size: 10px; color: #666; font-family: monospace; }
+.toc-item.no-page { cursor: default; opacity: 0.5; }
+.toc-empty { padding: 16px 8px; text-align: center; font-size: 12px; color: #666; line-height: 1.5; }
 
 /* Bookmark */
 .bookmark-settings { padding: 6px 4px; border-bottom: 1px solid #333; margin-bottom: 4px; font-size: 12px; }
@@ -291,6 +302,7 @@ label.check input { cursor: pointer; }
       <option value="natural">Sort: Natural</option>
       <option value="lexical">Sort: Lexical</option>
       <option value="timestamp">Sort: Timestamp</option>
+      <option value="epub" id="sortEpubOpt" hidden>Sort: EPUB</option>
     </select>
     <div class="filter-wrap">
       <button id="filterBtn" title="色調補正フィルター / Color adjustment filters">Filter</button>
@@ -383,6 +395,11 @@ label.check input { cursor: pointer; }
         <div class="help-row"><span class="help-key">?</span><span class="help-desc">Show this help</span></div>
       </div>
       <div class="help-section">
+        <h3>EPUB</h3>
+        <div class="help-row"><span class="help-key">E</span><span class="help-desc">Analyze EPUB structure (fix page order from OPF spine)</span></div>
+        <div class="help-row"><span class="help-key">T</span><span class="help-desc">Toggle table of contents (after E)</span></div>
+      </div>
+      <div class="help-section">
         <h3>Mouse / Touch</h3>
         <div class="help-row"><span class="help-key">Click left 1/3</span><span class="help-desc">Previous page (R2L: next)</span></div>
         <div class="help-row"><span class="help-key">Click right 1/3</span><span class="help-desc">Next page (R2L: previous)</span></div>
@@ -471,6 +488,10 @@ let docType = null; // 'pdf' | 'archive'
 let pdfDoc = null;
 let archiveImages = []; // [{name, blob, img, width, height, lastModified}]
 let archiveImagesUnsorted = []; // original extracted order, for re-sorting
+// EPUB structure analysis (opt-in, triggered by the E key — see runEpubAnalysis)
+let epubEntries = [];      // [{name, file}] structural (text) entries: container.xml / opf / ncx / xhtml
+let epubPageOrder = null;  // normalized image paths in reading order (null = not analyzed)
+let epubToc = [];          // [{label, depth, page}] table of contents
 let currentPage = 1;
 let totalPages = 0;
 let fileName = '';
@@ -498,6 +519,7 @@ const scaleSelect = document.getElementById('scaleSelect');
 const rotateSelect = document.getElementById('rotateSelect');
 const formatSelect = document.getElementById('formatSelect');
 const sortSelect = document.getElementById('sortSelect');
+const sortEpubOpt = document.getElementById('sortEpubOpt');
 const hqPdfCheck = document.getElementById('hqPdfCheck');
 const gaplessCheck = document.getElementById('gaplessCheck');
 const gaplessLabel = document.getElementById('gaplessLabel');
@@ -674,11 +696,16 @@ let bookmarkSettingsEl = null;
 let bookmarkMgmtEl = null;
 let bookmarkPanel = null;
 let thumbsPanel = null;
+let tocPanel = null;
+let tocTab = null;
+let tocListEl = null;
+let sidebarTabBar = null;
 
 function switchSidebarTab(tabName) {
   sidebar.querySelectorAll('.sidebar-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabName));
   if (bookmarkPanel) bookmarkPanel.classList.toggle('active', tabName === 'bookmarks');
   if (thumbsPanel) thumbsPanel.classList.toggle('active', tabName === 'thumbs');
+  if (tocPanel) tocPanel.classList.toggle('active', tabName === 'toc');
 }
 
 function initSidebarBookmarks() {
@@ -697,8 +724,16 @@ function initSidebarBookmarks() {
   thTab.textContent = 'Thumbs';
   thTab.title = 'サムネイル一覧を表示 / Show thumbnails';
   thTab.addEventListener('click', () => switchSidebarTab('thumbs'));
-  tabBar.append(bmTab, thTab);
+  tocTab = document.createElement('button');
+  tocTab.className = 'sidebar-tab';
+  tocTab.dataset.tab = 'toc';
+  tocTab.textContent = 'TOC';
+  tocTab.title = 'EPUB 目次を表示 / Show EPUB table of contents';
+  tocTab.hidden = true; // EPUB 構造解析で目次が取れたときだけ出す
+  tocTab.addEventListener('click', () => switchSidebarTab('toc'));
+  tabBar.append(bmTab, thTab, tocTab);
   sidebar.appendChild(tabBar);
+  sidebarTabBar = tabBar;
 
   // Bookmarks panel
   bookmarkPanel = document.createElement('div');
@@ -748,6 +783,13 @@ function initSidebarBookmarks() {
     <input type="file" id="importBookmarksFile" accept=".json" style="display:none">`;
   bookmarkPanel.appendChild(bookmarkMgmtEl);
   sidebar.appendChild(thumbsPanel);
+
+  // TOC panel (EPUB only, populated by runEpubAnalysis)
+  tocPanel = document.createElement('div');
+  tocPanel.className = 'sidebar-panel';
+  tocListEl = document.createElement('div');
+  tocPanel.appendChild(tocListEl);
+  sidebar.appendChild(tocPanel);
 
   document.getElementById('clearBookmarksThis').addEventListener('click', () => {
     if (!currentFileHash) return;
@@ -1007,7 +1049,9 @@ function naturalCompare(a, b) {
 
 // ---- Sort order for archive images ----
 function applySortOrder() {
-  const mode = sortSelect.value;
+  let mode = sortSelect.value;
+  // 'epub' は構造解析が済んでいる場合のみ有効 (前ファイルの選択が残っていることがある)
+  if (mode === 'epub' && !epubPageOrder) mode = 'natural';
   const arr = [...archiveImagesUnsorted];
   if (mode === 'natural') {
     arr.sort((a, b) => naturalCompare(a.name, b.name));
@@ -1015,8 +1059,396 @@ function applySortOrder() {
     arr.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
   } else if (mode === 'timestamp') {
     arr.sort((a, b) => a.lastModified - b.lastModified || naturalCompare(a.name, b.name));
+  } else if (mode === 'epub') {
+    // EPUB の読み順に並べる。読み順に現れない画像 (未参照のカバー等) は末尾に Natural 順で置く
+    const rank = new Map(epubPageOrder.map((p, i) => [p, i]));
+    arr.sort((a, b) => {
+      const ra = rank.has(epubNormPath(a.name)) ? rank.get(epubNormPath(a.name)) : Infinity;
+      const rb = rank.has(epubNormPath(b.name)) ? rank.get(epubNormPath(b.name)) : Infinity;
+      if (ra !== rb) return ra - rb;
+      return naturalCompare(a.name, b.name);
+    });
   }
   archiveImages = arr;
+}
+
+// ---- EPUB structure analysis (opt-in: E key) ----
+// EPUB のファイル名順は読み順と一致しないことが多い。OPF の spine を辿り、各 XHTML の
+// <img> / <svg><image> を文書順に拾って正しいページ順を組み立てる。全 XHTML の読み込みと
+// パースが走る重い処理なので自動実行はせず、E キーで明示的に起動する。
+
+const XLINK_NS = 'http://www.w3.org/1999/xlink';
+const OPS_NS = 'http://www.idpf.org/2007/ops';
+let epubBusy = false;
+
+// アーカイブのエントリ名と OPF/XHTML の href を突き合わせるための正規化キー
+// (percent-decode + パス正規化 + 小文字化)
+function epubNormPath(p) {
+  let s = String(p || '');
+  try { s = decodeURIComponent(s); } catch (_) {}
+  return sanitizePath(s).toLowerCase();
+}
+
+// href を基準ディレクトリからの相対パスとして解決する (fragment 除去 + ../ 解決)。
+// 戻り値は epubNormPath と同じ正規化キー。
+function epubResolve(baseDir, href) {
+  let h = String(href || '').split('#')[0].split('?')[0].replace(/\\/g, '/');
+  try { h = decodeURIComponent(h); } catch (_) {}
+  if (!h) return '';
+  const parts = h.startsWith('/') ? [] : (baseDir ? baseDir.split('/').filter(Boolean) : []);
+  for (const seg of h.split('/')) {
+    if (seg === '' || seg === '.') continue;
+    if (seg === '..') parts.pop();
+    else parts.push(seg);
+  }
+  return parts.join('/').toLowerCase();
+}
+
+function epubDirOf(path) {
+  const i = path.lastIndexOf('/');
+  return i === -1 ? '' : path.slice(0, i);
+}
+
+// XML 宣言の encoding を見てデコードする (EPUB は基本 UTF-8 だが稀に例外がある)
+async function epubReadText(entry) {
+  const buf = await entry.file.arrayBuffer();
+  const head = new TextDecoder('utf-8').decode(buf.slice(0, 256));
+  const m = head.match(/encoding\s*=\s*["']([\w-]+)["']/i);
+  if (m && !/^utf-?8$/i.test(m[1])) {
+    try { return new TextDecoder(m[1].toLowerCase()).decode(buf); } catch (_) {}
+  }
+  return new TextDecoder('utf-8').decode(buf);
+}
+
+// XML として壊れている EPUB は珍しくないので、失敗したら HTML パーサで拾い直す
+function epubParse(text, mime) {
+  const doc = new DOMParser().parseFromString(text, mime);
+  if (doc.querySelector('parsererror')) return new DOMParser().parseFromString(text, 'text/html');
+  return doc;
+}
+
+// XHTML / SVG ドキュメント内の画像参照を文書順に返す
+function epubExtractDocImages(text, docPath) {
+  const dir = epubDirOf(docPath);
+  const doc = epubParse(text, 'application/xhtml+xml');
+  const out = [];
+  const push = (h) => {
+    if (!h || /^(data:|https?:|blob:|#)/i.test(h)) return;
+    const p = epubResolve(dir, h);
+    if (p) out.push(p);
+  };
+  for (const el of doc.querySelectorAll('img, image, [style*="url("]')) {
+    const href = el.getAttribute('src')
+      || el.getAttributeNS(XLINK_NS, 'href')
+      || el.getAttribute('xlink:href')
+      || el.getAttribute('href');
+    if (href) { push(href); continue; }
+    // 固定レイアウト EPUB は背景画像で組まれていることがある
+    const m = (el.getAttribute('style') || '').match(/url\(\s*['"]?([^'")]+)/i);
+    if (m) push(m[1]);
+  }
+  return out;
+}
+
+// EPUB3: nav ドキュメント (<nav epub:type="toc">) から目次を取り出す
+async function epubParseNav(byPath, navPath) {
+  const entry = byPath.get(navPath);
+  if (!entry) return [];
+  const dir = epubDirOf(navPath);
+  const doc = epubParse(await epubReadText(entry), 'application/xhtml+xml');
+  let nav = null;
+  for (const n of doc.querySelectorAll('nav')) {
+    const t = n.getAttributeNS(OPS_NS, 'type') || n.getAttribute('epub:type') || '';
+    if (/(^|\s)toc(\s|$)/.test(t)) { nav = n; break; }
+  }
+  if (!nav) nav = doc.querySelector('nav');
+  if (!nav) return [];
+  const out = [];
+  for (const li of nav.querySelectorAll('li')) {
+    const a = li.querySelector(':scope > a, :scope > span');
+    if (!a) continue;
+    const label = (a.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!label) continue;
+    let depth = 0;
+    for (let p = li.parentElement; p && p !== nav; p = p.parentElement) {
+      const ln = p.localName.toLowerCase();
+      if (ln === 'ol' || ln === 'ul') depth++;
+    }
+    const href = a.getAttribute('href');
+    out.push({ label, path: href ? epubResolve(dir, href) : '', depth: Math.max(0, depth - 1) });
+  }
+  return out;
+}
+
+// EPUB2: NCX (navMap/navPoint) から目次を取り出す
+async function epubParseNcx(byPath, ncxPath) {
+  const entry = byPath.get(ncxPath);
+  if (!entry) return [];
+  const dir = epubDirOf(ncxPath);
+  const doc = epubParse(await epubReadText(entry), 'application/xml');
+  const navMap = doc.querySelector('navMap');
+  if (!navMap) return [];
+  const out = [];
+  for (const np of navMap.querySelectorAll('navPoint')) {
+    const lbl = np.querySelector(':scope > navLabel > text') || np.querySelector(':scope > navLabel');
+    const label = ((lbl ? lbl.textContent : '') || '').replace(/\s+/g, ' ').trim();
+    if (!label) continue;
+    const content = np.querySelector(':scope > content[src]');
+    let depth = 0;
+    for (let p = np.parentElement; p && p !== navMap; p = p.parentElement) {
+      if (p.localName.toLowerCase() === 'navpoint') depth++;
+    }
+    out.push({ label, path: content ? epubResolve(dir, content.getAttribute('src')) : '', depth });
+  }
+  return out;
+}
+
+// container.xml → OPF → spine → XHTML と辿って読み順と目次を組み立てる
+async function analyzeEpub() {
+  const byPath = new Map();
+  for (const e of epubEntries) byPath.set(epubNormPath(e.name), e);
+
+  // --- OPF を特定 ---
+  let opfPath = '';
+  const containerEntry = byPath.get('meta-inf/container.xml');
+  if (containerEntry) {
+    const cdoc = epubParse(await epubReadText(containerEntry), 'application/xml');
+    const rf = cdoc.querySelector('rootfile[full-path]');
+    if (rf) opfPath = epubResolve('', rf.getAttribute('full-path'));
+  }
+  if (!byPath.has(opfPath)) {
+    const cand = epubEntries.find(e => /\.opf$/i.test(e.name));
+    if (!cand) throw new Error('OPF が見つかりません (EPUB ではない可能性があります)');
+    opfPath = epubNormPath(cand.name);
+  }
+  const opfDir = epubDirOf(opfPath);
+  const opf = epubParse(await epubReadText(byPath.get(opfPath)), 'application/xml');
+
+  // --- manifest ---
+  const manifestEl = opf.querySelector('manifest');
+  if (!manifestEl) throw new Error('OPF に manifest がありません');
+  const byId = new Map();
+  const manifestItems = [];
+  for (const el of manifestEl.querySelectorAll('item[href]')) {
+    const info = {
+      id: el.getAttribute('id') || '',
+      path: epubResolve(opfDir, el.getAttribute('href')),
+      type: (el.getAttribute('media-type') || '').toLowerCase(),
+      props: el.getAttribute('properties') || '',
+    };
+    if (!info.path) continue;
+    if (info.id) byId.set(info.id, info);
+    manifestItems.push(info);
+  }
+
+  // --- spine (読み順) ---
+  const spineEl = opf.querySelector('spine');
+  const spine = [];
+  if (spineEl) {
+    for (const el of spineEl.querySelectorAll('itemref[idref]')) {
+      const it = byId.get(el.getAttribute('idref'));
+      if (it) spine.push(it);
+    }
+  }
+
+  // --- 画像を読み順に収集 ---
+  const available = new Set(archiveImagesUnsorted.map(im => epubNormPath(im.name)));
+  const order = [];
+  const seen = new Set();
+  const docFirstImage = new Map(); // ドキュメントパス → そのページの先頭画像 (TOC のページ解決用)
+  const addImage = (p) => {
+    if (!p || !available.has(p) || seen.has(p)) return;
+    seen.add(p);
+    order.push(p);
+  };
+
+  for (let i = 0; i < spine.length; i++) {
+    setProgress(((i + 1) / spine.length) * 100);
+    await yieldToMain();
+    const item = spine[i];
+    // spine に画像が直接並ぶ EPUB (稀) は XHTML を読まずに済む
+    if (item.type.startsWith('image/')) {
+      if (available.has(item.path)) docFirstImage.set(item.path, item.path);
+      addImage(item.path);
+      continue;
+    }
+    const entry = byPath.get(item.path);
+    if (!entry) continue;
+    let imgs;
+    try { imgs = epubExtractDocImages(await epubReadText(entry), item.path); } catch (_) { continue; }
+    for (const p of imgs) {
+      if (available.has(p) && !docFirstImage.has(item.path)) docFirstImage.set(item.path, p);
+      addImage(p);
+    }
+  }
+  setProgress(0);
+
+  // spine から画像が取れない場合は manifest の image/* を記述順に使う
+  let source = 'spine';
+  if (order.length === 0) {
+    source = 'manifest';
+    for (const it of manifestItems) {
+      if (it.type.startsWith('image/')) addImage(it.path);
+    }
+  }
+  if (order.length === 0) throw new Error('読み順を特定できませんでした');
+
+  // 画像を含まない spine ドキュメント (テキストのみの章など) は後続ページを引き継ぐ
+  let carry = null;
+  for (let i = spine.length - 1; i >= 0; i--) {
+    const p = spine[i].path;
+    if (docFirstImage.has(p)) carry = docFirstImage.get(p);
+    else if (carry) docFirstImage.set(p, carry);
+  }
+
+  // --- TOC (EPUB3 nav を優先し、無ければ EPUB2 NCX) ---
+  let toc = [];
+  const navItem = manifestItems.find(it => /(^|\s)nav(\s|$)/.test(it.props));
+  if (navItem) { try { toc = await epubParseNav(byPath, navItem.path); } catch (_) {} }
+  if (toc.length === 0) {
+    let ncxPath = '';
+    const tocId = spineEl ? spineEl.getAttribute('toc') : null;
+    if (tocId && byId.has(tocId)) ncxPath = byId.get(tocId).path;
+    if (!ncxPath) {
+      const ncx = manifestItems.find(it => it.type === 'application/x-dtbncx+xml' || /\.ncx$/.test(it.path));
+      if (ncx) ncxPath = ncx.path;
+    }
+    if (ncxPath) { try { toc = await epubParseNcx(byPath, ncxPath); } catch (_) {} }
+  }
+
+  // spine 経由でページを引けなかった TOC 項目は、参照先の XHTML を直接読んで先頭画像を得る
+  // (spine が空で manifest フォールバックした EPUB など)。対象は目次の項目数だけなので軽い。
+  for (const t of toc) {
+    if (!t.path || available.has(t.path) || docFirstImage.has(t.path)) continue;
+    const entry = byPath.get(t.path);
+    if (!entry) continue;
+    await yieldToMain();
+    try {
+      const first = epubExtractDocImages(await epubReadText(entry), t.path).find(p => available.has(p));
+      if (first) docFirstImage.set(t.path, first);
+    } catch (_) {}
+  }
+
+  return { order, toc, docFirstImage, source };
+}
+
+// 並び順が変わった後の作り直し。Scroll モードは .scroll-container が残っていると
+// 古いプレースホルダが再利用されてしまうので明示的に破棄する。
+async function rebuildAfterReorder() {
+  currentPage = 1;
+  if (isScrollMode()) {
+    if (scrollObserver) { scrollObserver.disconnect(); scrollObserver = null; }
+    scrollRendered.clear();
+    renderedPageNums.clear();
+    releaseCanvases(viewer);
+    viewer.innerHTML = '';
+    await renderScrollView(1);
+  } else {
+    await renderView(1);
+  }
+  await renderThumbnails();
+}
+
+async function runEpubAnalysis() {
+  if (docType !== 'archive') { showToast('EPUB 構造解析: アーカイブが開かれていません', 3000); return; }
+  if (epubEntries.length === 0) { showToast('EPUB 構造解析: 構造ファイル (container.xml / OPF) がありません', 3500); return; }
+  if (epubBusy) return;
+  epubBusy = true;
+  const loading = showLoading('EPUB 構造を解析中...');
+  try {
+    const res = await analyzeEpub();
+    epubPageOrder = res.order;
+
+    // 解析した読み順を適用
+    sortEpubOpt.hidden = false;
+    sortSelect.value = 'epub';
+    applySortOrder();
+    totalPages = archiveImages.length;
+    pageCount.textContent = `/ ${totalPages}`;
+    pageInput.max = totalPages;
+
+    // ページ番号は最終的な並び順から引く
+    const pageOf = new Map();
+    archiveImages.forEach((im, i) => pageOf.set(epubNormPath(im.name), i + 1));
+    epubToc = res.toc.map(t => {
+      let page = pageOf.get(t.path);
+      if (!page && res.docFirstImage.has(t.path)) page = pageOf.get(res.docFirstImage.get(t.path));
+      return { label: t.label, depth: t.depth, page: page || null };
+    });
+    renderToc();
+
+    await rebuildAfterReorder();
+
+    const tocMsg = epubToc.length ? ` / 目次 ${epubToc.length} 項目 (T)` : ' / 目次なし';
+    showToast(`EPUB: ${res.order.length}/${archiveImages.length} ページを ${res.source} 順に整列${tocMsg}`, 4000);
+  } catch (err) {
+    console.error('EPUB analysis error:', err);
+    showToast('EPUB 構造解析エラー: ' + err.message, 4000);
+  } finally {
+    setProgress(0);
+    hideLoading(loading);
+    epubBusy = false;
+  }
+}
+
+function renderToc() {
+  if (!tocListEl) return;
+  tocListEl.innerHTML = '';
+  if (epubToc.length === 0) {
+    tocTab.hidden = true;
+    sidebarTabBar.classList.remove('has-toc');
+    if (tocPanel.classList.contains('active')) switchSidebarTab('thumbs');
+    return;
+  }
+  tocTab.hidden = false;
+  sidebarTabBar.classList.add('has-toc');
+  for (const t of epubToc) {
+    const row = document.createElement('div');
+    row.className = 'toc-item' + (t.page ? '' : ' no-page');
+    row.style.paddingLeft = (4 + Math.min(t.depth, 4) * 10) + 'px';
+    const label = document.createElement('span');
+    label.className = 'toc-label';
+    label.textContent = t.label;
+    row.appendChild(label);
+    if (t.page) {
+      const pg = document.createElement('span');
+      pg.className = 'toc-page';
+      pg.textContent = 'p.' + t.page;
+      row.appendChild(pg);
+      row.dataset.page = t.page;
+      row.title = `${t.label} → p.${t.page}`;
+      row.addEventListener('click', () => renderView(t.page));
+    } else {
+      row.title = t.label;
+    }
+    tocListEl.appendChild(row);
+  }
+  updateTocActive();
+}
+
+// 現在ページを含む (= currentPage 以下で最大ページの) 項目をハイライト
+function updateTocActive() {
+  if (!tocListEl || epubToc.length === 0) return;
+  let bestEl = null, bestPage = -1;
+  tocListEl.querySelectorAll('.toc-item[data-page]').forEach(el => {
+    el.classList.remove('active');
+    const p = +el.dataset.page;
+    if (p <= currentPage && p > bestPage) { bestPage = p; bestEl = el; }
+  });
+  if (bestEl) {
+    bestEl.classList.add('active');
+    if (tocPanel && tocPanel.classList.contains('active')) bestEl.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+// 新しいファイルを開いたときに EPUB 解析結果を破棄する
+function resetEpubState() {
+  epubEntries = [];
+  epubPageOrder = null;
+  epubToc = [];
+  if (sortEpubOpt) sortEpubOpt.hidden = true;
+  if (sortSelect.value === 'epub') sortSelect.value = 'natural';
+  renderToc();
 }
 
 // ---- Filename encoding fix ----
@@ -1114,6 +1546,8 @@ async function buildFilenameMap(fileOrBlob, name) {
 // ---- Image helpers ----
 const IMAGE_EXTS = /\.(jpe?g|png|webp|gif|bmp|avif|jxl|tiff?|heic|heif)$/i;
 const ARCHIVE_EXTS = /\.(cbz|zip|cbr|rar|cb7|7z|epub)$/i;
+// EPUB 構造解析 (E キー) が読むテキスト系エントリ。展開後も保持しておく
+const EPUB_STRUCT_EXTS = /\.(opf|ncx|xhtml|xht|html?|xml|svg)$/i;
 
 function loadImageFromBlob(blob) {
   return new Promise((resolve, reject) => {
@@ -1495,6 +1929,7 @@ function updateScrollCurrentPage() {
         if (active) active.scrollIntoView({ block: 'nearest' });
       }
       updateAutoBookmarks(currentPage);
+      updateTocActive();
     }
   }
 }
@@ -1522,8 +1957,8 @@ async function renderView(num) {
       prevBtn.disabled = next === null;
       nextBtn.disabled = currentPage <= 1;
     } else {
-    prevBtn.disabled = currentPage <= 1;
-    nextBtn.disabled = next === null;
+      prevBtn.disabled = currentPage <= 1;
+      nextBtn.disabled = next === null;
     }
 
     const pages = getSpreadPages(currentPage);
@@ -1589,15 +2024,16 @@ async function renderView(num) {
     const pagesSet = new Set(pages);
     if (thumbsContainer) {
       thumbsContainer.querySelectorAll('.thumb').forEach((t, i) => {
-      t.classList.toggle('active', pagesSet.has(i + 1));
-    });
+        t.classList.toggle('active', pagesSet.has(i + 1));
+      });
       const active = thumbsContainer.querySelector('.thumb.active');
-    if (active) active.scrollIntoView({ block: 'nearest' });
+      if (active) active.scrollIntoView({ block: 'nearest' });
     }
 
     // Update bookmarks
     updateAutoBookmarks(currentPage);
     updateBookmarkUI();
+    updateTocActive();
 
     // 表示中以外のページの PDF.js キャッシュを解放してメモリ累積を防ぐ (PDF時のみ)
     cleanupPdfPagesExcept(new Set(pages));
@@ -1840,6 +2276,7 @@ async function loadPDF(data, name) {
   docType = 'pdf';
   archiveImages = [];
   archiveImagesUnsorted = [];
+  resetEpubState();
   sortSelect.style.display = 'none';
   const loadingTask = pdfjsLib.getDocument({
     data,
@@ -1892,18 +2329,18 @@ function flattenExtracted(obj, prefix = '', fnMap = null) {
   const files = [];
   let totalSize = 0;
   function walk(obj, prefix) {
-  for (const [key, value] of Object.entries(obj)) {
-    const fixedKey = (fnMap && fnMap.has(key)) ? fnMap.get(key) : tryFixFilename(key);
-    if (value instanceof File) {
+    for (const [key, value] of Object.entries(obj)) {
+      const fixedKey = (fnMap && fnMap.has(key)) ? fnMap.get(key) : tryFixFilename(key);
+      if (value instanceof File) {
         if (files.length >= ARCHIVE_MAX_FILES) throw new Error(`ファイル数が上限 (${ARCHIVE_MAX_FILES}) を超えました`);
         totalSize += value.size;
         if (totalSize > ARCHIVE_MAX_TOTAL_SIZE) throw new Error(`展開サイズが上限 (${(ARCHIVE_MAX_TOTAL_SIZE / 1024 / 1024 / 1024).toFixed(0)} GB) を超えました`);
         const safeName = sanitizePath(prefix + fixedKey);
         if (safeName) files.push({ name: safeName, file: value });
-    } else if (typeof value === 'object' && value !== null) {
+      } else if (typeof value === 'object' && value !== null) {
         walk(value, prefix + fixedKey + '/');
+      }
     }
-  }
   }
   walk(obj, prefix);
   return files;
@@ -2078,8 +2515,11 @@ function showArchiveChooser(innerArchives, outerName) {
   });
 }
 
-// Load image files into archiveImagesUnsorted and display
-async function loadImageEntries(imageFiles, archiveFileName) {
+// Load image files into archiveImagesUnsorted and display.
+// structFiles: EPUB 構造解析 (E キー) 用に取っておくテキスト系エントリ
+async function loadImageEntries(imageFiles, archiveFileName, structFiles = []) {
+  resetEpubState();
+  epubEntries = structFiles;
   archiveImagesUnsorted = [];
   for (let i = 0; i < imageFiles.length; i++) {
     setProgress(((i + 1) / imageFiles.length) * 100);
@@ -2101,7 +2541,8 @@ async function loadImageEntries(imageFiles, archiveFileName) {
   setProgress(0);
 
   // EPUB defaults to lexical sort (directory structure reflects page order)
-  if (/\.epub$/i.test(archiveFileName.split(' > ').pop())) {
+  const isEpub = /\.epub$/i.test(archiveFileName.split(' > ').pop());
+  if (isEpub) {
     sortSelect.value = 'lexical';
   }
   applySortOrder();
@@ -2120,6 +2561,11 @@ async function loadImageEntries(imageFiles, archiveFileName) {
   currentPage = 1;
   sortSelect.style.display = '';
   await onDocLoaded();
+
+  // 解析は重いので自動実行しない。存在だけ知らせる (再開トーストがある場合は譲る)
+  if (isEpub && epubEntries.length > 0 && !(sessionLastRead && sessionLastRead > 1)) {
+    showToast('E キーで EPUB 構造解析 (正しいページ順 + 目次)', 4000);
+  }
 }
 
 // Open archive, prompt for password if encrypted, and extract files.
@@ -2188,6 +2634,7 @@ async function loadArchive(file) {
 
     const imageFiles = allFiles.filter(f => IMAGE_EXTS.test(f.name));
     const innerArchives = allFiles.filter(f => ARCHIVE_EXTS.test(f.name));
+    const structFiles = allFiles.filter(f => EPUB_STRUCT_EXTS.test(f.name));
 
     // Nested archive detected: let user choose
     if (innerArchives.length > 0) {
@@ -2208,12 +2655,13 @@ async function loadArchive(file) {
         const innerAllFiles = await extractArchiveWithPassword(chosen.file, innerFnMap, innerLoading);
         if (!innerAllFiles) return;
         const innerImages = innerAllFiles.filter(f => IMAGE_EXTS.test(f.name));
+        const innerStruct = innerAllFiles.filter(f => EPUB_STRUCT_EXTS.test(f.name));
 
         if (innerImages.length === 0) {
           showToast(`${chosen.name} に画像ファイルが見つかりません`, 3000);
           return;
         }
-        await loadImageEntries(innerImages, `${file.name} > ${chosen.name}`);
+        await loadImageEntries(innerImages, `${file.name} > ${chosen.name}`, innerStruct);
       } finally {
         hideLoading(innerLoading);
       }
@@ -2225,7 +2673,7 @@ async function loadArchive(file) {
       showToast('画像ファイルが見つかりません', 3000);
       return;
     }
-    await loadImageEntries(imageFiles, file.name);
+    await loadImageEntries(imageFiles, file.name, structFiles);
   } catch (err) {
     console.error('Archive load error:', err);
     showToast(`展開エラー: ${err.message}`, 4000);
@@ -2345,8 +2793,8 @@ prevBtn.addEventListener('click', () => {
     const p = nextPageNum(currentPage);
     if (p !== null) renderView(p);
   } else {
-  const p = prevPageNum(currentPage);
-  if (p >= 1) renderView(p);
+    const p = prevPageNum(currentPage);
+    if (p >= 1) renderView(p);
   }
 });
 nextBtn.addEventListener('click', () => {
@@ -2354,8 +2802,8 @@ nextBtn.addEventListener('click', () => {
     const p = prevPageNum(currentPage);
     if (p >= 1) renderView(p);
   } else {
-  const p = nextPageNum(currentPage);
-  if (p !== null) renderView(p);
+    const p = nextPageNum(currentPage);
+    if (p !== null) renderView(p);
   }
 });
 pageInput.addEventListener('change', () => {
@@ -2412,6 +2860,25 @@ document.addEventListener('keydown', e => {
       minimapCheck.dispatchEvent(new Event('change'));
       showToast('Zoom 300% + Pan + Map');
     }
+    return;
+  }
+  if (e.key === 'e' || e.key === 'E') {
+    e.preventDefault();
+    runEpubAnalysis();
+    return;
+  }
+  if (e.key === 't' || e.key === 'T') {
+    e.preventDefault();
+    if (epubToc.length === 0) { showToast('目次がありません (E キーで EPUB 構造解析)', 3000); return; }
+    const tocOpen = sidebar.classList.contains('open') && tocPanel.classList.contains('active');
+    if (tocOpen) {
+      sidebar.classList.remove('open');
+    } else {
+      sidebar.classList.add('open');
+      switchSidebarTab('toc');
+      updateTocActive();
+    }
+    if (scaleSelect.value === 'fit' && !isScrollMode()) renderView(currentPage);
     return;
   }
   if (e.key === 'm' || e.key === 'M') {
@@ -2488,8 +2955,7 @@ sortSelect.addEventListener('change', () => {
   if (docType !== 'archive' || archiveImagesUnsorted.length === 0) return;
   applySortOrder();
   totalPages = archiveImages.length;
-  renderView(1);
-  renderThumbnails();
+  rebuildAfterReorder();
 });
 
 // ---- Actions ----
@@ -2656,13 +3122,13 @@ viewer.addEventListener('touchend', e => {
   e.preventDefault();
   if (dx > 0) {
     // Swipe right (pull/flip forward) — next page
-      const p = nextPageNum(currentPage);
-      if (p !== null) renderView(p);
-    } else {
+    const p = nextPageNum(currentPage);
+    if (p !== null) renderView(p);
+  } else {
     // Swipe left (pull/flip back) — prev page
-      const p = prevPageNum(currentPage);
-      if (p >= 1) renderView(p);
-    }
+    const p = prevPageNum(currentPage);
+    if (p >= 1) renderView(p);
+  }
 }, { passive: false });
 
 // ---- Mouse drag to pan (scroll) ----
@@ -2786,8 +3252,8 @@ let scrollTrackRAF = 0;
 window.addEventListener('scroll', () => {
   if (totalPages === 0) return;
   if (minimapCheck.checked) {
-    cancelAnimationFrame(minimapScrollRAF);
-    minimapScrollRAF = requestAnimationFrame(() => updateMinimap());
+  cancelAnimationFrame(minimapScrollRAF);
+  minimapScrollRAF = requestAnimationFrame(() => updateMinimap());
   }
   if (isScrollMode()) {
     cancelAnimationFrame(scrollTrackRAF);

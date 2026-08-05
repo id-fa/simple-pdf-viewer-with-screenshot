@@ -79,8 +79,33 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
 
 ### ソート機能 (アーカイブ時のみ表示)
 - **Natural** — 数字部分を数値比較 (`img_1 → img_2 → img_10 → img_100`)
-- **Lexical** — 文字コード順 (`img_1 → img_10 → img_100 → img_2`)
+- **Lexical** — 文字コード順 (`img_1 → img_10 → img_100 → img_2`)。EPUB 読み込み時の既定
 - **Timestamp** — `File.lastModified` 順、同一時刻なら Natural フォールバック
+- **EPUB** — `E` キーの構造解析成功時のみ選択肢に現れる (下記「EPUB 構造解析」参照)
+- 並び順変更時は `rebuildAfterReorder()` を通す。Scroll モードは `.scroll-container` が残っていると古いプレースホルダが再利用されてしまうため、明示的に破棄してから再構築する
+
+### EPUB 構造解析 (`E` キー、comic-viewer.html のみ)
+EPUB はファイル名順が読み順と一致しないことが多いため、内部構造を辿って正しいページ順を組み立てる。**重い処理なので自動実行はせず `E` キーで明示起動**する (EPUB を開くと「E キーで EPUB 構造解析」トーストで案内)。
+
+- **保持する構造ファイル**: `loadArchive` で `EPUB_STRUCT_EXTS` (`.opf/.ncx/.xhtml/.xht/.html?/.xml/.svg`) にマッチしたエントリを `epubEntries` に退避 (`loadImageEntries` の第3引数)。展開時に捨てると後から解析できないため。中身はテキストなのでメモリ影響は小さい
+- **解析フロー** (`analyzeEpub()`):
+  1. `META-INF/container.xml` の `rootfile[full-path]` → OPF パス (見つからなければ `*.opf` を総当たり)
+  2. OPF の `manifest > item` を記述順に収集 (`id` / `href` / `media-type` / `properties`)
+  3. `spine > itemref` を読み順として辿る。spine 項目が `image/*` ならそのまま採用、`application/xhtml+xml` 等ならそのファイルを読んで `<img src>` / `<svg><image xlink:href>` / インライン `style="...url(...)"` を**文書順**に収集 (`epubExtractDocImages`)
+  4. spine から画像が1枚も取れなければ **manifest の `image/*` を記述順に使う**フォールバック (spine が空 / 背景画像で組まれた EPUB 等)
+  5. アーカイブに実在する画像だけを採用 (重複は初出のみ)
+- **パス突き合わせ**: OPF/XHTML の href は percent-encode されていることがあるので、`epubResolve()` で decode + `../` 解決 + 小文字化した正規化キーで比較する (`epubNormPath()` がアーカイブエントリ名側の同等処理)
+- **並び順の適用**: `sortSelect` に `Sort: EPUB` オプション (`#sortEpubOpt`、既定 `hidden`) を追加し、解析成功時に表示 + 選択。`applySortOrder()` の `epub` 分岐が `epubPageOrder` の rank で並べ替え、**読み順に現れない画像は末尾に Natural 順**で残す (ページが消えない)。`epubPageOrder` が無いのに `epub` が選ばれている場合は `natural` にフォールバック
+- **パーサの堅牢化**: `epubParse()` は `DOMParser` の XML パースが `parsererror` を返したら HTML パーサで再試行する。XML 文書では CSS 型セレクタが名前空間非依存かつ大小区別ありなので `navLabel` 等がそのまま引ける
+- **状態リセット**: `resetEpubState()` を `loadImageEntries` 冒頭と `loadPDF` で呼び、`epubEntries` / `epubPageOrder` / `epubToc` / `Sort: EPUB` / TOC タブを破棄する
+
+### EPUB 目次 (TOC、`T` キー)
+- 構造解析で目次が取れたときのみサイドバーに 3 つ目のタブ `TOC` が出現 (`T` キーで開閉、`.sidebar-tabs.has-toc` でタブのフォントを詰める)
+- **EPUB3 nav を優先**: manifest の `properties="nav"` の XHTML から `<nav epub:type="toc">` の `<ol><li><a>` を辿る。階層は `ol`/`ul` の祖先数で算出しインデント表示
+- **EPUB2 NCX にフォールバック**: `spine[toc]` → NCX、無ければ `application/x-dtbncx+xml` / `*.ncx` を探し `navMap > navPoint` を辿る。階層は `navPoint` の祖先数
+- **ページ番号の解決**: spine を辿る際に「ドキュメント → そのページの先頭画像」を `docFirstImage` に記録。画像を持たない章は後続ページを引き継ぐ (逆順走査)。spine 経由で解決できなかった項目は、その XHTML を個別に読んで先頭画像を得る (manifest フォールバック時の目次用)
+- 各項目に `p.N` を表示、クリックで `renderView(N)`。ページを解決できなかった項目は `.no-page` で淡色・クリック不可
+- `updateTocActive()` が `renderView` / `updateScrollCurrentPage` から呼ばれ、`currentPage` 以下で最大ページの項目をハイライト
 
 ### 二重アーカイブ対応
 外側アーカイブに内部アーカイブ (`.cbz/.zip/.cbr/.rar/.cb7/.7z`) が含まれる場合:
@@ -161,6 +186,8 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
 - Z キー: ズームトグル (300% + Pan + Map ↔ 元の設定に復元)
 - L キー: Last Read ページにジャンプ (しおり未有効時はエラーダイアログ)
 - M キー: Max Read ページにジャンプ (しおり未有効時はエラーダイアログ)
+- E キー: EPUB 構造解析を実行 (comic-viewer.html のみ、詳細は「EPUB 構造解析」セクション)
+- T キー: EPUB 目次 (TOC) サイドバーの開閉 (comic-viewer.html のみ、構造解析後に有効)
 - Escape: UI再表示 (UI表示中に2秒以内にもう一度押すと `location.reload()` でファイルを閉じてドロップ画面に戻る。1回目押下時は「もう一度 ESC で閉じる」トーストを2秒表示。モーダル (ヘルプ / GIFオーバーレイ / パスワード入力) が開いているときはモーダル閉じが優先)
 - ヘッダー左上のタイトル (`#appTitle`) タップ: `confirm()` ダイアログで確認の上 `location.reload()`。PWA でキーボード無し / 更新ボタン無しの環境からも明示的にファイルを閉じる手段
 - 画面左右1/3タップ: ページ送り、中央1/3タップ: UI表示/非表示トグル
