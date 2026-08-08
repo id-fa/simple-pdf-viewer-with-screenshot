@@ -190,7 +190,7 @@ EPUB filenames often don't match reading order. Press `E` to analyze the EPUB st
 
 After structure analysis (`E`), press `R` (or use "本文を読む" at the bottom of the `TOC` tab) to open a reader that shows the EPUB's own XHTML. Image-less reflowable EPUBs can be opened too.
 
-- 文書間の移動 (‹ / › / ← / → / プルダウン)、文字サイズ変更 (A- / A+)、「原文CSS」の ON/OFF / Document navigation, font size, and an "original CSS" toggle
+- 文書間の移動 (‹ / › / ← / → / プルダウン)、文字サイズ変更 (A- / A+)、表示幅の切替 (幅: 標準 ⇄ 広い、次回以降も保持)、「原文CSS」の ON/OFF / Document navigation, font size, reader width (normal / wide, remembered), and an "original CSS" toggle
 - **外部リソースは完全にブロック**: `allow-scripts` なしの sandbox iframe + `default-src 'none'` の CSP + http(s) URL の除去の 3 重防御。画像・CSS はアーカイブ内から blob: URL として差し替え / **No external resources**: sandboxed iframe without `allow-scripts`, a `default-src 'none'` CSP, and stripping of http(s) URLs. In-archive images/CSS are swapped to blob: URLs
 - 縦書き指定は横書きに矯正されます (本ビューアは縦書き要件を対象外としています) / Vertical writing is forced to horizontal
 

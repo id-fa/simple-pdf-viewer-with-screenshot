@@ -113,7 +113,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 固定レイアウトでない EPUB は「ページ = 画像」に落とせないので、中身の XHTML をそのまま読ませる。**構造解析 (`E`) 済みであることが前提** (`epubDocs` が空なら案内トーストを出して何もしない)。
 
 - **入口**: `R` キー (現在ページに対応する文書を `epubDocIndexForPage()` で選ぶ) / `TOC` タブ下部の `.toc-docs` セクション (「本文を読む」ボタン + 全文書リスト、`renderEpubDocList()`)。TOC タブは `epubToc` が空でも `epubDocs` があれば出す
-- **モーダル** (`#epubReaderOverlay`): `<` / 文書プルダウン / `>` / `A-` `A+` (`epubFontScale` 70〜200%) / `原文CSS` チェック / `→ Page` (その文書の先頭画像ページへジャンプ)。Escape・背景クリックで閉じる。開いている間はキーボードの ←/→ が文書送りになる (`keydown` の先頭で分岐)
+- **モーダル** (`#epubReaderOverlay`): `<` / 文書プルダウン / `>` / `A-` `A+` (`epubFontScale` 70〜200%) / `幅: 標準` ⇄ `幅: 広い` / `原文CSS` チェック / `→ Page` (その文書の先頭画像ページへジャンプ)。Escape・背景クリックで閉じる。開いている間はキーボードの ←/→ が文書送りになる (`keydown` の先頭で分岐)
 - **描画** (`epubBuildDocHtml()`): XHTML を DOMParser で読み、**外部リソースを一切参照しない自己完結 HTML 文字列**に書き換えて `iframe.srcdoc` に入れる
 - **セキュリティ (多層防御)**:
   1. `<iframe sandbox="allow-same-origin">` — `allow-scripts` を与えないので EPUB 内の JS は実行されない。`allow-same-origin` は blob: URL を読ませるために必要 (スクリプトが動かないので同一オリジンでも文書側は何もできない)
@@ -121,6 +121,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
   3. 書き換え時に `script/iframe/object/embed/audio/video/source/track/form/base/meta/noscript` を除去、`on*` 属性を除去、`http(s):` / `//` / `javascript:` 等の URL を落とす
 - **リソース差し替え**: `epubImgByPath` (展開済み画像 Blob) / `epubByPath` (構造ファイル、`.svg` は `image/svg+xml` として Blob 化) から `URL.createObjectURL` し、`img/@src`・SVG `image/@xlink:href`・CSS の `url()` に差し込む。解決できない参照は `url("data:,")` に潰す (`about:blank` だと CSP 違反ログが出て紛らわしい)。`@import` は無条件で削除。生成した blob URL は `epubReaderBlobs` に貯め、次の描画時 (srcdoc 差し替え後) と閉じたときに revoke する
 - **CSS**: 既定では EPUB のスタイルシート・インライン style を捨て、`epubBaseStyle()` の読みやすい暗色スタイルだけを当てる (暗色背景に原文の黒文字指定が残ると読めなくなるため)。`原文CSS` ON のときだけ `<link rel=stylesheet>` の中身をインライン化し、インライン style も url() 書き換えのみで残す (このとき配色は白背景・黒文字に切替)
+- **幅トグル** (`#epubWidthToggle`, localStorage `viewerEpubReaderWide`): 標準 = モーダル `max-width:820px` + 本文 `44em`、広い = `1600px` + `78em`。本文の折り返し幅は `epubBaseStyle()` が注入する CSS 側にあるので、トグル時はクラス付け外しに加えて `epubRenderDoc()` で描き直す
 - **縦書きは無効化**: `epubOverrideStyle()` が `*{writing-mode:horizontal-tb!important}` を最後に当てる。インライン style の `writing-mode` まで潰す必要があるので `html,body` ではなく `*` に当てている
 - **リンク**: 同一文書内のフラグメント (`#...`) だけ残す。iframe 内に JS が無く他文書へ遷移させる手段がないため、それ以外の `href` は削除する
 - **画像0の EPUB を開けるようにする仕組み**: ビューア本体は「1ページ = 1画像」を前提にしているため、`loadArchive` で `imageFiles.length === 0` かつ `hasEpubStructure(structFiles)` のときだけ `makeReflowPlaceholderPage()` が案内文入りの canvas を1枚合成して `loadImageEntries` に渡し、続けて `runEpubAnalysis(true)` で解析 → 本文リーダーを自動起動する。EPUB 構造を持たないアーカイブは従来通り「画像ファイルが見つかりません」
@@ -443,6 +444,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - `viewerHQ` — HQ チェックボックスの状態 (`'1'` で ON、未設定で OFF)
 - `viewerScrollGapless` — Scroll モードの Gapless チェックボックス状態 (`'1'` で ON、未設定で OFF)
 - `vipsEnabled` — wasm-vips 有効化フラグ (HQ engine トグル)
+- `viewerEpubReaderWide` — EPUB 本文リーダの幅 (`'1'` で広い、未設定/`'0'` で標準)
 - `viewerFilterPresets` — Filter プリセット 3 スロット
 - ブックマーク系キー (ファイルハッシュ → bookmark オブジェクト)
 
@@ -460,7 +462,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 ## PWA / Service Worker
 
 ### `sw.js`
-- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v28`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v29`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
 - **`SHARE_CACHE`**: `share-stash-v1` — Web Share Target で受信したファイルを一時保存する専用キャッシュ (activate 時も削除対象外)
 - **`PRECACHE_URLS`**: インストール時に一括取得するリソース (HTML 2種、vendor/ 配下全ファイル、manifest、icons)。`fetch(url, { cache: 'reload' })` でブラウザキャッシュをバイパス
 - **`activate`**: `CACHE_NAME` と `SHARE_CACHE` 以外の旧キャッシュを削除し `self.clients.claim()`
