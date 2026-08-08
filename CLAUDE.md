@@ -63,7 +63,7 @@
 - CBZ / ZIP — libarchive.js (WASM) で展開
 - CBR / RAR — libarchive.js (WASM) で展開
 - CB7 / 7z — libarchive.js (WASM) で展開
-- EPUB — libarchive.js (WASM) で展開 ※固定レイアウト(画像ベース)のみ対応
+- EPUB — libarchive.js (WASM) で展開 ※ページ画像として表示できるのは固定レイアウト(画像ベース)のみ。リフロー型は `R` キーの本文リーダーでテキストを読む (下記「リフロー型 EPUB の本文リーダー」)
 
 ### libarchive Worker
 同一オリジンなので `new Worker(workerUrl, { type: 'module' })` で直接生成。
@@ -87,13 +87,15 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
 ### EPUB 構造解析 (`E` キー、comic-viewer.html のみ)
 EPUB はファイル名順が読み順と一致しないことが多いため、内部構造を辿って正しいページ順を組み立てる。**重い処理なので自動実行はせず `E` キーで明示起動**する (EPUB を開くと「E キーで EPUB 構造解析」トーストで案内)。
 
-- **保持する構造ファイル**: `loadArchive` で `EPUB_STRUCT_EXTS` (`.opf/.ncx/.xhtml/.xht/.html?/.xml/.svg`) にマッチしたエントリを `epubEntries` に退避 (`loadImageEntries` の第3引数)。展開時に捨てると後から解析できないため。中身はテキストなのでメモリ影響は小さい
+- **保持する構造ファイル**: `loadArchive` で `EPUB_STRUCT_EXTS` (`.opf/.ncx/.xhtml/.xht/.html?/.xml/.svg/.css`) にマッチしたエントリを `epubEntries` に退避 (`loadImageEntries` の第3引数)。展開時に捨てると後から解析できないため。中身はテキストなのでメモリ影響は小さい。`.css` は本文リーダーの「原文CSS」表示用 (フォントは意図的に対象外)
 - **解析フロー** (`analyzeEpub()`):
   1. `META-INF/container.xml` の `rootfile[full-path]` → OPF パス (見つからなければ `*.opf` を総当たり)
   2. OPF の `manifest > item` を記述順に収集 (`id` / `href` / `media-type` / `properties`)
   3. `spine > itemref` を読み順として辿る。spine 項目が `image/*` ならそのまま採用、`application/xhtml+xml` 等ならそのファイルを読んで `<img src>` / `<svg><image xlink:href>` / インライン `style="...url(...)"` を**文書順**に収集 (`epubExtractDocImages`)
   4. spine から画像が1枚も取れなければ **manifest の `image/*` を記述順に使う**フォールバック (spine が空 / 背景画像で組まれた EPUB 等)
   5. アーカイブに実在する画像だけを採用 (重複は初出のみ)
+  6. あわせて spine 上のテキスト文書 (`docs`) も読み順に収集する (本文リーダー用)。spine が空なら manifest の `application/xhtml+xml` を記述順にフォールバック
+- **画像0でも成功扱い**: リフロー型 EPUB は `order` が空になる。`order` と `docs` の**両方**が空のときだけエラーにする。`runEpubAnalysis` は `order` が空なら `Sort: EPUB` の追加も `rebuildAfterReorder()` も行わず (`epubPageOrder = null` のまま)、本文リーダーだけ提供する
 - **パス突き合わせ**: OPF/XHTML の href は percent-encode されていることがあるので、`epubResolve()` で decode + `../` 解決 + 小文字化した正規化キーで比較する (`epubNormPath()` がアーカイブエントリ名側の同等処理)
 - **並び順の適用**: `sortSelect` に `Sort: EPUB` オプション (`#sortEpubOpt`、既定 `hidden`) を追加し、解析成功時に表示 + 選択。`applySortOrder()` の `epub` 分岐が `epubPageOrder` の rank で並べ替え、**読み順に現れない画像は末尾に Natural 順**で残す (ページが消えない)。`epubPageOrder` が無いのに `epub` が選ばれている場合は `natural` にフォールバック
 - **パーサの堅牢化**: `epubParse()` は `DOMParser` の XML パースが `parsererror` を返したら HTML パーサで再試行する。XML 文書では CSS 型セレクタが名前空間非依存かつ大小区別ありなので `navLabel` 等がそのまま引ける
@@ -106,6 +108,22 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - **ページ番号の解決**: spine を辿る際に「ドキュメント → そのページの先頭画像」を `docFirstImage` に記録。画像を持たない章は後続ページを引き継ぐ (逆順走査)。spine 経由で解決できなかった項目は、その XHTML を個別に読んで先頭画像を得る (manifest フォールバック時の目次用)
 - 各項目に `p.N` を表示、クリックで `renderView(N)`。ページを解決できなかった項目は `.no-page` で淡色・クリック不可
 - `updateTocActive()` が `renderView` / `updateScrollCurrentPage` から呼ばれてハイライトを更新する。**判定は `currentPage` ではなく「表示中の最大ページ」** (`Math.max(...getSpreadPages(currentPage))`) で行う: 見開きでは `currentPage` がペアの小さい方なので、右ページ始まりの章を選んでも1つ前の項目が光ってしまうため。さらに、クリックで飛んだ項目は `tocClickedEl` に保持し、そのページが表示範囲に残っている間はハイライトを維持する (同じペア内に複数の章があるとき、クリックした方を優先するため)。`tocClickedEl` は表示範囲から外れた時点と `renderToc()` で破棄
+
+### リフロー型 EPUB の本文リーダー (`R` キー、comic-viewer.html のみ)
+固定レイアウトでない EPUB は「ページ = 画像」に落とせないので、中身の XHTML をそのまま読ませる。**構造解析 (`E`) 済みであることが前提** (`epubDocs` が空なら案内トーストを出して何もしない)。
+
+- **入口**: `R` キー (現在ページに対応する文書を `epubDocIndexForPage()` で選ぶ) / `TOC` タブ下部の `.toc-docs` セクション (「本文を読む」ボタン + 全文書リスト、`renderEpubDocList()`)。TOC タブは `epubToc` が空でも `epubDocs` があれば出す
+- **モーダル** (`#epubReaderOverlay`): `<` / 文書プルダウン / `>` / `A-` `A+` (`epubFontScale` 70〜200%) / `原文CSS` チェック / `→ Page` (その文書の先頭画像ページへジャンプ)。Escape・背景クリックで閉じる。開いている間はキーボードの ←/→ が文書送りになる (`keydown` の先頭で分岐)
+- **描画** (`epubBuildDocHtml()`): XHTML を DOMParser で読み、**外部リソースを一切参照しない自己完結 HTML 文字列**に書き換えて `iframe.srcdoc` に入れる
+- **セキュリティ (多層防御)**:
+  1. `<iframe sandbox="allow-same-origin">` — `allow-scripts` を与えないので EPUB 内の JS は実行されない。`allow-same-origin` は blob: URL を読ませるために必要 (スクリプトが動かないので同一オリジンでも文書側は何もできない)
+  2. 注入する `<meta http-equiv="Content-Security-Policy">` が `EPUB_CSP` = `default-src 'none'; img-src blob: data:; style-src 'unsafe-inline'; font-src blob: data:; ...` — 書き換え漏れがあってもネットワークに出ない
+  3. 書き換え時に `script/iframe/object/embed/audio/video/source/track/form/base/meta/noscript` を除去、`on*` 属性を除去、`http(s):` / `//` / `javascript:` 等の URL を落とす
+- **リソース差し替え**: `epubImgByPath` (展開済み画像 Blob) / `epubByPath` (構造ファイル、`.svg` は `image/svg+xml` として Blob 化) から `URL.createObjectURL` し、`img/@src`・SVG `image/@xlink:href`・CSS の `url()` に差し込む。解決できない参照は `url("data:,")` に潰す (`about:blank` だと CSP 違反ログが出て紛らわしい)。`@import` は無条件で削除。生成した blob URL は `epubReaderBlobs` に貯め、次の描画時 (srcdoc 差し替え後) と閉じたときに revoke する
+- **CSS**: 既定では EPUB のスタイルシート・インライン style を捨て、`epubBaseStyle()` の読みやすい暗色スタイルだけを当てる (暗色背景に原文の黒文字指定が残ると読めなくなるため)。`原文CSS` ON のときだけ `<link rel=stylesheet>` の中身をインライン化し、インライン style も url() 書き換えのみで残す (このとき配色は白背景・黒文字に切替)
+- **縦書きは無効化**: `epubOverrideStyle()` が `*{writing-mode:horizontal-tb!important}` を最後に当てる。インライン style の `writing-mode` まで潰す必要があるので `html,body` ではなく `*` に当てている
+- **リンク**: 同一文書内のフラグメント (`#...`) だけ残す。iframe 内に JS が無く他文書へ遷移させる手段がないため、それ以外の `href` は削除する
+- **画像0の EPUB を開けるようにする仕組み**: ビューア本体は「1ページ = 1画像」を前提にしているため、`loadArchive` で `imageFiles.length === 0` かつ `hasEpubStructure(structFiles)` のときだけ `makeReflowPlaceholderPage()` が案内文入りの canvas を1枚合成して `loadImageEntries` に渡し、続けて `runEpubAnalysis(true)` で解析 → 本文リーダーを自動起動する。EPUB 構造を持たないアーカイブは従来通り「画像ファイルが見つかりません」
 
 ### 二重アーカイブ対応
 外側アーカイブに内部アーカイブ (`.cbz/.zip/.cbr/.rar/.cb7/.7z`) が含まれる場合:
@@ -188,7 +206,8 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - M キー: Max Read ページにジャンプ (しおり未有効時はエラーダイアログ)
 - E キー: EPUB 構造解析を実行 (comic-viewer.html のみ、詳細は「EPUB 構造解析」セクション)
 - T キー: EPUB 目次 (TOC) サイドバーの開閉 (comic-viewer.html のみ、構造解析後に有効)
-- Escape: UI再表示 (UI表示中に2秒以内にもう一度押すと `location.reload()` でファイルを閉じてドロップ画面に戻る。1回目押下時は「もう一度 ESC で閉じる」トーストを2秒表示。モーダル (ヘルプ / GIFオーバーレイ / パスワード入力) が開いているときはモーダル閉じが優先)
+- R キー: EPUB 本文リーダーを開く (comic-viewer.html のみ、構造解析後に有効。リーダー表示中は ←/→ が文書送り)
+- Escape: UI再表示 (UI表示中に2秒以内にもう一度押すと `location.reload()` でファイルを閉じてドロップ画面に戻る。1回目押下時は「もう一度 ESC で閉じる」トーストを2秒表示。モーダル (ヘルプ / GIFオーバーレイ / パスワード入力 / EPUB 本文リーダ) が開いているときはモーダル閉じが優先)
 - ヘッダー左上のタイトル (`#appTitle`) タップ: `confirm()` ダイアログで確認の上 `location.reload()`。PWA でキーボード無し / 更新ボタン無しの環境からも明示的にファイルを閉じる手段
 - 画面左右1/3タップ: ページ送り、中央1/3タップ: UI表示/非表示トグル
 - 左右スワイプ (タッチ): ページ送り (スマートフォン対応)
@@ -441,7 +460,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 ## PWA / Service Worker
 
 ### `sw.js`
-- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v21`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v28`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
 - **`SHARE_CACHE`**: `share-stash-v1` — Web Share Target で受信したファイルを一時保存する専用キャッシュ (activate 時も削除対象外)
 - **`PRECACHE_URLS`**: インストール時に一括取得するリソース (HTML 2種、vendor/ 配下全ファイル、manifest、icons)。`fetch(url, { cache: 'reload' })` でブラウザキャッシュをバイパス
 - **`activate`**: `CACHE_NAME` と `SHARE_CACHE` 以外の旧キャッシュを削除し `self.clients.claim()`

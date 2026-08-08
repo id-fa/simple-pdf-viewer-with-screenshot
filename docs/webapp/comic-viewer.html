@@ -141,6 +141,27 @@ label.check input { cursor: pointer; }
 .toc-item.no-page { cursor: default; opacity: 0.5; }
 .toc-empty { padding: 16px 8px; text-align: center; font-size: 12px; color: #666; line-height: 1.5; }
 
+/* EPUB reflowable text: spine document list at the bottom of the TOC panel */
+.toc-docs { margin-top: 10px; border-top: 1px solid #333; padding-top: 8px; }
+.toc-docs-title { font-size: 11px; color: #888; padding: 0 4px 4px; }
+.toc-read-btn { width: 100%; margin-bottom: 6px; font-size: 11px; padding: 5px 4px; }
+.toc-doc { display: flex; gap: 6px; align-items: baseline; padding: 3px 4px; font-size: 11px; color: #999; cursor: pointer; border-radius: 4px; }
+.toc-doc:hover { background: #1a1a2a; color: #e0e0e0; }
+.toc-doc .toc-doc-num { flex-shrink: 0; font-family: monospace; color: #666; min-width: 22px; text-align: right; }
+.toc-doc .toc-doc-label { flex: 1; overflow-wrap: anywhere; line-height: 1.35; }
+
+/* EPUB text reader modal */
+.epub-reader-overlay { position: fixed; inset: 0; z-index: 520; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; }
+.epub-reader-overlay.open { display: flex; }
+.epub-reader { background: #1e1e2e; border: 1px solid #333; border-radius: 10px; width: 94%; max-width: 820px; height: 92vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.6); overflow: hidden; }
+.epub-reader-header { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid #333; flex-wrap: wrap; }
+.epub-reader-header select { flex: 1; min-width: 120px; max-width: 100%; }
+.epub-reader-header .spacer { flex-basis: 100%; height: 0; }
+.epub-reader-header .epub-doc-pos { font-size: 11px; color: #888; font-family: monospace; }
+.epub-reader-close { background: none; border: none; color: #888; font-size: 20px; cursor: pointer; padding: 0 4px; line-height: 1; }
+.epub-reader-close:hover { color: #e0e0e0; }
+.epub-reader iframe { flex: 1; width: 100%; border: none; background: #1e1e2e; }
+
 /* Bookmark */
 .bookmark-settings { padding: 6px 4px; border-bottom: 1px solid #333; margin-bottom: 4px; font-size: 12px; }
 .bookmark-list { padding: 4px; }
@@ -344,7 +365,7 @@ label.check input { cursor: pointer; }
   <div class="dropzone" id="dropzone">
     <div class="icon">COMIC</div>
     <p>PDF / CBZ / CBR / CB7 / EPUB をドラッグ&ドロップ、または「Open」で選択</p>
-    <p style="font-size:12px; color:#555">対応形式: PDF, CBZ(ZIP), CBR(RAR), CB7(7z), EPUB(固定レイアウト)</p>
+    <p style="font-size:12px; color:#555">対応形式: PDF, CBZ(ZIP), CBR(RAR), CB7(7z), EPUB(固定レイアウト / リフローは本文テキスト表示)</p>
     <p style="font-size:11px; color:#444; margin-top:16px">Created by id-fa, built with Claude Code</p>
   </div>
 </div>
@@ -366,6 +387,29 @@ label.check input { cursor: pointer; }
 </div>
 
 <div class="gif-modal-overlay" id="gifOverlay"><img id="gifModalImg"></div>
+
+<!-- EPUB reflowable text reader. The iframe is sandboxed without allow-scripts and the
+     injected document carries a CSP that forbids every network origin (see epubBuildDocHtml). -->
+<div class="epub-reader-overlay" id="epubReaderOverlay">
+  <div class="epub-reader">
+    <div class="epub-reader-header">
+      <button id="epubPrevDoc" title="前の文書 / Previous document">&lt;</button>
+      <select id="epubDocSelect" title="表示する文書 / Document to display"></select>
+      <button id="epubNextDoc" title="次の文書 / Next document">&gt;</button>
+      <span class="epub-doc-pos" id="epubDocPos"></span>
+      <button class="epub-reader-close" id="epubReaderClose" title="閉じる / Close">&times;</button>
+      <span class="spacer"></span>
+      <button id="epubFontDec" title="文字を小さく / Smaller text">A-</button>
+      <button id="epubFontInc" title="文字を大きく / Larger text">A+</button>
+      <label class="check" title="EPUB 本体の CSS を適用 (レイアウト再現) / Apply the EPUB's own stylesheets">
+        <input type="checkbox" id="epubOrigCss">
+        原文CSS
+      </label>
+      <button id="epubGoPage" title="この文書の対応ページを表示 / Show the page for this document">→ Page</button>
+    </div>
+    <iframe id="epubReaderFrame" sandbox="allow-same-origin" referrerpolicy="no-referrer"></iframe>
+  </div>
+</div>
 
 <div class="toast" id="toast"></div>
 
@@ -398,6 +442,8 @@ label.check input { cursor: pointer; }
         <h3>EPUB</h3>
         <div class="help-row"><span class="help-key">E</span><span class="help-desc">Analyze EPUB structure (fix page order from OPF spine)</span></div>
         <div class="help-row"><span class="help-key">T</span><span class="help-desc">Toggle table of contents (after E)</span></div>
+        <div class="help-row"><span class="help-key">R</span><span class="help-desc">Read reflowable text (after E) — sandboxed, no external resources</span></div>
+        <div class="help-row"><span class="help-key">&larr; / &rarr; (reader)</span><span class="help-desc">Previous / Next document</span></div>
       </div>
       <div class="help-section">
         <h3>Mouse / Touch</h3>
@@ -493,6 +539,10 @@ let epubEntries = [];      // [{name, file}] structural (text) entries: containe
 let epubPageOrder = null;  // normalized image paths in reading order (null = not analyzed)
 let epubToc = [];          // [{label, depth, page}] table of contents
 let tocClickedEl = null;   // クリックで飛んだ TOC 項目 (見開き時のハイライト維持用)
+// リフロー型 EPUB の本文表示 (R キー / TOC パネル下部) 用
+let epubDocs = [];         // [{path, label, page}] spine のテキスト文書 (読み順)
+let epubByPath = new Map();    // 正規化パス → {name, file} 構造ファイル (xhtml/css/svg/opf...)
+let epubImgByPath = new Map(); // 正規化パス → Blob 画像 (アーカイブから展開済み)
 let currentPage = 1;
 let totalPages = 0;
 let fileName = '';
@@ -1257,6 +1307,13 @@ async function analyzeEpub() {
   const order = [];
   const seen = new Set();
   const docFirstImage = new Map(); // ドキュメントパス → そのページの先頭画像 (TOC のページ解決用)
+  const docs = [];                 // 本文リーダー用のテキスト文書 (読み順、重複なし)
+  const docSeen = new Set();
+  const addDoc = (p) => {
+    if (!p || docSeen.has(p) || !byPath.has(p)) return;
+    docSeen.add(p);
+    docs.push(p);
+  };
   const addImage = (p) => {
     if (!p || !available.has(p) || seen.has(p)) return;
     seen.add(p);
@@ -1275,6 +1332,7 @@ async function analyzeEpub() {
     }
     const entry = byPath.get(item.path);
     if (!entry) continue;
+    addDoc(item.path);
     let imgs;
     try { imgs = epubExtractDocImages(await epubReadText(entry), item.path); } catch (_) { continue; }
     for (const p of imgs) {
@@ -1292,7 +1350,14 @@ async function analyzeEpub() {
       if (it.type.startsWith('image/')) addImage(it.path);
     }
   }
-  if (order.length === 0) throw new Error('読み順を特定できませんでした');
+  // spine が空の EPUB でも本文は読めるようにする (manifest の XHTML を記述順に)
+  if (docs.length === 0) {
+    for (const it of manifestItems) {
+      if (/^(application\/xhtml\+xml|text\/html)$/.test(it.type)) addDoc(it.path);
+    }
+  }
+  // リフロー型 (画像なし) は order が空でも本文が読めれば成功扱いにする
+  if (order.length === 0 && docs.length === 0) throw new Error('読み順も本文も特定できませんでした');
 
   // 画像を含まない spine ドキュメント (テキストのみの章など) は後続ページを引き継ぐ
   let carry = null;
@@ -1330,7 +1395,7 @@ async function analyzeEpub() {
     } catch (_) {}
   }
 
-  return { order, toc, docFirstImage, source };
+  return { order, toc, docFirstImage, docs, source };
 }
 
 // 並び順が変わった後の作り直し。Scroll モードは .scroll-container が残っていると
@@ -1350,7 +1415,7 @@ async function rebuildAfterReorder() {
   await renderThumbnails();
 }
 
-async function runEpubAnalysis() {
+async function runEpubAnalysis(autoOpenReader = false) {
   if (docType !== 'archive') { showToast('EPUB 構造解析: アーカイブが開かれていません', 3000); return; }
   if (epubEntries.length === 0) { showToast('EPUB 構造解析: 構造ファイル (container.xml / OPF) がありません', 3500); return; }
   if (epubBusy) return;
@@ -1358,30 +1423,53 @@ async function runEpubAnalysis() {
   const loading = showLoading('EPUB 構造を解析中...');
   try {
     const res = await analyzeEpub();
-    epubPageOrder = res.order;
+    // リフロー型 (画像を持たない) EPUB では order が空。並べ替えは行わず本文表示だけ提供する
+    epubPageOrder = res.order.length ? res.order : null;
 
-    // 解析した読み順を適用
-    sortEpubOpt.hidden = false;
-    sortSelect.value = 'epub';
-    applySortOrder();
-    totalPages = archiveImages.length;
-    pageCount.textContent = `/ ${totalPages}`;
-    pageInput.max = totalPages;
+    if (epubPageOrder) {
+      // 解析した読み順を適用
+      sortEpubOpt.hidden = false;
+      sortSelect.value = 'epub';
+      applySortOrder();
+      totalPages = archiveImages.length;
+      pageCount.textContent = `/ ${totalPages}`;
+      pageInput.max = totalPages;
+    }
 
     // ページ番号は最終的な並び順から引く
     const pageOf = new Map();
     archiveImages.forEach((im, i) => pageOf.set(epubNormPath(im.name), i + 1));
-    epubToc = res.toc.map(t => {
-      let page = pageOf.get(t.path);
-      if (!page && res.docFirstImage.has(t.path)) page = pageOf.get(res.docFirstImage.get(t.path));
-      return { label: t.label, depth: t.depth, page: page || null };
-    });
+    const pageOfDoc = (path) => {
+      const p = pageOf.get(path);
+      if (p) return p;
+      const first = res.docFirstImage.get(path);
+      return (first && pageOf.get(first)) || null;
+    };
+    epubToc = res.toc.map(t => ({ label: t.label, depth: t.depth, page: pageOfDoc(t.path) }));
+
+    // ---- 本文リーダー用のインデックスを構築 ----
+    epubByPath = new Map(epubEntries.map(e => [epubNormPath(e.name), e]));
+    epubImgByPath = new Map(archiveImagesUnsorted.map(im => [epubNormPath(im.name), im.blob]));
+    const labelOf = new Map();
+    for (const t of res.toc) if (t.path && !labelOf.has(t.path)) labelOf.set(t.path, t.label);
+    epubDocs = res.docs.map(p => ({
+      path: p,
+      label: labelOf.get(p) || p.split('/').pop(),
+      page: pageOfDoc(p),
+    }));
+    epubBuildDocSelect();
     renderToc();
 
-    await rebuildAfterReorder();
+    if (epubPageOrder) await rebuildAfterReorder();
 
     const tocMsg = epubToc.length ? ` / 目次 ${epubToc.length} 項目 (T)` : ' / 目次なし';
-    showToast(`EPUB: ${res.order.length}/${archiveImages.length} ページを ${res.source} 順に整列${tocMsg}`, 4000);
+    const docMsg = epubDocs.length ? ` / 本文 ${epubDocs.length} 文書 (R)` : '';
+    if (epubPageOrder) {
+      showToast(`EPUB: ${res.order.length}/${archiveImages.length} ページを ${res.source} 順に整列${tocMsg}${docMsg}`, 4000);
+    } else {
+      showToast(`EPUB (リフロー型): 画像なし${tocMsg}${docMsg}`, 4000);
+    }
+    if (autoOpenReader && epubDocs.length) openEpubReader(0);
   } catch (err) {
     console.error('EPUB analysis error:', err);
     showToast('EPUB 構造解析エラー: ' + err.message, 4000);
@@ -1396,7 +1484,7 @@ function renderToc() {
   if (!tocListEl) return;
   tocListEl.innerHTML = '';
   tocClickedEl = null;
-  if (epubToc.length === 0) {
+  if (epubToc.length === 0 && epubDocs.length === 0) {
     tocTab.hidden = true;
     sidebarTabBar.classList.remove('has-toc');
     if (tocPanel.classList.contains('active')) switchSidebarTab('thumbs');
@@ -1404,6 +1492,12 @@ function renderToc() {
   }
   tocTab.hidden = false;
   sidebarTabBar.classList.add('has-toc');
+  if (epubToc.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'toc-empty';
+    empty.textContent = '目次はありません';
+    tocListEl.appendChild(empty);
+  }
   for (const t of epubToc) {
     const row = document.createElement('div');
     row.className = 'toc-item' + (t.page ? '' : ' no-page');
@@ -1425,7 +1519,43 @@ function renderToc() {
     }
     tocListEl.appendChild(row);
   }
+  renderEpubDocList();
   updateTocActive();
+}
+
+// TOC パネル下部の「本文テキスト」リスト (リフロー型 EPUB の中身を読むための入口)
+function renderEpubDocList() {
+  if (!tocListEl || epubDocs.length === 0) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'toc-docs';
+
+  const title = document.createElement('div');
+  title.className = 'toc-docs-title';
+  title.textContent = `本文テキスト (${epubDocs.length} 文書)`;
+  wrap.appendChild(title);
+
+  const btn = document.createElement('button');
+  btn.className = 'toc-read-btn';
+  btn.textContent = '本文を読む (R)';
+  btn.title = '現在のページに対応する文書から本文を表示 / Read the document matching the current page';
+  btn.addEventListener('click', () => openEpubReader(epubDocIndexForPage(currentPage)));
+  wrap.appendChild(btn);
+
+  epubDocs.forEach((d, i) => {
+    const row = document.createElement('div');
+    row.className = 'toc-doc';
+    const num = document.createElement('span');
+    num.className = 'toc-doc-num';
+    num.textContent = String(i + 1);
+    const label = document.createElement('span');
+    label.className = 'toc-doc-label';
+    label.textContent = d.label;
+    row.append(num, label);
+    row.title = d.path + (d.page ? ` → p.${d.page}` : '');
+    row.addEventListener('click', () => openEpubReader(i));
+    wrap.appendChild(row);
+  });
+  tocListEl.appendChild(wrap);
 }
 
 // 表示中のページを含む項目をハイライト。
@@ -1458,9 +1588,298 @@ function resetEpubState() {
   epubEntries = [];
   epubPageOrder = null;
   epubToc = [];
+  epubDocs = [];
+  epubByPath = new Map();
+  epubImgByPath = new Map();
+  closeEpubReader();
+  epubBuildDocSelect();
   if (sortEpubOpt) sortEpubOpt.hidden = true;
   if (sortSelect.value === 'epub') sortSelect.value = 'natural';
   renderToc();
+}
+
+// ---- Reflowable EPUB text reader ----
+// 中身の XHTML を「外部リソースを一切参照しない自己完結 HTML」に書き換えてから
+// sandbox iframe に流し込む。多層防御:
+//   1. sandbox に allow-scripts を与えない → 文書内の JS は一切実行されない
+//   2. 注入する CSP が default-src 'none' → 万一残った参照もネットワークに出ない
+//   3. 書き換え時に http(s):// や protocol-relative の URL を落とし、script/iframe/object/
+//      embed/audio/video/form と on* 属性を除去する
+// 画像・CSS はアーカイブ内から取り出して blob: URL に差し替える (allow-same-origin が
+// 必要なのはこのため。allow-scripts が無いので同一オリジンでも文書側は何もできない)。
+
+const EPUB_CSP = [
+  "default-src 'none'",
+  "img-src blob: data:",
+  "style-src 'unsafe-inline'",
+  "font-src blob: data:",
+  "media-src blob: data:",
+  "script-src 'none'",
+  "frame-src 'none'",
+  "child-src 'none'",
+  "connect-src 'none'",
+  "object-src 'none'",
+  "form-action 'none'",
+  "base-uri 'none'",
+].join('; ');
+
+const EPUB_SVG_MIME = 'image/svg+xml';
+let epubReaderIdx = 0;
+let epubReaderBlobs = [];
+let epubFontScale = 100;
+
+const epubReaderOverlay = document.getElementById('epubReaderOverlay');
+const epubReaderFrame = document.getElementById('epubReaderFrame');
+const epubDocSelect = document.getElementById('epubDocSelect');
+const epubDocPos = document.getElementById('epubDocPos');
+const epubOrigCss = document.getElementById('epubOrigCss');
+
+function epubRevokeBlobs(list) {
+  for (const u of list) URL.revokeObjectURL(u);
+}
+
+// アーカイブ内リソースを blob: URL にする。画像は展開済み Blob、SVG は構造ファイルから作る
+function epubResourceUrl(path) {
+  let blob = epubImgByPath.get(path);
+  if (!blob) {
+    const e = epubByPath.get(path);
+    if (e && /\.svg$/i.test(path)) blob = new Blob([e.file], { type: EPUB_SVG_MIME });
+  }
+  if (!blob) return null;
+  const url = URL.createObjectURL(blob);
+  epubReaderBlobs.push(url);
+  return url;
+}
+
+// CSS の url(...) をアーカイブ内リソースの blob: URL に差し替える。
+// 解決できないもの・外部 URL は空の data: に潰す (CSP でも落ちるが二重に)
+function epubRewriteCssUrls(css, baseDir, resolve) {
+  return String(css)
+    .replace(/@import[^;]*;/gi, '')
+    .replace(/url\(\s*(['"]?)([^'")]*)\1\s*\)/gi, (m, q, u) => {
+      const url = resolve(u.trim(), baseDir);
+      // 解決できない参照は空の data: に潰す (about:blank だと CSP 違反ログが出て紛らわしい)
+      return url ? `url("${url}")` : 'url("data:,")';
+    });
+}
+
+function epubBaseStyle(origCss) {
+  const fg = origCss ? '#111' : '#e2e2e6';
+  const bg = origCss ? '#fff' : '#1e1e2e';
+  return `html{background:${bg};}
+body{margin:0 auto;padding:24px 20px 72px;max-width:44em;background:${bg};color:${fg};
+  font-family:"Hiragino Mincho ProN","Yu Mincho",serif;line-height:1.9;
+  font-size:${epubFontScale}%;overflow-wrap:anywhere;}
+img,svg,image{max-width:100%;height:auto;}
+a{color:#4a9eff;text-decoration:underline dotted;}
+h1,h2,h3,h4{line-height:1.5;}
+table{max-width:100%;}
+pre{white-space:pre-wrap;}
+rt{font-size:0.6em;}`;
+}
+
+// 原文 CSS を有効にしても縦書きは無効化する (このビューアは縦書き要件を対象外にしている)。
+// インライン style の writing-mode まで潰す必要があるので * に !important で当てる。
+function epubOverrideStyle() {
+  return `*{writing-mode:horizontal-tb!important;-webkit-writing-mode:horizontal-tb!important;
+  text-orientation:mixed!important;}
+html,body{height:auto!important;width:auto!important;}
+body{font-size:${epubFontScale}%!important;}
+img,svg,image{max-width:100%!important;}`;
+}
+
+// XHTML 1 文書を自己完結 HTML 文字列に変換する
+async function epubBuildDocHtml(docPath, useOrigCss) {
+  const entry = epubByPath.get(docPath);
+  if (!entry) throw new Error('文書が見つかりません: ' + docPath);
+  const doc = epubParse(await epubReadText(entry), 'application/xhtml+xml');
+  const dir = epubDirOf(docPath);
+
+  // 実行可能・外部参照を持つ要素を落とす
+  doc.querySelectorAll('script, iframe, object, embed, audio, video, source, track, form, base, meta, noscript')
+    .forEach(el => el.remove());
+  // on* イベントハンドラ属性を除去 (sandbox で実行されないが念のため)
+  doc.querySelectorAll('*').forEach(el => {
+    for (const a of Array.from(el.attributes)) {
+      if (/^on/i.test(a.name)) el.removeAttribute(a.name);
+    }
+  });
+
+  const cache = new Map();
+  const resolve = (href, baseDir = dir) => {
+    const h = String(href || '').trim();
+    if (!h) return null;
+    if (/^data:/i.test(h)) return h;
+    if (/^(https?:|blob:|file:|javascript:|about:|mailto:|tel:)/i.test(h) || h.startsWith('//')) return null;
+    const p = epubResolve(baseDir, h);
+    if (!p) return null;
+    const key = p;
+    if (cache.has(key)) return cache.get(key);
+    const url = epubResourceUrl(p);
+    cache.set(key, url);
+    return url;
+  };
+
+  // 画像 (<img> / SVG <image>)
+  for (const el of doc.querySelectorAll('img, image')) {
+    const href = el.getAttribute('src') || el.getAttributeNS(XLINK_NS, 'href')
+      || el.getAttribute('xlink:href') || el.getAttribute('href');
+    const url = resolve(href);
+    ['src', 'href', 'srcset', 'xlink:href', 'longdesc'].forEach(a => el.removeAttribute(a));
+    try { el.removeAttributeNS(XLINK_NS, 'href'); } catch (_) {}
+    if (!url) continue;
+    if (el.localName === 'image') {
+      el.setAttribute('href', url);
+      try { el.setAttributeNS(XLINK_NS, 'xlink:href', url); } catch (_) {}
+    } else {
+      el.setAttribute('src', url);
+    }
+  }
+
+  // インライン style: 原文 CSS OFF のときは素の文章として読ませたいので丸ごと落とす
+  // (暗色テーマ上で黒文字指定が残ると読めなくなるため)。ON のときは url() だけ差し替える
+  for (const el of doc.querySelectorAll('[style]')) {
+    if (!useOrigCss) { el.removeAttribute('style'); continue; }
+    const s = el.getAttribute('style') || '';
+    if (/url\(/i.test(s)) el.setAttribute('style', epubRewriteCssUrls(s, dir, resolve));
+  }
+
+  // 外部スタイルシート: 原文 CSS が ON のときだけ中身をインライン化する
+  const cssParts = [];
+  for (const link of Array.from(doc.querySelectorAll('link'))) {
+    const rel = (link.getAttribute('rel') || '').toLowerCase();
+    const href = link.getAttribute('href');
+    link.remove();
+    if (!useOrigCss || !/stylesheet/.test(rel) || !href) continue;
+    const p = epubResolve(dir, href);
+    const cssEntry = epubByPath.get(p);
+    if (!cssEntry) continue;
+    try {
+      cssParts.push(epubRewriteCssUrls(await epubReadText(cssEntry), epubDirOf(p), resolve));
+    } catch (_) {}
+  }
+  for (const st of Array.from(doc.querySelectorAll('style'))) {
+    if (useOrigCss) cssParts.push(epubRewriteCssUrls(st.textContent || '', dir, resolve));
+    st.remove();
+  }
+
+  // リンクは同一文書内のフラグメントのみ残す (iframe 内に JS が無いので他文書へは飛べない)
+  for (const a of doc.querySelectorAll('a')) {
+    const href = a.getAttribute('href') || '';
+    if (href.startsWith('#')) continue;
+    ['href', 'target', 'xlink:href'].forEach(n => a.removeAttribute(n));
+    try { a.removeAttributeNS(XLINK_NS, 'href'); } catch (_) {}
+  }
+
+  const ser = new XMLSerializer();
+  const bodyEl = doc.querySelector('body');
+  const inner = bodyEl
+    ? Array.from(bodyEl.childNodes).map(n => ser.serializeToString(n)).join('')
+    : ser.serializeToString(doc.documentElement);
+
+  return `<!doctype html><html lang="${escapeAttr(doc.documentElement.getAttribute('xml:lang') || doc.documentElement.getAttribute('lang') || 'ja')}"><head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="${escapeAttr(EPUB_CSP)}">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>${epubBaseStyle(useOrigCss)}</style>
+${useOrigCss && cssParts.length ? `<style>${cssParts.join('\n')}</style>` : ''}
+<style>${epubOverrideStyle()}</style>
+</head><body>${inner}</body></html>`;
+}
+
+function escapeAttr(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function epubBuildDocSelect() {
+  if (!epubDocSelect) return;
+  epubDocSelect.innerHTML = '';
+  epubDocs.forEach((d, i) => {
+    const opt = document.createElement('option');
+    opt.value = String(i);
+    opt.textContent = `${i + 1}. ${d.label}`;
+    epubDocSelect.appendChild(opt);
+  });
+}
+
+// 表示中のページに対応する文書を探す (ページを持つ文書のうち currentPage 以下で最大のもの)
+function epubDocIndexForPage(page) {
+  let best = 0;
+  for (let i = 0; i < epubDocs.length; i++) {
+    const p = epubDocs[i].page;
+    if (p && p <= page) best = i;
+  }
+  return best;
+}
+
+async function openEpubReader(idx = 0) {
+  if (epubDocs.length === 0) {
+    showToast('本文テキストがありません (E キーで EPUB 構造解析)', 3000);
+    return;
+  }
+  epubReaderIdx = Math.min(Math.max(idx | 0, 0), epubDocs.length - 1);
+  epubReaderOverlay.classList.add('open');
+  await epubRenderDoc();
+}
+
+function closeEpubReader() {
+  if (!epubReaderOverlay) return;
+  epubReaderOverlay.classList.remove('open');
+  epubReaderFrame.srcdoc = '';
+  epubRevokeBlobs(epubReaderBlobs);
+  epubReaderBlobs = [];
+}
+
+function isEpubReaderOpen() {
+  return !!epubReaderOverlay && epubReaderOverlay.classList.contains('open');
+}
+
+async function epubRenderDoc() {
+  const d = epubDocs[epubReaderIdx];
+  if (!d) return;
+  epubDocSelect.value = String(epubReaderIdx);
+  epubDocPos.textContent = `${epubReaderIdx + 1}/${epubDocs.length}` + (d.page ? ` · p.${d.page}` : '');
+  document.getElementById('epubPrevDoc').disabled = epubReaderIdx <= 0;
+  document.getElementById('epubNextDoc').disabled = epubReaderIdx >= epubDocs.length - 1;
+  document.getElementById('epubGoPage').disabled = !d.page;
+
+  const stale = epubReaderBlobs;
+  epubReaderBlobs = [];
+  try {
+    epubReaderFrame.srcdoc = await epubBuildDocHtml(d.path, epubOrigCss.checked);
+  } catch (err) {
+    console.error('EPUB text render error:', err);
+    epubReaderFrame.srcdoc = `<!doctype html><meta charset="utf-8"><body style="font-family:sans-serif;color:#e06c6c;background:#1e1e2e;padding:24px">読み込みエラー: ${escapeAttr(err.message)}</body>`;
+  }
+  epubRevokeBlobs(stale); // 旧文書は破棄済みなので安全に解放できる
+}
+
+function epubGoDoc(delta) {
+  const next = epubReaderIdx + delta;
+  if (next < 0 || next >= epubDocs.length) return;
+  epubReaderIdx = next;
+  epubRenderDoc();
+}
+
+if (epubReaderOverlay) {
+  document.getElementById('epubPrevDoc').addEventListener('click', () => epubGoDoc(-1));
+  document.getElementById('epubNextDoc').addEventListener('click', () => epubGoDoc(1));
+  document.getElementById('epubReaderClose').addEventListener('click', closeEpubReader);
+  epubReaderOverlay.addEventListener('click', e => { if (e.target === epubReaderOverlay) closeEpubReader(); });
+  epubDocSelect.addEventListener('change', () => { epubReaderIdx = +epubDocSelect.value; epubRenderDoc(); });
+  epubOrigCss.addEventListener('change', epubRenderDoc);
+  document.getElementById('epubFontDec').addEventListener('click', () => {
+    epubFontScale = Math.max(70, epubFontScale - 10); epubRenderDoc();
+  });
+  document.getElementById('epubFontInc').addEventListener('click', () => {
+    epubFontScale = Math.min(200, epubFontScale + 10); epubRenderDoc();
+  });
+  document.getElementById('epubGoPage').addEventListener('click', () => {
+    const d = epubDocs[epubReaderIdx];
+    if (!d || !d.page) return;
+    closeEpubReader();
+    renderView(d.page);
+  });
 }
 
 // ---- Filename encoding fix ----
@@ -1558,8 +1977,9 @@ async function buildFilenameMap(fileOrBlob, name) {
 // ---- Image helpers ----
 const IMAGE_EXTS = /\.(jpe?g|png|webp|gif|bmp|avif|jxl|tiff?|heic|heif)$/i;
 const ARCHIVE_EXTS = /\.(cbz|zip|cbr|rar|cb7|7z|epub)$/i;
-// EPUB 構造解析 (E キー) が読むテキスト系エントリ。展開後も保持しておく
-const EPUB_STRUCT_EXTS = /\.(opf|ncx|xhtml|xht|html?|xml|svg)$/i;
+// EPUB 構造解析 (E キー) / 本文リーダー (R キー) が読むテキスト系エントリ。展開後も保持しておく
+// (.css は「原文CSS」表示用。フォントは意図的に対象外 — 本文リーダーは縦書き等を無視するため)
+const EPUB_STRUCT_EXTS = /\.(opf|ncx|xhtml|xht|html?|xml|svg|css)$/i;
 
 function loadImageFromBlob(blob) {
   return new Promise((resolve, reject) => {
@@ -2580,6 +3000,42 @@ async function loadImageEntries(imageFiles, archiveFileName, structFiles = []) {
   }
 }
 
+// ---- Reflowable (image-less) EPUB support ----
+const REFLOW_PLACEHOLDER_NAME = '__reflowable__.png';
+
+function hasEpubStructure(structFiles) {
+  return structFiles.some(f => {
+    const n = f.name.replace(/\\/g, '/');
+    return /\.opf$/i.test(n) || /(^|\/)META-INF\/container\.xml$/i.test(n);
+  });
+}
+
+// 画像を持たない EPUB 用のダミーページ。ビューアの「1ページ = 1画像」前提を崩さずに開くため
+async function makeReflowPlaceholderPage(name) {
+  const c = document.createElement('canvas');
+  c.width = 1240; c.height = 1754; // A4 相当
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#1e1e2e';
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#4a9eff';
+  ctx.font = 'bold 72px sans-serif';
+  ctx.fillText('EPUB', c.width / 2, 700);
+  ctx.font = '44px sans-serif';
+  ctx.fillStyle = '#9aa';
+  ctx.fillText('リフロー型 (画像なし)', c.width / 2, 790);
+  ctx.fillStyle = '#ddd';
+  ctx.font = '36px sans-serif';
+  const short = name.length > 40 ? name.slice(0, 39) + '…' : name;
+  ctx.fillText(short, c.width / 2, 900);
+  ctx.fillStyle = '#888';
+  ctx.font = '34px sans-serif';
+  ctx.fillText('R キー / TOC タブの「本文を読む」で', c.width / 2, 1010);
+  ctx.fillText('中身のテキストを表示できます', c.width / 2, 1060);
+  const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+  return { name: REFLOW_PLACEHOLDER_NAME, file: new File([blob], REFLOW_PLACEHOLDER_NAME, { type: 'image/png' }) };
+}
+
 // Open archive, prompt for password if encrypted, and extract files.
 // Returns flattened file array, or null if cancelled.
 async function extractArchiveWithPassword(file, fnMap, loadingEl) {
@@ -2670,10 +3126,16 @@ async function loadArchive(file) {
         const innerStruct = innerAllFiles.filter(f => EPUB_STRUCT_EXTS.test(f.name));
 
         if (innerImages.length === 0) {
-          showToast(`${chosen.name} に画像ファイルが見つかりません`, 3000);
-          return;
+          if (!hasEpubStructure(innerStruct)) {
+            showToast(`${chosen.name} に画像ファイルが見つかりません`, 3000);
+            return;
+          }
+          innerImages.push(await makeReflowPlaceholderPage(chosen.name));
         }
         await loadImageEntries(innerImages, `${file.name} > ${chosen.name}`, innerStruct);
+        if (innerImages.length === 1 && innerImages[0].name === REFLOW_PLACEHOLDER_NAME) {
+          await runEpubAnalysis(true);
+        }
       } finally {
         hideLoading(innerLoading);
       }
@@ -2682,7 +3144,14 @@ async function loadArchive(file) {
 
     // Normal archive with images
     if (imageFiles.length === 0) {
-      showToast('画像ファイルが見つかりません', 3000);
+      // 画像を1枚も持たないリフロー型 EPUB。ビューア本体はページ = 画像を前提にしているので
+      // プレースホルダを1枚だけ合成して開き、そのまま構造解析 → 本文リーダーを起動する
+      if (!hasEpubStructure(structFiles)) {
+        showToast('画像ファイルが見つかりません', 3000);
+        return;
+      }
+      await loadImageEntries([await makeReflowPlaceholderPage(file.name)], file.name, structFiles);
+      await runEpubAnalysis(true);
       return;
     }
     await loadImageEntries(imageFiles, file.name, structFiles);
@@ -2830,6 +3299,15 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && helpOverlay.classList.contains('open')) {
     e.preventDefault(); helpOverlay.classList.remove('open'); return;
   }
+  // 本文リーダーが開いている間は、その中のナビゲーションだけを受け付ける
+  // (iframe にフォーカスがある場合はそもそもここに来ない)
+  if (isEpubReaderOpen()) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    if (e.key === 'Escape') { e.preventDefault(); closeEpubReader(); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); epubGoDoc(-1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); epubGoDoc(1); }
+    return;
+  }
   if (totalPages === 0 || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
   if (e.key === '?') { e.preventDefault(); helpOverlay.classList.toggle('open'); return; }
   if (e.key === 'c') {
@@ -2879,9 +3357,14 @@ document.addEventListener('keydown', e => {
     runEpubAnalysis();
     return;
   }
+  if (e.key === 'r' || e.key === 'R') {
+    e.preventDefault();
+    openEpubReader(epubDocIndexForPage(currentPage));
+    return;
+  }
   if (e.key === 't' || e.key === 'T') {
     e.preventDefault();
-    if (epubToc.length === 0) { showToast('目次がありません (E キーで EPUB 構造解析)', 3000); return; }
+    if (epubToc.length === 0 && epubDocs.length === 0) { showToast('目次がありません (E キーで EPUB 構造解析)', 3000); return; }
     const tocOpen = sidebar.classList.contains('open') && tocPanel.classList.contains('active');
     if (tocOpen) {
       sidebar.classList.remove('open');
@@ -3062,6 +3545,7 @@ function toggleUI(forceShow) {
 
 let lastEscPressAt = 0;
 function handleEscape() {
+  if (isEpubReaderOpen()) { closeEpubReader(); return; }
   if (gifOverlay.classList.contains('open')) {
     gifOverlay.classList.remove('open');
     gifModalImg.src = '';

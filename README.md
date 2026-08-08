@@ -70,13 +70,13 @@ A universal comic viewer supporting PDF / CBZ / CBR / CB7 / EPUB.
 | CBZ | `.cbz`, `.zip` | [libarchive.js](https://github.com/nika-begiashvili/libarchivejs) v2.0.2 (WASM) |
 | CBR | `.cbr`, `.rar` | libarchive.js v2.0.2 (WASM) |
 | CB7 | `.cb7`, `.7z` | libarchive.js v2.0.2 (WASM) |
-| EPUB | `.epub` | libarchive.js v2.0.2 (WASM) ※固定レイアウトのみ / Fixed-layout only |
+| EPUB | `.epub` | libarchive.js v2.0.2 (WASM) ※固定レイアウト + リフロー本文表示 / Fixed-layout + reflowable text view |
 
 アーカイブ内の画像ファイル (JPEG, PNG, WebP, GIF, BMP, AVIF, JXL, TIFF) を自動検出して表示します。
 
 Image files within archives are automatically detected and displayed.
 
-> **EPUB について / About EPUB**: 固定レイアウト(画像ベース)のみ対応。リフロー型EPUBには [BiBI](https://id-fa.github.io/bibi-extension-ImageExporter/DEMO/) をお試しください。 / Only fixed-layout (image-based) EPUBs are supported. For reflowable EPUBs, try [BiBI](https://id-fa.github.io/bibi-extension-ImageExporter/DEMO/).
+> **EPUB について / About EPUB**: ページ画像としての表示は固定レイアウト(画像ベース)のみ。リフロー型は `R` キーの本文リーダで中身のテキストを読めます (縦書き・ページ分割は非対応)。本格的なリフロー表示には [BiBI](https://id-fa.github.io/bibi-extension-ImageExporter/DEMO/) をお試しください。 / Only fixed-layout (image-based) EPUBs render as pages. Reflowable EPUBs can be read as text via the `R` key reader (no vertical writing or pagination). For a full reflowable experience, try [BiBI](https://id-fa.github.io/bibi-extension-ImageExporter/DEMO/).
 
 ### 起動 / Getting Started
 
@@ -151,6 +151,7 @@ Open `http://localhost:8000/comic-viewer.html` in your browser.
 | `M` キー | Max Read ページにジャンプ / Jump to max read page |
 | `E` キー | EPUB 構造解析 (ページ順の修正) / Analyze EPUB structure (fix page order) |
 | `T` キー | EPUB 目次の開閉 / Toggle EPUB table of contents |
+| `R` キー | EPUB 本文テキストを表示 / Open the EPUB text reader |
 | `Escape` | UI再表示 / Show UI |
 | 左右スワイプ | ページ送り (スマホ対応) / Page navigation (touch) |
 
@@ -182,6 +183,16 @@ EPUB filenames often don't match reading order. Press `E` to analyze the EPUB st
 - spine の XHTML を辿って `<img>` を文書順に収集。spine から画像が取れない場合は manifest の `image/*` の記述順にフォールバック / Walks the spine's XHTML for `<img>` in document order; falls back to manifest `image/*` order
 - 解析後は並び順プルダウンに `Sort: EPUB` が追加され、他の並び順にいつでも戻せる / Adds a `Sort: EPUB` option so you can switch back anytime
 - 目次が定義されていればサイドバーに `TOC` タブが出現 (`T` キーで開閉)。EPUB3 nav / EPUB2 NCX の両方に対応、階層表示・ページ番号付き・クリックでジャンプ / A `TOC` tab appears when a table of contents exists (`T` to toggle); supports both EPUB3 nav and EPUB2 NCX
+
+### リフロー型 EPUB の本文表示 / Reflowable EPUB Text Reader
+
+構造解析 (`E`) 後、`TOC` タブ下部の「本文を読む」または `R` キーで、EPUB 内の XHTML をそのまま読めるリーダが開きます。画像を 1 枚も持たないリフロー型 EPUB も開けます。
+
+After structure analysis (`E`), press `R` (or use "本文を読む" at the bottom of the `TOC` tab) to open a reader that shows the EPUB's own XHTML. Image-less reflowable EPUBs can be opened too.
+
+- 文書間の移動 (‹ / › / ← / → / プルダウン)、文字サイズ変更 (A- / A+)、「原文CSS」の ON/OFF / Document navigation, font size, and an "original CSS" toggle
+- **外部リソースは完全にブロック**: `allow-scripts` なしの sandbox iframe + `default-src 'none'` の CSP + http(s) URL の除去の 3 重防御。画像・CSS はアーカイブ内から blob: URL として差し替え / **No external resources**: sandboxed iframe without `allow-scripts`, a `default-src 'none'` CSP, and stripping of http(s) URLs. In-archive images/CSS are swapped to blob: URLs
+- 縦書き指定は横書きに矯正されます (本ビューアは縦書き要件を対象外としています) / Vertical writing is forced to horizontal
 
 ### 連続スクロールモード / Scroll Mode
 
