@@ -226,6 +226,12 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - Fit スケール時はヘッダー分の高さも使って拡大表示 (`getScale()` が `isUIHidden()` を参照、`header.offsetHeight` で動的取得)
 - `toggleUI(forceShow?)` — トグル関数、トランジション完了後に `renderView()` を再実行
 
+### プログレスバー (`.progress-bar` / `setProgress()`、両ビューア共通)
+- **進行中の処理専用の一時インジケータ**。用途はアーカイブ展開 (`loadImageEntries`) / EPUB 構造解析 (`analyzeEpub`) / 一括保存 (`saveAll`) の3つだけ
+- **読書位置インジケータとしては使わない**。以前は Scroll モードの `updateScrollCurrentPage()` が `currentPage / totalPages` を書き込んでいたが、Single/Spread では更新されないうえ、モードを抜けてもバー幅が残り続ける (例: 80% のまま)。UI 非表示 / 全画面では画面上端に青いバーだけが居座って邪魔になるため廃止した。ページ位置はヘッダーのページ番号と Thumbs で確認する
+- **終了時は必ず `setProgress(0)`**。進行ループは `try { ... } finally { setProgress(0) }` で囲み、途中で例外が出てもバーが残らないようにする (`saveAll` はあわせて `saveAllBtn.disabled` も finally で戻す)
+- `setProgress()` 自体も 0〜100 にクランプし、`NaN`/`Infinity` (例: `totalPages === 0`) は 0 として扱う
+
 ### ミニマップ (Map チェックボックス)
 - **ON**: 右下に固定表示のミニマップを表示。全体の縮小画像＋赤枠で現在の表示エリアを示す
   - コンテンツが画面に収まっている場合は自動非表示 (スクロール不要時は表示しない)

@@ -1039,8 +1039,12 @@ function showClickableToast(msg, onClick, ms = 5000) {
   setTimeout(() => { toast.classList.remove('show', 'clickable'); toast.onclick = null; }, ms);
 }
 
+// 展開 / EPUB 解析 / 一括保存など「進行中の処理」専用の一時インジケータ。
+// 処理の終了時は必ず 0 に戻すこと (呼び出し側は finally で保証する)。
+// 幅が残ったままだと UI 非表示 / 全画面時に画面上端の青バーだけが居座って邪魔になる。
 function setProgress(pct) {
-  progressFill.style.width = pct + '%';
+  const v = Number.isFinite(pct) ? Math.max(0, Math.min(100, pct)) : 0;
+  progressFill.style.width = v + '%';
 }
 
 // Yield control back to the browser's event loop so long-running loops
@@ -2365,7 +2369,6 @@ function updateScrollCurrentPage() {
     if (num !== currentPage) {
       currentPage = num;
       pageInput.value = currentPage;
-      setProgress((currentPage / totalPages) * 100);
       if (thumbsContainer) {
         thumbsContainer.querySelectorAll('.thumb').forEach((t, i) => t.classList.toggle('active', i + 1 === currentPage));
         const active = thumbsContainer.querySelector('.thumb.active');
@@ -2702,16 +2705,20 @@ async function saveSpread() {
 async function saveAll() {
   saveAllBtn.disabled = true;
   const pad = String(totalPages).length;
-  for (let i = 1; i <= totalPages; i++) {
-    setProgress((i / totalPages) * 100);
-    const canvas = await exportPageCanvas(i);
-    const num = String(i).padStart(pad, '0');
-    saveCanvas(canvas, `${baseName()}_${num}`);
-    await new Promise(r => setTimeout(r, 100));
+  try {
+    for (let i = 1; i <= totalPages; i++) {
+      setProgress((i / totalPages) * 100);
+      const canvas = await exportPageCanvas(i);
+      const num = String(i).padStart(pad, '0');
+      saveCanvas(canvas, `${baseName()}_${num}`);
+      await new Promise(r => setTimeout(r, 100));
+    }
+    showToast(`All ${totalPages} pages saved`);
+  } finally {
+    // 途中で例外が出てもバーを残さない
+    setProgress(0);
+    saveAllBtn.disabled = false;
   }
-  setProgress(0);
-  showToast(`All ${totalPages} pages saved`);
-  saveAllBtn.disabled = false;
 }
 
 // ---- Load PDF ----
@@ -2964,24 +2971,28 @@ async function loadImageEntries(imageFiles, archiveFileName, structFiles = []) {
   resetEpubState();
   epubEntries = structFiles;
   archiveImagesUnsorted = [];
-  for (let i = 0; i < imageFiles.length; i++) {
-    setProgress(((i + 1) / imageFiles.length) * 100);
-    await yieldToMain();
-    const f = imageFiles[i];
-    let img;
-    try { img = await loadImageFromBlob(f.file); } catch { continue; } // skip unsupported formats
-    const animated = await isAnimatedImage(f.file);
-    archiveImagesUnsorted.push({
-      name: f.name,
-      blob: f.file,
-      img,
-      width: img.naturalWidth,
-      height: img.naturalHeight,
-      lastModified: f.file.lastModified || 0,
-      animated,
-    });
+  try {
+    for (let i = 0; i < imageFiles.length; i++) {
+      setProgress(((i + 1) / imageFiles.length) * 100);
+      await yieldToMain();
+      const f = imageFiles[i];
+      let img;
+      try { img = await loadImageFromBlob(f.file); } catch { continue; } // skip unsupported formats
+      const animated = await isAnimatedImage(f.file);
+      archiveImagesUnsorted.push({
+        name: f.name,
+        blob: f.file,
+        img,
+        width: img.naturalWidth,
+        height: img.naturalHeight,
+        lastModified: f.file.lastModified || 0,
+        animated,
+      });
+    }
+  } finally {
+    // 途中で例外が出てもバーを残さない
+    setProgress(0);
   }
-  setProgress(0);
 
   // EPUB defaults to lexical sort (directory structure reflects page order)
   const isEpub = /\.epub$/i.test(archiveFileName.split(' > ').pop());
