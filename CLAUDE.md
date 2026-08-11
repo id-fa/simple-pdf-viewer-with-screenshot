@@ -318,8 +318,10 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - **対策** (`readFileToBuffer()` / comic-viewer.html は `materializeFile()`):
   - **メインスレッドで自分でファイルを読み切ってから** libarchive / PDF.js に渡す。libarchive にはメモリ上の `File` を渡すので worker 側は実ファイルに触らない → 失敗を捕捉できて固まらない
   - `file.slice()` による 8MB チャンク読み + チャンク単位で最大6回リトライ (`FILE_READ_BACKOFF` = 300/700/1500/3000/5000/8000ms)。**失敗するたびに読み幅を半分に縮め** (`FILE_READ_MIN_CHUNK` 512KB まで)、以降のチャンクも縮めたまま読み進める。大きな読み出しほど SMB でタイムアウトしやすいため
-  - **読めた分はやり直さない** (再試行は失敗した offset から)。これが効くのは、読み終えた分が Windows の SMB クライアントキャッシュ / NAS 側キャッシュに残っていて再読み込みがネットワークに出ないため。実測でも「1回目 38% で失敗 → 開き直すと 38% まで一瞬で進んでその先で失敗 → 3回目で完走」という**積み上がる**挙動になる。粘り強く再試行すれば 1 回の open で完走できる、というのがこのリトライ設計の根拠
-  - 全チャンク失敗時は `FileReadError` を投げ、`showFileReadErrorToast()` が**タップで再試行できるトースト**を出す (`showClickableToast`、10秒)。再試行はファイル選択ダイアログを開き直さず同じ `File` を再読み込みするので、キャッシュ済みの部分を一気に飛ばして続きから進める
+  - **同じ `File` オブジェクトはいくら再試行しても復活しない** (実測)。0% から読み直しても必ず同じ位置で失敗する。壊れているのはネットワークではなく **その File 参照が握っている OS 側のファイルハンドル**で、JS から revalidate する手段が無い。エクスプローラで開き直すと先へ進むのは、そこで**新しいハンドルが作られる**から。したがって対策は次の2本立て:
+    1. **`FileSystemFileHandle` を保持し、失敗したら `handle.getFile()` で File を取り直す** (`refreshFileFromHandle()`)。これがプログラムから「開き直す」ことに相当し、**1回の open のまま先へ進める**。ハンドルが取れる経路は launchQueue (ファイル関連付け) / ドラッグ&ドロップ (`DataTransferItem.getAsFileSystemHandle()`、DataTransfer はイベント内でしか有効でないので `await` 前に呼ぶ) / `showOpenFilePicker()`。`<input type=file>` では取れない
+    2. **`pendingRead` に読み込み途中のバッファを残す** (`{key, bytes, offset}`、key = `name|size|lastModified`)。ハンドルが無い経路でも、ユーザーが同じファイルを選び直すたびに**続きから読み進む** (28% → 57% → 85% → 完了)。成功したら破棄
+  - 全チャンク失敗時は `FileReadError` を投げ、`showFileReadErrorToast()` が `{ファイル名} を N% まで読み込みました…` とタップ可能なトーストを出す (12秒)。`retryOpenFile()` が、ハンドルがあれば無言で再試行、無ければ `showOpenFilePicker()` (非対応環境は `fileInput.click()`) でファイルを選び直させる
   - 読み込み中は progress bar + オーバーレイに `{ファイル名} を読み込み中... N%` (4MB 超のときのみ)。再試行中は `— 再試行中 N/6` を付けて「止まっていない」ことを示す (オーバーレイの無い PDF 側はトーストで表示)
 - **副次効果**: cbz/zip/epub はこれまで `buildFilenameMap` (メインスレッド) と libarchive worker で**同じファイルを2回フルリード**していたのを1回に削減。`buildFilenameMapFromBuffer()` が読み込み済みバッファを直接受ける (`buildFilenameMap` は入れ子アーカイブ用にラッパーとして残す)
 - **注意**: メモリ上の `File` を渡すので `loadArchive` の引数は `srcFile` (元の File) と `file` (メモリ上の File) を使い分ける。名前・サイズは同じなのでファイルハッシュ (しおり) は変わらない

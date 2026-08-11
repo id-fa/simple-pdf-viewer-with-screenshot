@@ -989,46 +989,96 @@ class FileReadError extends Error {
   }
 }
 
+// **重要 (実測)**: 一度 NotReadableError になった `File` は、同じ File オブジェクトで何度読み直しても
+// 同じ位置で失敗し続ける (0% から読み直しても必ず同じ % で止まり、先へ進まない)。壊れているのは
+// ネットワークではなく **その File 参照が握っている OS 側のファイルハンドル** で、JS から復活させる
+// 手段が無いため。エクスプローラで開き直すと先へ進むのは、そこで**新しいハンドルが作られる**から。
+// → 対策は2つ:
+//   1. `FileSystemFileHandle` を保持しておき、失敗したら `handle.getFile()` で **File を取り直す**
+//      (= エクスプローラで開き直すのと同じ効果をプログラムから得る)。launchQueue (ファイル関連付け) /
+//      ドラッグ&ドロップ / showOpenFilePicker はハンドルを取れる。`<input type=file>` は取れない
+//   2. 読み込み途中のバッファを `pendingRead` に残し、**開き直したら続きから読む** (ハンドルが
+//      取れない経路でも、ユーザーが手動で開き直すたびに確実に前進する)
+let pendingRead = null; // { key, bytes: Uint8Array, offset }
+
+function fileReadKey(file) { return `${file.name}|${file.size}|${file.lastModified}`; }
+
+// ハンドルから File を取り直す (取れなければ null)
+async function refreshFileFromHandle(handle, orig) {
+  if (!handle || typeof handle.getFile !== 'function') return null;
+  try {
+    const f = await handle.getFile();
+    if (f.size !== orig.size) {
+      console.warn('[read] サイズが変わったので File の取り直しを中止');
+      return null;
+    }
+    console.info('[read] handle.getFile() で File を取り直しました');
+    return f;
+  } catch (err) {
+    console.warn('[read] handle.getFile() 失敗:', err);
+    return null;
+  }
+}
+
 // File をチャンク単位でメモリに読み切る。失敗したチャンクは FILE_READ_RETRIES 回まで
-// 「待ち時間を伸ばしながら / 読み幅を縮めながら」再試行する (読めた分はやり直さない)。
+// 「File を取り直しながら / 待ち時間を伸ばしながら / 読み幅を縮めながら」再試行する。
+// 読めた分はやり直さず、全滅しても pendingRead に残して次回の続きに使う。
 // onProgress(読めたバイト数, 全体, 再試行中なら 1..FILE_READ_RETRIES)
-async function readFileToBuffer(file, onProgress) {
+async function readFileToBuffer(file, onProgress, handle = null) {
   const total = file.size;
-  const out = new Uint8Array(total);
-  let offset = 0;
+  const key = fileReadKey(file);
+  // 前回途中まで読めていた同じファイルなら、その続きから
+  const resumed = (pendingRead && pendingRead.key === key) ? pendingRead : null;
+  const out = resumed ? resumed.bytes : new Uint8Array(total);
+  let offset = resumed ? resumed.offset : 0;
+  pendingRead = { key, bytes: out, offset };
+  if (offset) console.info(`[read] ${file.name}: ${offset}/${total} バイト目から再開`);
+  let src = file;
   let chunkSize = FILE_READ_CHUNK;
+  if (onProgress) onProgress(offset, total, 0);
   while (offset < total) {
     let chunk = null, lastErr = null;
     for (let attempt = 0; attempt <= FILE_READ_RETRIES; attempt++) {
       if (attempt > 0) {
-        // 回線が不安定なので、以降のチャンクも縮めたまま読み進める
+        // 同じ File を再試行しても復活しないので、可能なら File 自体を取り直す。
+        // あわせて読み幅を縮める (大きな読み出しほど SMB でタイムアウトしやすい)
         chunkSize = Math.max(FILE_READ_MIN_CHUNK, Math.floor(chunkSize / 2));
         if (onProgress) onProgress(offset, total, attempt);
         await new Promise(r => setTimeout(r, FILE_READ_BACKOFF[attempt - 1]));
+        const fresh = await refreshFileFromHandle(handle, file);
+        if (fresh) src = fresh;
       }
       try {
-        chunk = new Uint8Array(await file.slice(offset, Math.min(offset + chunkSize, total)).arrayBuffer());
+        chunk = new Uint8Array(await src.slice(offset, Math.min(offset + chunkSize, total)).arrayBuffer());
         break;
       } catch (err) {
         lastErr = err;
         console.warn(`[read] ${file.name} @${offset} 失敗 (${attempt + 1}/${FILE_READ_RETRIES + 1}, chunk ${Math.round(chunkSize / 1024)}KB):`, err);
       }
     }
-    if (!chunk) throw new FileReadError(file, lastErr);
+    if (!chunk) {
+      pendingRead.offset = offset; // ここまでは読めている。次回はここから
+      throw new FileReadError(file, lastErr);
+    }
     out.set(chunk, offset);
     offset += chunk.length;
+    pendingRead.offset = offset;
     if (onProgress) onProgress(offset, total, 0);
   }
+  pendingRead = null;
   return out.buffer;
 }
 
-// 読み込み失敗時の案内。読み終えていた分は OS / NAS のキャッシュに残っているので、
-// 再試行すると前回失敗した地点まで一気に進み、その先へ食い込める (数回で完走することが多い)。
-function showFileReadErrorToast(file, onRetry) {
+// 読み込み失敗時の案内。読めた分は pendingRead に残っているので、再試行は必ず続きから始まる。
+// ハンドルが無い経路 (input type=file) では、選び直してもらわないと新しいファイルハンドルにならない。
+function showFileReadErrorToast(file, handle, onRetry) {
+  const pct = (pendingRead && pendingRead.key === fileReadKey(file) && file.size)
+    ? Math.floor((pendingRead.offset / file.size) * 100) : 0;
+  const how = handle ? 'タップで再試行' : 'タップしてファイルを選び直す';
   showClickableToast(
-    `${file.name} を読み込めませんでした。NAS / ネットワークドライブの接続が切れている可能性があります (タップで再試行 / 数回繰り返すと開けることがあります。駄目ならローカルにコピーしてから開いてください)`,
+    `${file.name} を ${pct}% まで読み込みました。NAS / ネットワークドライブの接続が切れています (${how}と続きから読み込みます。駄目ならローカルにコピーしてから開いてください)`,
     () => Promise.resolve().then(onRetry).catch(err => console.error('[read] 再試行に失敗:', err)),
-    10000);
+    12000);
 }
 
 function isSpread() { return viewMode.value === 'spread'; }
@@ -1815,7 +1865,8 @@ async function loadPDF(data, name) {
   }
 }
 
-async function openPdfFile(file) {
+// handle: FileSystemFileHandle (あれば読み込み失敗時に File を取り直せる — readFileToBuffer 参照)
+async function openPdfFile(file, handle = null) {
   if (!file) return;
   currentFileHash = await generateFileHash(file);
   sessionLastRead = isBookmarkEnabled() ? (getBookmarkForFile(currentFileHash).lastRead || null) : null;
@@ -1826,10 +1877,10 @@ async function openPdfFile(file) {
       const pct = total ? (done / total) * 100 : 0;
       setProgress(pct);
       if (attempt) showToast(`読み込み再試行中 ${attempt}/${FILE_READ_RETRIES}... ${Math.floor(pct)}%`, 2000);
-    });
+    }, handle);
   } catch (err) {
     console.error('File read error:', err);
-    showFileReadErrorToast(file, () => openPdfFile(file));
+    showFileReadErrorToast(file, handle, () => retryOpenFile(file, handle));
     return;
   } finally {
     setProgress(0);
@@ -1838,6 +1889,22 @@ async function openPdfFile(file) {
     if (/password/i.test(err.message)) { showToast('PDF を開けませんでした', 3000); return; }
     throw err;
   }
+}
+
+// 読み込み失敗後の再試行。ハンドルがあれば File を取り直して続きから読む。無ければ
+// ファイル選択ダイアログを開いて選び直してもらう (壊れた File 参照は選び直さないと復活しない)。
+async function retryOpenFile(file, handle) {
+  if (handle) return openPdfFile(file, handle);
+  if (window.showOpenFilePicker) {
+    let picked;
+    try {
+      [picked] = await showOpenFilePicker();
+    } catch (err) {
+      return; // ユーザーがキャンセル
+    }
+    return openPdfFile(await picked.getFile(), picked);
+  }
+  fileInput.click(); // 同じファイルを選び直せば pendingRead が続きから読む
 }
 
 // File input
@@ -1860,14 +1927,24 @@ document.addEventListener('drop', async e => {
   const dz = document.getElementById('dropzone');
   if (dz) dz.classList.remove('dragover');
   const file = e.dataTransfer.files[0];
-  if (file && file.type === 'application/pdf') await openPdfFile(file);
+  // ハンドルも取っておく (NAS 切断時に File を取り直すため)。DataTransfer はイベント内でしか
+  // 有効ではないので、await に入る前にここで呼ぶ
+  const item = e.dataTransfer.items && e.dataTransfer.items[0];
+  const handlePromise = (item && typeof item.getAsFileSystemHandle === 'function')
+    ? item.getAsFileSystemHandle().catch(() => null) : Promise.resolve(null);
+  const handle = await handlePromise;
+  if (file && file.type === 'application/pdf') {
+    await openPdfFile(file, handle && handle.kind === 'file' ? handle : null);
+  }
 });
 
 // File Handling API (installed PWA)
+// launchQueue が渡してくるのは FileSystemFileHandle。読み込み失敗時に File を取り直せるよう保持する
 async function handleLaunchFiles(files) {
   if (!files || !files.length) return;
-  const file = await files[0].getFile();
-  await openPdfFile(file);
+  const handle = files[0];
+  const file = await handle.getFile();
+  await openPdfFile(file, handle);
 }
 if (window.__launchFiles) {
   handleLaunchFiles(window.__launchFiles);
