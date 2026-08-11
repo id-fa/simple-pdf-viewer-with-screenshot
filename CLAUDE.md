@@ -311,6 +311,18 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - 代わりに `.spread-container` / `.page-container` に `margin-left: auto; margin-right: auto` で中央揃え
 - コンテンツが画面内に収まる時は中央配置、画面より大きい時は左端(0,0)からスクロール可能
 
+### ネットワーク上のファイル (NAS / SMB) 対策 (両ビューア共通)
+- **症状**: NAS (パスワード付き Samba) 上のファイルを PWA から開くと、展開の途中で `NotReadableError: The requested file could not be read...` が出て、"展開中..." のオーバーレイのまま**固まる**
+- **原因**: `File` は実体のコピーではなく「パス + size + lastModified のスナップショット」で、実際の I/O は後から走る。その時点で SMB セッションが切れている (Windows の `autodisconnect` は既定15分アイドル / NAS 側のアイドルタイムアウト) / 再認証が要求された / mtime がずれた 等だと `NotReadableError` になる。ブラウザから SMB 資格情報は渡せないので**この失敗自体は OS/ネットワーク側の問題で回避できない**
+- **固まる理由 (ライブラリのバグ)**: `vendor/libarchive/libarchive.js` の `open()` は `new Promise((res, rej) => { this.client.open(this.file, cb(res)) })` と書かれていて **reject を一切繋いでいない**。worker 側の読み込みが失敗しても Promise が settle せず、`await Archive.open(file)` で永久に待つ。呼び出し側の try/catch では捕まえられない (コンソールの `Uncaught (in promise)` はこの捨てられた rejection)
+- **対策** (`readFileToBuffer()` / comic-viewer.html は `materializeFile()`):
+  - **メインスレッドで自分でファイルを読み切ってから** libarchive / PDF.js に渡す。libarchive にはメモリ上の `File` を渡すので worker 側は実ファイルに触らない → 失敗を捕捉できて固まらない
+  - `file.slice()` による 8MB チャンク読み + チャンク単位で最大3回リトライ (300/600/900ms バックオフ)。SMB の瞬断程度なら自動復帰する
+  - 全チャンク失敗時は `FileReadError` を投げ、「NAS / ネットワークドライブの接続が切れている可能性があります (ローカルにコピーしてから開いてください)」とトースト表示
+  - 読み込み中は progress bar + オーバーレイに `{ファイル名} を読み込み中... N%` (4MB 超のときのみ)
+- **副次効果**: cbz/zip/epub はこれまで `buildFilenameMap` (メインスレッド) と libarchive worker で**同じファイルを2回フルリード**していたのを1回に削減。`buildFilenameMapFromBuffer()` が読み込み済みバッファを直接受ける (`buildFilenameMap` は入れ子アーカイブ用にラッパーとして残す)
+- **注意**: メモリ上の `File` を渡すので `loadArchive` の引数は `srcFile` (元の File) と `file` (メモリ上の File) を使い分ける。名前・サイズは同じなのでファイルハッシュ (しおり) は変わらない
+
 ### メモリ管理 (黒画面=canvas/GPUメモリ枯渇 対策、両ビューア共通)
 - **症状**: インストール済み PWA (standalone) で、ページを送っていくと N ページ目以降が**例外を出さず黒画面**になる (Chrome タブでは GPU 予算に余裕があり再現しにくい)。`page.render()` は成功 resolve するのに中身が黒い canvas が返る = canvas/GPU メモリ確保の無言失敗。HQ ON だと1ページあたりの canvas 生成量が多く、より早い番号で限界に達する
 - **原因**: ①PDF.js はページを表示するたびデコード済み画像/オペレータリストを内部キャッシュに保持し続ける ②差し替えた古い canvas の backing store を明示解放しないと GC まで GPU メモリに残る。両者がページ送りで累積して上限に当たる

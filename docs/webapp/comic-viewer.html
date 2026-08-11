@@ -1085,6 +1085,77 @@ function hideLoading(el) {
   if (el && el.parentNode) el.parentNode.removeChild(el);
 }
 
+// ---- ネットワーク上のファイル (NAS / SMB 等) 対策 ----
+// File は実体のコピーではなく「パス + size + lastModified のスナップショット」で、実際の I/O は
+// 後から走る。NAS (SMB) 上のファイルだと、その時点でセッションが切れている / 再認証が要求された /
+// mtime がずれた 等で NotReadableError になる。ブラウザからは資格情報を渡せないので回避はできないが、
+// 以下の2点はアプリ側で潰せる:
+//   1. 同じファイルを2回フルリードしていた (buildFilenameMap + libarchive worker) → 1回に減らす
+//   2. libarchive.js の Archive.open() は open 失敗時に Promise を reject しない (resolve コールバック
+//      しか繋いでいない) ため、worker 内で読ませて失敗すると "展開中..." のまま永久に固まる
+//      → メインスレッドで読み切ってからメモリ上の File を渡せば、失敗を捕捉してエラー表示できる
+// あわせてチャンク読み + リトライにしてあるので、瞬断程度なら自動復帰する。
+const FILE_READ_CHUNK = 8 * 1024 * 1024;
+const FILE_READ_RETRIES = 3;
+
+class FileReadError extends Error {
+  constructor(file, cause) {
+    super(`${file.name} を読み込めませんでした (ネットワークドライブの切断など)`);
+    this.name = 'FileReadError';
+    this.cause = cause;
+  }
+}
+
+// File をチャンク単位でメモリに読み切る。失敗したチャンクは FILE_READ_RETRIES 回まで再試行する。
+async function readFileToBuffer(file, onProgress) {
+  const total = file.size;
+  const out = new Uint8Array(total);
+  let offset = 0;
+  while (offset < total) {
+    const end = Math.min(offset + FILE_READ_CHUNK, total);
+    let chunk = null, lastErr = null;
+    for (let attempt = 0; attempt <= FILE_READ_RETRIES; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 300 * attempt));
+      try {
+        chunk = new Uint8Array(await file.slice(offset, end).arrayBuffer());
+        break;
+      } catch (err) {
+        lastErr = err;
+        console.warn(`[read] ${file.name} @${offset} 失敗 (${attempt + 1}/${FILE_READ_RETRIES + 1}):`, err);
+      }
+    }
+    if (!chunk) throw new FileReadError(file, lastErr);
+    out.set(chunk, offset);
+    offset = end;
+    if (onProgress) onProgress(offset, total);
+    await yieldToMain();
+  }
+  return out.buffer;
+}
+
+// ネットワーク上かもしれない File をメモリ上の File に読み切り、あわせて ZIP のファイル名マップも
+// 同じバッファから作る (実ファイルへの読み込みはこの 1 回だけ)。進捗は loadingEl と progress bar に出す。
+async function materializeFile(file, loadingEl) {
+  const msgEl = loadingEl ? loadingEl.querySelector('.msg') : null;
+  const baseMsg = msgEl ? msgEl.textContent : '';
+  const showPct = file.size > 4 * 1024 * 1024; // 小さいファイルは一瞬なので進捗を出さない
+  try {
+    let buf = await readFileToBuffer(file, (done, total) => {
+      const pct = total ? (done / total) * 100 : 0;
+      setProgress(pct);
+      if (msgEl && showPct) msgEl.textContent = `${file.name} を読み込み中... ${Math.floor(pct)}%`;
+    });
+    const fnMap = buildFilenameMapFromBuffer(buf, file.name);
+    const memFile = new File([buf], file.name, { type: file.type });
+    buf = null; // Blob 側にコピー済み。GC できるように参照を落とす
+    return { file: memFile, fnMap };
+  } finally {
+    setProgress(0);
+    if (msgEl) msgEl.textContent = baseMsg;
+  }
+}
+
+
 // ---- Natural sort for archive filenames ----
 function naturalCompare(a, b) {
   const re = /(\d+)|(\D+)/g;
@@ -1988,13 +2059,20 @@ function tryFixFilename(name) {
 }
 
 // Build filename map for ZIP/CBZ files (async — reads arrayBuffer)
+function buildFilenameMapFromBuffer(buf, name) {
+  const ext = name.split('.').pop().toLowerCase();
+  if (ext !== 'cbz' && ext !== 'zip' && ext !== 'epub') return null;
+  try {
+    const map = parseZipFilenameMap(buf);
+    return map.size > 0 ? map : null;
+  } catch { return null; }
+}
+
 async function buildFilenameMap(fileOrBlob, name) {
   const ext = name.split('.').pop().toLowerCase();
   if (ext !== 'cbz' && ext !== 'zip' && ext !== 'epub') return null;
   try {
-    const buf = await fileOrBlob.arrayBuffer();
-    const map = parseZipFilenameMap(buf);
-    return map.size > 0 ? map : null;
+    return buildFilenameMapFromBuffer(await fileOrBlob.arrayBuffer(), name);
   } catch { return null; }
 }
 
@@ -3121,14 +3199,18 @@ async function extractArchiveWithPassword(file, fnMap, loadingEl) {
   }
 }
 
-async function loadArchive(file) {
+async function loadArchive(srcFile) {
   annotationFab.style.display = 'none';
   pdfAnnotations = [];
-  const loading = showLoading(`${file.name} を展開中...`);
+  const loading = showLoading(`${srcFile.name} を展開中...`);
+  let file = srcFile;
   try {
     await ensureLibArchive();
-    const fnMap = await buildFilenameMap(file, file.name);
-    const allFiles = await extractArchiveWithPassword(file, fnMap, loading);
+    // NAS 等のネットワーク上にあるかもしれないので、ここでメモリに読み切ってから libarchive に渡す
+    // (worker 側で読ませると読み込み失敗時に固まる — materializeFile のコメント参照)
+    const local = await materializeFile(srcFile, loading);
+    file = local.file;
+    const allFiles = await extractArchiveWithPassword(file, local.fnMap, loading);
     if (!allFiles) return; // cancelled password prompt
 
     const imageFiles = allFiles.filter(f => IMAGE_EXTS.test(f.name));
@@ -3188,7 +3270,11 @@ async function loadArchive(file) {
     await loadImageEntries(imageFiles, file.name, structFiles);
   } catch (err) {
     console.error('Archive load error:', err);
-    showToast(`展開エラー: ${err.message}`, 4000);
+    if (err instanceof FileReadError) {
+      showToast(`${srcFile.name} を読み込めませんでした。NAS / ネットワークドライブの接続が切れている可能性があります (ローカルにコピーしてから開いてください)`, 6000);
+    } else {
+      showToast(`展開エラー: ${err.message}`, 4000);
+    }
   } finally {
     hideLoading(loading);
   }
@@ -3231,7 +3317,17 @@ async function openFile(file) {
   sessionLastRead = isBookmarkEnabled() ? (getBookmarkForFile(currentFileHash).lastRead || null) : null;
   const type = getFileType(file);
   if (type === 'pdf') {
-    const buf = await file.arrayBuffer();
+    // NAS 等のネットワーク上のファイル対策でチャンク読み + リトライ (readFileToBuffer のコメント参照)
+    let buf;
+    try {
+      buf = await readFileToBuffer(file, (done, total) => setProgress(total ? (done / total) * 100 : 0));
+    } catch (err) {
+      console.error('File read error:', err);
+      showToast(`${file.name} を読み込めませんでした。NAS / ネットワークドライブの接続が切れている可能性があります (ローカルにコピーしてから開いてください)`, 6000);
+      return;
+    } finally {
+      setProgress(0);
+    }
     try { await loadPDF(buf, file.name); } catch (err) {
       if (/password/i.test(err.message)) { showToast('PDF を開けませんでした', 3000); return; }
       throw err;

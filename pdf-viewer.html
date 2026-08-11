@@ -955,6 +955,48 @@ function setProgress(pct) {
   progressFill.style.width = v + '%';
 }
 
+// ---- ネットワーク上のファイル (NAS / SMB 等) 対策 ----
+// File は実体のコピーではなく「パス + size + lastModified のスナップショット」で、実際の I/O は
+// 後から走る。NAS (SMB) 上のファイルだと、その時点でセッションが切れている / 再認証が要求された /
+// mtime がずれた 等で NotReadableError になる。ブラウザからは資格情報を渡せないので回避はできないが、
+// チャンク読み + リトライにしておけば瞬断程度なら自動復帰し、駄目でも原因の分かるエラーを出せる。
+const FILE_READ_CHUNK = 8 * 1024 * 1024;
+const FILE_READ_RETRIES = 3;
+
+class FileReadError extends Error {
+  constructor(file, cause) {
+    super(`${file.name} を読み込めませんでした (ネットワークドライブの切断など)`);
+    this.name = 'FileReadError';
+    this.cause = cause;
+  }
+}
+
+// File をチャンク単位でメモリに読み切る。失敗したチャンクは FILE_READ_RETRIES 回まで再試行する。
+async function readFileToBuffer(file, onProgress) {
+  const total = file.size;
+  const out = new Uint8Array(total);
+  let offset = 0;
+  while (offset < total) {
+    const end = Math.min(offset + FILE_READ_CHUNK, total);
+    let chunk = null, lastErr = null;
+    for (let attempt = 0; attempt <= FILE_READ_RETRIES; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 300 * attempt));
+      try {
+        chunk = new Uint8Array(await file.slice(offset, end).arrayBuffer());
+        break;
+      } catch (err) {
+        lastErr = err;
+        console.warn(`[read] ${file.name} @${offset} 失敗 (${attempt + 1}/${FILE_READ_RETRIES + 1}):`, err);
+      }
+    }
+    if (!chunk) throw new FileReadError(file, lastErr);
+    out.set(chunk, offset);
+    offset = end;
+    if (onProgress) onProgress(offset, total);
+  }
+  return out.buffer;
+}
+
 function isSpread() { return viewMode.value === 'spread'; }
 function isR2L() { return bindDir.value === 'R2L'; }
 function hasCover() { return coverCheck.checked; }
@@ -1743,7 +1785,17 @@ async function openPdfFile(file) {
   if (!file) return;
   currentFileHash = await generateFileHash(file);
   sessionLastRead = isBookmarkEnabled() ? (getBookmarkForFile(currentFileHash).lastRead || null) : null;
-  const buf = await file.arrayBuffer();
+  // NAS 等のネットワーク上のファイル対策でチャンク読み + リトライ (readFileToBuffer のコメント参照)
+  let buf;
+  try {
+    buf = await readFileToBuffer(file, (done, total) => setProgress(total ? (done / total) * 100 : 0));
+  } catch (err) {
+    console.error('File read error:', err);
+    showToast(`${file.name} を読み込めませんでした。NAS / ネットワークドライブの接続が切れている可能性があります (ローカルにコピーしてから開いてください)`, 6000);
+    return;
+  } finally {
+    setProgress(0);
+  }
   try { await loadPDF(buf, file.name); } catch (err) {
     if (/password/i.test(err.message)) { showToast('PDF を開けませんでした', 3000); return; }
     throw err;
