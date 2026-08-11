@@ -1095,8 +1095,17 @@ function hideLoading(el) {
 //      しか繋いでいない) ため、worker 内で読ませて失敗すると "展開中..." のまま永久に固まる
 //      → メインスレッドで読み切ってからメモリ上の File を渡せば、失敗を捕捉してエラー表示できる
 // あわせてチャンク読み + リトライにしてあるので、瞬断程度なら自動復帰する。
+//
+// リトライの効き方 (実測): 1回目の読み込みが 38% で失敗 → 開き直すと 38% まで一瞬で進んでその先で
+// また失敗 → 3回目で完走、という挙動になる。これは Windows の SMB クライアントキャッシュ (と NAS 側
+// のキャッシュ) に読み終えた分が残っていて、再読み込みではネットワークに出ずに返ってくるため。
+// つまり「読めた分は積み上がる」ので、**同じ offset から粘れば1回の open で完走できる**。
+// そのため: ①再試行回数を増やして待ち時間を指数的に伸ばす (SMB セッションの張り直しを待つ)
+//           ②失敗するたびに読み幅を半分に縮める (大きな読み出しほどタイムアウトしやすいため)
 const FILE_READ_CHUNK = 8 * 1024 * 1024;
-const FILE_READ_RETRIES = 3;
+const FILE_READ_MIN_CHUNK = 512 * 1024;
+const FILE_READ_BACKOFF = [300, 700, 1500, 3000, 5000, 8000]; // ms、要素数 = 再試行回数
+const FILE_READ_RETRIES = FILE_READ_BACKOFF.length;
 
 class FileReadError extends Error {
   constructor(file, cause) {
@@ -1106,31 +1115,47 @@ class FileReadError extends Error {
   }
 }
 
-// File をチャンク単位でメモリに読み切る。失敗したチャンクは FILE_READ_RETRIES 回まで再試行する。
+// File をチャンク単位でメモリに読み切る。失敗したチャンクは FILE_READ_RETRIES 回まで
+// 「待ち時間を伸ばしながら / 読み幅を縮めながら」再試行する (読めた分はやり直さない)。
+// onProgress(読めたバイト数, 全体, 再試行中なら 1..FILE_READ_RETRIES)
 async function readFileToBuffer(file, onProgress) {
   const total = file.size;
   const out = new Uint8Array(total);
   let offset = 0;
+  let chunkSize = FILE_READ_CHUNK;
   while (offset < total) {
-    const end = Math.min(offset + FILE_READ_CHUNK, total);
     let chunk = null, lastErr = null;
     for (let attempt = 0; attempt <= FILE_READ_RETRIES; attempt++) {
-      if (attempt > 0) await new Promise(r => setTimeout(r, 300 * attempt));
+      if (attempt > 0) {
+        // 回線が不安定なので、以降のチャンクも縮めたまま読み進める
+        chunkSize = Math.max(FILE_READ_MIN_CHUNK, Math.floor(chunkSize / 2));
+        if (onProgress) onProgress(offset, total, attempt);
+        await new Promise(r => setTimeout(r, FILE_READ_BACKOFF[attempt - 1]));
+      }
       try {
-        chunk = new Uint8Array(await file.slice(offset, end).arrayBuffer());
+        chunk = new Uint8Array(await file.slice(offset, Math.min(offset + chunkSize, total)).arrayBuffer());
         break;
       } catch (err) {
         lastErr = err;
-        console.warn(`[read] ${file.name} @${offset} 失敗 (${attempt + 1}/${FILE_READ_RETRIES + 1}):`, err);
+        console.warn(`[read] ${file.name} @${offset} 失敗 (${attempt + 1}/${FILE_READ_RETRIES + 1}, chunk ${Math.round(chunkSize / 1024)}KB):`, err);
       }
     }
     if (!chunk) throw new FileReadError(file, lastErr);
     out.set(chunk, offset);
-    offset = end;
-    if (onProgress) onProgress(offset, total);
+    offset += chunk.length;
+    if (onProgress) onProgress(offset, total, 0);
     await yieldToMain();
   }
   return out.buffer;
+}
+
+// 読み込み失敗時の案内。読み終えていた分は OS / NAS のキャッシュに残っているので、
+// 再試行すると前回失敗した地点まで一気に進み、その先へ食い込める (数回で完走することが多い)。
+function showFileReadErrorToast(file, onRetry) {
+  showClickableToast(
+    `${file.name} を読み込めませんでした。NAS / ネットワークドライブの接続が切れている可能性があります (タップで再試行 / 数回繰り返すと開けることがあります。駄目ならローカルにコピーしてから開いてください)`,
+    () => Promise.resolve().then(onRetry).catch(err => console.error('[read] 再試行に失敗:', err)),
+    10000);
 }
 
 // ネットワーク上かもしれない File をメモリ上の File に読み切り、あわせて ZIP のファイル名マップも
@@ -1140,10 +1165,14 @@ async function materializeFile(file, loadingEl) {
   const baseMsg = msgEl ? msgEl.textContent : '';
   const showPct = file.size > 4 * 1024 * 1024; // 小さいファイルは一瞬なので進捗を出さない
   try {
-    let buf = await readFileToBuffer(file, (done, total) => {
+    let buf = await readFileToBuffer(file, (done, total, attempt) => {
       const pct = total ? (done / total) * 100 : 0;
       setProgress(pct);
-      if (msgEl && showPct) msgEl.textContent = `${file.name} を読み込み中... ${Math.floor(pct)}%`;
+      // 再試行中は「止まっている」ように見えるので、その旨を出す (小さいファイルでも出す)
+      if (msgEl && (showPct || attempt)) {
+        const retry = attempt ? ` — 再試行中 ${attempt}/${FILE_READ_RETRIES}` : '';
+        msgEl.textContent = `${file.name} を読み込み中... ${Math.floor(pct)}%${retry}`;
+      }
     });
     const fnMap = buildFilenameMapFromBuffer(buf, file.name);
     const memFile = new File([buf], file.name, { type: file.type });
@@ -1154,7 +1183,6 @@ async function materializeFile(file, loadingEl) {
     if (msgEl) msgEl.textContent = baseMsg;
   }
 }
-
 
 // ---- Natural sort for archive filenames ----
 function naturalCompare(a, b) {
@@ -3271,7 +3299,7 @@ async function loadArchive(srcFile) {
   } catch (err) {
     console.error('Archive load error:', err);
     if (err instanceof FileReadError) {
-      showToast(`${srcFile.name} を読み込めませんでした。NAS / ネットワークドライブの接続が切れている可能性があります (もう一度開き直すと成功することがあります。駄目ならローカルにコピーしてから開いてください)`, 8000);
+      showFileReadErrorToast(srcFile, () => openFile(srcFile));
     } else {
       showToast(`展開エラー: ${err.message}`, 4000);
     }
@@ -3320,10 +3348,14 @@ async function openFile(file) {
     // NAS 等のネットワーク上のファイル対策でチャンク読み + リトライ (readFileToBuffer のコメント参照)
     let buf;
     try {
-      buf = await readFileToBuffer(file, (done, total) => setProgress(total ? (done / total) * 100 : 0));
+      buf = await readFileToBuffer(file, (done, total, attempt) => {
+        const pct = total ? (done / total) * 100 : 0;
+        setProgress(pct);
+        if (attempt) showToast(`読み込み再試行中 ${attempt}/${FILE_READ_RETRIES}... ${Math.floor(pct)}%`, 2000);
+      });
     } catch (err) {
       console.error('File read error:', err);
-      showToast(`${file.name} を読み込めませんでした。NAS / ネットワークドライブの接続が切れている可能性があります (もう一度開き直すと成功することがあります。駄目ならローカルにコピーしてから開いてください)`, 8000);
+      showFileReadErrorToast(file, () => openFile(file));
       return;
     } finally {
       setProgress(0);

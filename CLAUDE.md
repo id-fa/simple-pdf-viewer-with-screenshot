@@ -317,9 +317,10 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - **固まる理由 (ライブラリのバグ)**: `vendor/libarchive/libarchive.js` の `open()` は `new Promise((res, rej) => { this.client.open(this.file, cb(res)) })` と書かれていて **reject を一切繋いでいない**。worker 側の読み込みが失敗しても Promise が settle せず、`await Archive.open(file)` で永久に待つ。呼び出し側の try/catch では捕まえられない (コンソールの `Uncaught (in promise)` はこの捨てられた rejection)
 - **対策** (`readFileToBuffer()` / comic-viewer.html は `materializeFile()`):
   - **メインスレッドで自分でファイルを読み切ってから** libarchive / PDF.js に渡す。libarchive にはメモリ上の `File` を渡すので worker 側は実ファイルに触らない → 失敗を捕捉できて固まらない
-  - `file.slice()` による 8MB チャンク読み + チャンク単位で最大3回リトライ (300/600/900ms バックオフ)。SMB の瞬断程度なら自動復帰する
-  - 全チャンク失敗時は `FileReadError` を投げ、「NAS / ネットワークドライブの接続が切れている可能性があります (もう一度開き直すと成功することがあります。駄目ならローカルにコピーしてから開いてください)」とトースト表示。**失敗後に開き直すと通ることが多い** (Windows / NAS 側が SMB セッションを張り直すため) ので、リトライを最初の案内にしている
-  - 読み込み中は progress bar + オーバーレイに `{ファイル名} を読み込み中... N%` (4MB 超のときのみ)
+  - `file.slice()` による 8MB チャンク読み + チャンク単位で最大6回リトライ (`FILE_READ_BACKOFF` = 300/700/1500/3000/5000/8000ms)。**失敗するたびに読み幅を半分に縮め** (`FILE_READ_MIN_CHUNK` 512KB まで)、以降のチャンクも縮めたまま読み進める。大きな読み出しほど SMB でタイムアウトしやすいため
+  - **読めた分はやり直さない** (再試行は失敗した offset から)。これが効くのは、読み終えた分が Windows の SMB クライアントキャッシュ / NAS 側キャッシュに残っていて再読み込みがネットワークに出ないため。実測でも「1回目 38% で失敗 → 開き直すと 38% まで一瞬で進んでその先で失敗 → 3回目で完走」という**積み上がる**挙動になる。粘り強く再試行すれば 1 回の open で完走できる、というのがこのリトライ設計の根拠
+  - 全チャンク失敗時は `FileReadError` を投げ、`showFileReadErrorToast()` が**タップで再試行できるトースト**を出す (`showClickableToast`、10秒)。再試行はファイル選択ダイアログを開き直さず同じ `File` を再読み込みするので、キャッシュ済みの部分を一気に飛ばして続きから進める
+  - 読み込み中は progress bar + オーバーレイに `{ファイル名} を読み込み中... N%` (4MB 超のときのみ)。再試行中は `— 再試行中 N/6` を付けて「止まっていない」ことを示す (オーバーレイの無い PDF 側はトーストで表示)
 - **副次効果**: cbz/zip/epub はこれまで `buildFilenameMap` (メインスレッド) と libarchive worker で**同じファイルを2回フルリード**していたのを1回に削減。`buildFilenameMapFromBuffer()` が読み込み済みバッファを直接受ける (`buildFilenameMap` は入れ子アーカイブ用にラッパーとして残す)
 - **注意**: メモリ上の `File` を渡すので `loadArchive` の引数は `srcFile` (元の File) と `file` (メモリ上の File) を使い分ける。名前・サイズは同じなのでファイルハッシュ (しおり) は変わらない
 
