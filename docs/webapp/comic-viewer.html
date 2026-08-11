@@ -3271,7 +3271,7 @@ async function loadArchive(srcFile) {
   } catch (err) {
     console.error('Archive load error:', err);
     if (err instanceof FileReadError) {
-      showToast(`${srcFile.name} を読み込めませんでした。NAS / ネットワークドライブの接続が切れている可能性があります (ローカルにコピーしてから開いてください)`, 6000);
+      showToast(`${srcFile.name} を読み込めませんでした。NAS / ネットワークドライブの接続が切れている可能性があります (もう一度開き直すと成功することがあります。駄目ならローカルにコピーしてから開いてください)`, 8000);
     } else {
       showToast(`展開エラー: ${err.message}`, 4000);
     }
@@ -3323,7 +3323,7 @@ async function openFile(file) {
       buf = await readFileToBuffer(file, (done, total) => setProgress(total ? (done / total) * 100 : 0));
     } catch (err) {
       console.error('File read error:', err);
-      showToast(`${file.name} を読み込めませんでした。NAS / ネットワークドライブの接続が切れている可能性があります (ローカルにコピーしてから開いてください)`, 6000);
+      showToast(`${file.name} を読み込めませんでした。NAS / ネットワークドライブの接続が切れている可能性があります (もう一度開き直すと成功することがあります。駄目ならローカルにコピーしてから開いてください)`, 8000);
       return;
     } finally {
       setProgress(0);

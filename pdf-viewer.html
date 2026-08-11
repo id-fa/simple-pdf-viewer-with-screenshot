@@ -1791,7 +1791,7 @@ async function openPdfFile(file) {
     buf = await readFileToBuffer(file, (done, total) => setProgress(total ? (done / total) * 100 : 0));
   } catch (err) {
     console.error('File read error:', err);
-    showToast(`${file.name} を読み込めませんでした。NAS / ネットワークドライブの接続が切れている可能性があります (ローカルにコピーしてから開いてください)`, 6000);
+    showToast(`${file.name} を読み込めませんでした。NAS / ネットワークドライブの接続が切れている可能性があります (もう一度開き直すと成功することがあります。駄目ならローカルにコピーしてから開いてください)`, 8000);
     return;
   } finally {
     setProgress(0);
