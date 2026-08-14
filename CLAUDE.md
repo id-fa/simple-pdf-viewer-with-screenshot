@@ -493,7 +493,11 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
   - `?action=cover&path=...&w=320` — 表紙画像を配信 (下記「表紙画像」)
 - `file` / `cover` のパス検証は `lib_request_path()` に集約。検証に落ちたら `lib_fail()` が exit するので、戻り値は常に安全なパス
 - **パス検証は `realpath` 後の前方一致**。文字列の `..` 除去だけではシンボリックリンク経由で root 外に出られるため。`action=file` では basename だけでなく**途中のフォルダも**ドット始まりを弾く (`.hidden/book.cbz` を直接要求されるため。`tree` 側は走査時に弾いている)
-- ファイル名は UTF-8 (NFC) に正規化して返す。Windows 版 PHP の `scandir` は ANSI コードページを返すので、その環境では `fsEncoding: 'SJIS-win'` が必要 (未設定時は `tree` の `warnings` で案内する)。`action=file` は逆変換してから `realpath` する
+- ファイル名は UTF-8 (NFC) に正規化して返す。`fsEncoding` は「`scandir` が UTF-8 以外を返す環境」のための保険で、**既定の `''` のままが正しい**
+  - **Windows 版 PHP でも `''` でよい** (PHP 8.4 / Windows で実測)。PHP 7.1 以降は `default_charset=UTF-8` ならワイド文字 API を使うので `scandir` は UTF-8 を返す。ここで `'SJIS-win'` を指定すると**二重変換で文字化けし** (`漫画テスト.cbz` → `貍ｫ逕ｻ繝?せ繝?`)、しかも 0x86 等が `?` に潰れて非可逆なので `action=file` / `action=cover` が 404 になる (ユーザー報告 → 再現・修正済み)
+  - そのため `lib_to_utf8()` は **すでに妥当な UTF-8 なら変換しない** (`lib_is_utf8()`)。誤って `SJIS-win` を設定しても壊れない
+  - 逆方向も対称にしてある: `lib_resolve_request()` が **まず UTF-8 のまま `realpath` を試し、外れたときだけ `lib_from_utf8()` で変換して再試行**する (`action=file` / `action=cover` 共通)
+  - `'SJIS-win'` を設定するのは、一覧が化けるか `tree` の `warnings` に「UTF-8 として解釈できないファイル名を N 件除外しました」が出たときだけ
 - macOS (NFD) 対策として `lib_resolve()` は realpath 失敗時に FORM_D で再試行する
 
 #### 表紙画像 (サイドカー方式、自動生成しない)

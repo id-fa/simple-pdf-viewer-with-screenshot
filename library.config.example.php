@@ -55,9 +55,12 @@ return [
     // 既定は false (リンク先の実体が root 内にある場合のみ true を検討)。
     'followSymlinks' => false,
 
-    // ファイルシステムのファイル名エンコーディング。
-    // Linux / macOS / NAS はほぼ UTF-8 なので '' のままでよい。
-    // Windows 版 PHP は scandir が ANSI コードページを返すため、日本語ファイル名があるなら
-    // 'SJIS-win' を指定する (指定しないと tree の warnings に案内が出る)。
+    // ファイルシステムのファイル名エンコーディング。**基本は '' のまま**。
+    // Linux / macOS / NAS は UTF-8。Windows 版 PHP も 7.1 以降は default_charset=UTF-8 なら
+    // scandir が UTF-8 を返す (PHP 8.4 / Windows で実測) ので '' で正しく動く。
+    // 'SJIS-win' を指定するのは「一覧のファイル名が化ける」もしくは tree の warnings に
+    // 「UTF-8 として解釈できないファイル名を N 件除外しました」が出たときだけ。
+    // (念のため library.php 側で「既に UTF-8 なら変換しない」ようにしてあるので、
+    //  誤って指定しても化けないが、必要が無いなら空のままが確実)
     'fsEncoding' => '',
 ];

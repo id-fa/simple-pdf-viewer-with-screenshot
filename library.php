@@ -110,18 +110,28 @@ function lib_norm_sep(string $p): string
     return ($p !== '/') ? rtrim($p, '/') : $p;
 }
 
+/** すでに妥当な UTF-8 か (mbstring 非搭載環境では判定できないので true 扱い) */
+function lib_is_utf8(string $s): bool
+{
+    return !function_exists('mb_check_encoding') || mb_check_encoding($s, 'UTF-8');
+}
+
 /**
  * ファイルシステムのバイト列 → クライアントへ返す UTF-8 (NFC)。
- * Windows の PHP は scandir が ANSI コードページ (日本語環境なら CP932) を返すため、
- * その場合は設定の 'fsEncoding' で変換する。
+ * 'fsEncoding' は「scandir が UTF-8 以外のバイト列を返す」環境のための保険。
+ *
+ * 重要: すでに UTF-8 のときは変換しない。PHP 7.1+ の Windows は default_charset が
+ * UTF-8 なら scandir も UTF-8 を返すため、'SJIS-win' を無条件に適用すると二重変換で
+ * 文字化けする (実測: PHP 8.4 / Windows で 漫画テスト.cbz → 貍ｫ逕ｻ繝?せ繝?。
+ * しかも 0x86 等が '?' に潰れて非可逆なので、そのままでは action=file も 404 になる)。
  */
 function lib_to_utf8(string $s, string $fsEncoding): ?string
 {
-    if ($fsEncoding !== '' && function_exists('mb_convert_encoding')) {
+    if ($fsEncoding !== '' && !lib_is_utf8($s) && function_exists('mb_convert_encoding')) {
         $conv = @mb_convert_encoding($s, 'UTF-8', $fsEncoding);
         if (is_string($conv) && $conv !== '') $s = $conv;
     }
-    if (function_exists('mb_check_encoding') && !mb_check_encoding($s, 'UTF-8')) {
+    if (!lib_is_utf8($s)) {
         return null; // 文字化けしたまま返すと検索もしおりハッシュも壊れるので落とす
     }
     if (class_exists('Normalizer')) {
@@ -140,6 +150,21 @@ function lib_from_utf8(string $s, string $fsEncoding): string
         if (is_string($conv) && $conv !== '') return $conv;
     }
     return $s;
+}
+
+/**
+ * クライアントから来た UTF-8 の相対パスを実パスに解決する。
+ * FS が UTF-8 の環境で 'fsEncoding' が設定されていても開けるよう、
+ * まず UTF-8 のまま試し、外れたときだけ 'fsEncoding' に変換して再試行する
+ * (lib_to_utf8 が「既に UTF-8 なら変換しない」ので、こちら側も同じ非対称性に合わせる)。
+ */
+function lib_resolve_request(string $rootReal, string $rel, array $cfg)
+{
+    $full = lib_resolve($rootReal, $rel);
+    if ($full === false && $cfg['fsEncoding'] !== '') {
+        $full = lib_resolve($rootReal, lib_from_utf8($rel, $cfg['fsEncoding']));
+    }
+    return $full;
 }
 
 /**
@@ -469,9 +494,10 @@ if ($action === 'tree') {
     $warnings = [];
     if ($stat['badName'] > 0) {
         $warnings[] = "UTF-8 として解釈できないファイル名を {$stat['badName']} 件除外しました。"
-            . "Windows サーバーでは library.config.php の 'fsEncoding' に 'SJIS-win' を設定してください。"
+            . "library.config.php の 'fsEncoding' に実際のエンコーディング (日本語 Windows なら 'SJIS-win') を設定してください。"
             . " / Skipped {$stat['badName']} file name(s) that are not valid UTF-8."
-            . " On Windows servers, set 'fsEncoding' to 'SJIS-win' in library.config.php.";
+            . " Set 'fsEncoding' in library.config.php to the encoding your filesystem actually uses"
+            . " (e.g. 'SJIS-win' on Japanese Windows).";
     }
     if ($stat['unreadable'] > 0) {
         $warnings[] = "読み取れないフォルダが {$stat['unreadable']} 件ありました (権限を確認してください)。"
@@ -500,7 +526,7 @@ function lib_request_path(string $rootReal, array $cfg): string
     $rel = isset($_GET['path']) ? (string)$_GET['path'] : '';
     if ($rel === '') lib_fail(400, 'path が指定されていません / No path was given');
 
-    $full = lib_resolve($rootReal, lib_from_utf8($rel, $cfg['fsEncoding']));
+    $full = lib_resolve_request($rootReal, $rel, $cfg);
     if ($full === false || !is_file($full)) lib_fail(404, 'ファイルが見つかりません / File not found');
 
     // ドットで始まる名前は tree に載せていないので file / cover でも配信しない。
