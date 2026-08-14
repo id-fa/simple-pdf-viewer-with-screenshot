@@ -1,0 +1,62 @@
+# Basic 認証を「サーバー設定側」で掛ける場合のサンプル (Apache)。
+#
+# ★ 通常は不要です。library.config.php の 'auth' に ID / パスワードを書けば
+#   library.php 自身が Basic 認証を行うので、サーバー設定なしで済みます。
+#   そちらのほうが認証の影響範囲が library.php に閉じるため安全です。
+#   このファイルは「サーバー設定で掛けたい」場合の参考です。
+#
+# ★重要: サーバー設定で掛ける場合も、認証は library.php にだけ掛けること。
+#   アプリ全体 (/ 配下) に掛けると、Service Worker の install 時の PRECACHE 取得が 401 で
+#   静かに失敗し (sw.js は catch して warn するだけ)、PWA のオフライン動作が壊れます。
+#
+# .htpasswd の作り方:
+#   htpasswd -c /path/to/.htpasswd yourname
+# .htpasswd は DOCUMENT_ROOT の外に置いてください。
+
+<Files "library.php">
+  AuthType Basic
+  AuthName "Library"
+  AuthUserFile /path/to/.htpasswd
+  Require valid-user
+</Files>
+
+# 設定ファイルは念のため直接読めないようにしておく
+<FilesMatch "^library\.config(\.example)?\.php$">
+  Require all denied
+</FilesMatch>
+
+
+# ------------------------------------------------------------------
+# library.config.php の 'auth' を使う場合で、かつ Apache + CGI / FastCGI / php-fpm の場合
+#
+# Apache は CGI 環境から Authorization ヘッダーを意図的に落とすため、そのままでは
+# $_SERVER['PHP_AUTH_USER'] も HTTP_AUTHORIZATION も PHP に届かず、正しいパスワードを
+# 入れても通らない (認証ダイアログが無限に出続ける) 状態になります。
+# 次のどちらかを .htaccess に書いてヘッダーを通してください。
+#
+#   # Apache 2.4.13 以降
+#   <Files "library.php">
+#     CGIPassAuth On
+#   </Files>
+#
+#   # それ以前 / CGIPassAuth が使えない場合
+#   SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+#
+# mod_php / nginx + php-fpm / PHP ビルトインサーバーでは何もしなくても動きます。
+# ------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------
+# nginx でサーバー設定側の認証を使う場合 (.htaccess は効きません)
+#
+#   location = /library.php {
+#       auth_basic           "Library";
+#       auth_basic_user_file /path/to/.htpasswd;
+#       include              fastcgi_params;
+#       fastcgi_pass         unix:/run/php/php-fpm.sock;
+#       fastcgi_param        SCRIPT_FILENAME $document_root$fastcgi_script_name;
+#       fastcgi_buffering    off;   # Range 配信を素通しさせる
+#   }
+#
+#   location ~ ^/library\.config.*\.php$ { deny all; }
+# ------------------------------------------------------------------

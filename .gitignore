@@ -1,0 +1,2 @@
+# library.php のローカル設定 (公開フォルダの絶対パスが入るのでコミットしない)
+library.config.php

@@ -8,6 +8,9 @@
 - `comic-viewer.html` — 汎用コミックビューア (PDF + CBZ/CBR/CB7/EPUB対応)
 - `sw.js` — Service Worker (プリキャッシュ + COOP/COEP ヘッダー付与)
 - `manifest.webmanifest` — PWA マニフェスト
+- `library.php` — ライブラリ参照 API (サーバー設置時のみ。単一ファイル / 詳細は「ライブラリ参照機能」)
+- `library.config.example.php` — `library.php` の設定サンプル (実体の `library.config.php` は .gitignore 済み)
+- `library.htaccess.example` — Basic 認証のサンプル (Apache / nginx)
 - `vendor/` — ベンダー化された外部ライブラリ (CDN不要)
   - `pdfjs/pdf.min.mjs` `pdf.worker.min.mjs` — PDF.js v4.9.155
   - `pdfjs/cmaps/*.bcmap` — CJK (日中韓) 用の CMap データ (169 ファイル、~1.5MB)。フォント未埋め込み CJK PDF の文字解決に使用。on-demand ロード (PRECACHE 非対象 / 初回ネット使用時に `sw.js` の fetch ハンドラが自動キャッシュ)
@@ -208,6 +211,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - E キー: EPUB 構造解析を実行 (comic-viewer.html のみ、詳細は「EPUB 構造解析」セクション)
 - T キー: EPUB 目次 (TOC) サイドバーの開閉 (comic-viewer.html のみ、構造解析後に有効)
 - R キー: EPUB 本文リーダーを開く (comic-viewer.html のみ、構造解析後に有効。リーダー表示中は ←/→ が文書送り)
+- O キー: サーバーのライブラリを開く (`library.php` 設置時のみ有効。**ファイル未読み込みでも使うので `totalPages === 0` / `!pdfDoc` ガードより前に置くこと**。詳細は「ライブラリ参照機能」)
 - Escape: UI再表示 (UI表示中に2秒以内にもう一度押すと `location.reload()` でファイルを閉じてドロップ画面に戻る。1回目押下時は「もう一度 ESC で閉じる」トーストを2秒表示。モーダル (ヘルプ / GIFオーバーレイ / パスワード入力 / EPUB 本文リーダ) が開いているときはモーダル閉じが優先)
 - ヘッダー左上のタイトル (`#appTitle`) タップ: `confirm()` ダイアログで確認の上 `location.reload()`。PWA でキーボード無し / 更新ボタン無しの環境からも明示的にファイルを閉じる手段
 - 画面左右1/3タップ: ページ送り、中央1/3タップ: UI表示/非表示トグル
@@ -466,6 +470,8 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - `viewerScrollGapless` — Scroll モードの Gapless チェックボックス状態 (`'1'` で ON、未設定で OFF)
 - `vipsEnabled` — wasm-vips 有効化フラグ (HQ engine トグル)
 - `viewerEpubReaderWide` — EPUB 本文リーダの幅 (`'1'` で広い、未設定/`'0'` で標準)
+- `viewerLibraryView` — ライブラリの表示 (`'grid'` でサムネイル、未設定/`'list'` でリスト)
+- `libraryAvailable` / `libraryUnavailableAt` — ライブラリ機能の利用可否キャッシュ (詳細は「ライブラリ参照機能」)
 - `viewerFilterPresets` — Filter プリセット 3 スロット
 - ブックマーク系キー (ファイルハッシュ → bookmark オブジェクト)
 
@@ -475,6 +481,66 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - Escape または背景クリックで閉じる
 - pdf-viewer.html はテキストモード操作の説明も含む
 
+### ライブラリ参照機能 (`library.php` + 両ビューア共通の Library モーダル)
+サーバーに設置したときだけ有効になる「サーバー上の指定フォルダを一覧・検索して開く」機能。ローカルファイルを開く従来の経路は一切変更していない。
+
+#### サーバー側 (`library.php`)
+- 設定は `library.config.php` (`library.config.example.php` をコピー、`.gitignore` 済み)。`root` / `label` / `auth` / `exts` / `maxEntries` / `maxDepth` / `followSymlinks` / `fsEncoding`
+- エンドポイントは4つだけ (すべて GET):
+  - `?action=ping` — 疎通確認 (`{ok:true, root, exts}`)
+  - `?action=tree` — **ルート以下の対象ファイルを1回で全件返す**。数百件想定なのでページングも検索 API も持たない。フォルダ構造は `path` からクライアント側で導出する (空フォルダは出ない)。表紙があるエントリにだけ `cover: true` が付く
+  - `?action=file&path=...` — 本体をストリーム配信。Range (206) 対応、`Cache-Control: no-store`
+  - `?action=cover&path=...&w=320` — 表紙画像を配信 (下記「表紙画像」)
+- `file` / `cover` のパス検証は `lib_request_path()` に集約。検証に落ちたら `lib_fail()` が exit するので、戻り値は常に安全なパス
+- **パス検証は `realpath` 後の前方一致**。文字列の `..` 除去だけではシンボリックリンク経由で root 外に出られるため。`action=file` では basename だけでなく**途中のフォルダも**ドット始まりを弾く (`.hidden/book.cbz` を直接要求されるため。`tree` 側は走査時に弾いている)
+- ファイル名は UTF-8 (NFC) に正規化して返す。Windows 版 PHP の `scandir` は ANSI コードページを返すので、その環境では `fsEncoding: 'SJIS-win'` が必要 (未設定時は `tree` の `warnings` で案内する)。`action=file` は逆変換してから `realpath` する
+- macOS (NFD) 対策として `lib_resolve()` は realpath 失敗時に FORM_D で再試行する
+
+#### 表紙画像 (サイドカー方式、自動生成しない)
+- 命名規則は **`<元のファイル名><coverSuffix>.<画像拡張子>`** (既定 `vol01.cbz.coverimage.webp`)。設定で `coverSuffix` / `coverExts` を変更可
+  - **元のファイル名を丸ごと残す**のが要点。`vol01.cbz` と `vol01.pdf` が同居しても衝突せず、実拡張子があるので Content-Type を推測せずに済み、ファイルマネージャでも元ファイルの真下に並ぶ
+- `lib_walk()` はディレクトリごとに `小文字名 → 実際の名前` の索引を作り、そこから表紙の有無を判定する。**stat を撃たない**のが重要 (ネットワークストレージで数百件 × 6 拡張子の `is_file()` を撃つと目に見えて遅くなる)
+- `action=cover` が受け取る `path` は**本のパス**で、表紙のファイル名はサーバー側で導出する。クライアントから画像パスを受け取らないので、表紙経由で任意ファイルを読ませる余地が無い。加えて表紙画像自体の拡張子 (`.png` 等) は `exts` に無いので `file` でも `cover` でも直接は取れない
+- `w=` があり GD が使えて元画像がそれより大きいときだけ縮小する (`lib_resize_image()`、WebP 優先 / 無ければ JPEG)。GD 無し・未対応形式・4000万画素超は原本をそのまま返す
+- **表紙だけはキャッシュを許可する** (`Cache-Control: private, max-age=604800` + ETag)。本体は `no-store` だが、表紙まで毎回取り直すとサムネイル表示のたびに全件再取得になる。SW は `library.php` を素通しするので、ここで指定したヘッダーがそのままブラウザキャッシュに効く。ETag には `w` も混ぜてあるのでサイズ違いは別エントリになる
+
+#### Basic 認証 (`lib_require_auth()`)
+設定の `'auth' => ['user'=>..., 'pass'=>..., 'realm'=>...]` があるときだけ有効 (既定 `null` = 認証なし)。**サーバー設定が不要で、認証の影響範囲が `library.php` に閉じるのが利点** — `.htaccess` でアプリ全体に掛けてしまうと SW のプリキャッシュが 401 で静かに壊れるが、この方式ならその事故が構造的に起きない。設定読み込み直後・ファイルに触れる前に呼ぶ。
+
+- `header('WWW-Authenticate: ...')` を送ると **PHP が自動でステータスを 401 にする** (`main/SAPI.c` の `sapi_header_op` の特殊処理、PHP 8.4 で実測確認済み)。依存したくないので `http_response_code(401)` も明示している
+- **`$_SERVER['PHP_AUTH_USER']` は SAPI 依存**。mod_php / nginx+php-fpm / ビルトインサーバーでは埋まるが、**Apache + CGI / FastCGI / php-fpm では Apache が `Authorization` を CGI 環境から意図的に落とすため埋まらない**。放置すると「正しいパスワードを入れても通らず認証ダイアログが無限に出る」という分かりにくい症状になる。そのため `lib_basic_credentials()` が `HTTP_AUTHORIZATION` / `REDIRECT_HTTP_AUTHORIZATION` からの base64 復号にフォールバックする (それでも届かない環境向けに `CGIPassAuth On` / `SetEnvIf` の案内を `library.htaccess.example` に記載)
+- 比較は `hash_equals()` (平文でもタイミング差を出さない)。`pass` が `$` 始まりなら `password_hash()` 済みとみなして `password_verify()` で照合する
+- 401 のボディは JSON。クライアントは status で先に判定するので実際には使わないが、curl 等から見たときのために揃えてある
+- **クライアント側の挙動**: 同一オリジンの `fetch` に対して Chrome はネイティブの認証ダイアログを出し (実測: 401 を受けた fetch は pending のままダイアログ待ちになる)、入力後は透過的に成功する。以降は資格情報がキャッシュされ自動送信される。キャンセルされた場合は 401 が fetch に届き `libFetchJson` / `libDownload` が「ライブラリの認証に失敗しました」を出す。**起動時に probe を投げない設計**なのは、これを起動直後に出さないため
+
+#### ⚠️ Service Worker の除外 (必須)
+`sw.js` の fetch ハンドラ冒頭で `library.php` を **`return` して素通し**している。理由は2つあり、どちらも致命的:
+1. キャッシュ参照が `cache.match(req, { ignoreSearch: true })` なので、`?action=tree` と `?action=file` が **`library.php` という同一キーに衝突**する (一覧を要求したのに本の中身が返る)
+2. 開いた本が丸ごと Cache Storage に永久保存され容量が際限なく増える
+
+#### クライアント側 (両ビューアで同一コード)
+- 差分は先頭2行だけ: `LIB_ACCEPT` (comic は全形式 / pdf は `/\.pdf$/i`) と `libOpenDownloaded` (`openFile` / `openPdfFile`)。**片方を直したらもう片方にも同じ差分を当てること**
+- 取得した Blob を `new File([blob], base, {lastModified})` に包んで既存の `openFile()` / `openPdfFile()` に渡すだけ。以降は通常のローカルファイルと完全に同じ経路 (PDF / アーカイブ判定・しおり・EPUB 解析・フィルタすべてそのまま動く)。メモリ上の File なので `readFileToBuffer` のリトライは即成功する
+- `libDownload()` は転送中断時に **Range で受信済みの続きから再開**する (`LIB_BACKOFF`)。Range を投げたのに 200 が返る (サーバーが部分取得非対応) 場合はバッファを捨てて最初からやり直す
+- **既読バッジ**: しおりのハッシュが `ファイル名|サイズ` なので、`tree` の `size` から一覧描画前に既読状態を引ける (`libComputeReadState`)。ローカルで開いた同じファイルのしおりとそのまま共有される
+- **表示切替** (`libView`、localStorage `viewerLibraryView`): リスト ⇄ サムネイル (グリッド)。`libRender()` が `libView` で分岐して行 / タイルを作る。グリッドの `<img>` は `loading="lazy"` なので画面外のタイルは取りに行かない
+- **表紙プレビュー** (`libAttachPreview()`): `cover: true` の項目にだけ仕込む。マウスは `mouseenter` から 320ms 遅らせて出す (一覧を横切っただけで出ないように)、`mousemove` で追従。タッチは 450ms のロングタップで画面中央に大きく出す
+  - ロングタップ後に指を離すと `click` が飛んでファイルが開いてしまうので、`libSuppressClick` を立てて `libRender()` 内の `openEntry()` が握り潰す。`touchstart` のたびに false に戻す
+  - `touchmove` が 12px を超えたらスクロール操作とみなしてロングタップを取り消す
+  - CSS で `user-select: none` / `-webkit-touch-callout: none` を当て、OS のテキスト選択・コールアウトが割り込まないようにする
+  - 表紙が消えている等で `<img>` が `error` になったら、そのエントリの `cover` を落として以後は出さない (グリッドは拡張子プレースホルダに差し替える)
+  - リストのアイコンは表紙があれば 🖼 / なければ 📄。ホバーで見られることの目印を兼ねる
+- **利用可否の判定**: 起動時の probe はしない (Basic 認証のダイアログが起動直後に出てしまうため)。ヘッダーの `Library` ボタンは常時表示し、初回クリックで 404 / 503 / **JSON でないレスポンス** (PHP が動いていないサーバーが `library.php` のソースをそのまま 200 で返すケース) を踏んだら `libraryUnavailableAt` を localStorage に記録して24時間だけ UI を隠す。後から設置されれば自動的に復活する。dropzone の導線は「一度つながった実績がある」(`libraryAvailable`) ときだけ出す
+- **`?lib=<相対パス>`**: 起動時に自動オープン。**URL には書き戻さない** — `?lib=` が残っていると ESC 2回 (`location.reload()`) でファイルを閉じたつもりが再び開いてしまうため、`?share=1` と同様に `history.replaceState` で即座に取り除く。launchQueue / share_target が先に走った場合は `window.__libSkipAuto` で抑止する
+- **`O` キー**: ファイル未読み込みでも使うので、keydown ハンドラの `totalPages === 0` / `!pdfDoc` ガードより**前**に置く。モーダルが開いている間は Escape で閉じるだけにして、絞り込み入力を邪魔しない
+
+#### 仕様上の限界 (ドキュメントに明記済み)
+- `root` を DOCUMENT_ROOT 外に置けば直リンク URL が存在しなくなるので、ブラウザからの直接ダウンロードは不可能にできる
+- ただし API は HTTP なので **curl で直接叩くのは防げない** (Referer / Sec-Fetch-* は偽装可能)。制限したいなら Basic 認証等が必須
+- 表示できたファイルは既存の Save 機能で保存できる。DRM ではない
+- 認証は `library.config.php` の `'auth'` を使うのが既定の推奨 (上記)。`.htaccess` 等サーバー設定側で掛ける場合は **`library.php` にのみ掛ける**。アプリ全体に掛けると SW の `PRECACHE_URLS` 取得が 401 で静かに失敗し (`sw.js` は catch して warn するだけ)、オフライン動作が壊れる
+- Basic 認証は資格情報を毎リクエスト base64 で送るだけなので、公開するなら HTTPS 必須
+
 ### 関数
 - `getSpreadPages(pageNum)` — スプレッド構成を返す ([left, right] or [single])
 - `canonicalPage(pageNum)` — ページ番号をペアの先頭に正規化
@@ -483,11 +549,12 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 ## PWA / Service Worker
 
 ### `sw.js`
-- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v29`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v36`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
 - **`SHARE_CACHE`**: `share-stash-v1` — Web Share Target で受信したファイルを一時保存する専用キャッシュ (activate 時も削除対象外)
 - **`PRECACHE_URLS`**: インストール時に一括取得するリソース (HTML 2種、vendor/ 配下全ファイル、manifest、icons)。`fetch(url, { cache: 'reload' })` でブラウザキャッシュをバイパス
 - **`activate`**: `CACHE_NAME` と `SHARE_CACHE` 以外の旧キャッシュを削除し `self.clients.claim()`
 - **fetch 戦略**: 同一オリジン GET に対してのみ cache-first。キャッシュヒット時も `withCoiHeaders()` で COOP/COEP/CORP ヘッダーを付与してから返す。キャッシュミスはネットワーク取得＋成功時は自動キャッシュ
+- **`library.php` は除外 (必須)**: fetch ハンドラ冒頭で `return` して素通しする。`ignoreSearch: true` のせいで `?action=tree` と `?action=file` が同一キーに衝突し、かつ開いた本が全部キャッシュに溜まるため (詳細は「ライブラリ参照機能」)
 - **`handleShareTarget(request)`**: `POST` + `comic-viewer.html` 宛リクエストを傍受。`formData.getAll('file')` したファイルを `SHARE_CACHE` に `/__share__/{timestamp}-{i}` キーで保存、meta.json にファイル名/MIME/サイズを記録、`./comic-viewer.html?share=1` へ 303 リダイレクト
 - **オフライン時**: キャッシュされていない同一オリジンリソースは 503 "Offline" を返す
 - **外部オリジン**: `respondWith` しないのでブラウザのデフォルト挙動 (PWAでは通常発生しない)
@@ -525,7 +592,11 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 
 ## docs/webapp/
 GitHub Pages 配信用の同期コピー。ルートと同じ構成 (HTML / sw.js / manifest / vendor / icons) を持つ。
-ルートに変更を加えたら docs/webapp/ にも同期が必要 (HTMLは一部 diff あり: Google Analytics の gtag が入っている)。
+ルートに変更を加えたら docs/webapp/ にも同期が必要。HTML の diff は**次の2箇所だけ**なので、ルートのファイルをコピーして再適用するのが確実:
+1. `<title>` の末尾に ` - id-fa/simple-pdf-viewer-with-screenshot`
+2. `</style>` と `</head>` の間に Google Analytics の gtag ブロック
+
+`library.php` / `library.config*.php` は **docs/webapp/ にコピーしない**。GitHub Pages では PHP が動かず、置いてもソースがそのまま配信されるだけ。置かなければ 404 になり、クライアント側が「未設置」と判定して Library の UI を自動的に隠す。
 
 ## 開発規約
 - Vanilla JS のみ、フレームワーク不使用

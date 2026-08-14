@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pdf-viewer-v34';
+const CACHE_NAME = 'pdf-viewer-v36';
 const SHARE_CACHE = 'share-stash-v1';
 const PRECACHE_URLS = [
   './',
@@ -87,6 +87,12 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (req.method !== 'GET') return;
+
+  // ライブラリ API はキャッシュに触れさせず素通しする。理由が2つある:
+  //   1. 下の cache.match は ignoreSearch: true なので ?action=tree と ?action=file が
+  //      library.php という同一キーに衝突する (一覧を要求したのに本の中身が返る)
+  //   2. 開いた本が丸ごと Cache Storage に永久保存されて容量が際限なく増える
+  if (url.pathname.endsWith('/library.php')) return;
 
   event.respondWith((async () => {
     const cache = await caches.open(CACHE_NAME);

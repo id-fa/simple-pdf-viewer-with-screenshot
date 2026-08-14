@@ -14,6 +14,9 @@ pdf-viewer-with-screenshot/
 ├── comic-viewer.html      # 汎用ビューア / Universal viewer (PDF + CBZ/CBR/CB7/EPUB)
 ├── sw.js                  # Service Worker (precache + COOP/COEP)
 ├── manifest.webmanifest   # PWA manifest
+├── library.php            # ライブラリ参照 API (任意) / Library API (optional, server install)
+├── library.config.example.php   # library.php の設定サンプル / Config sample
+├── library.htaccess.example     # Basic 認証のサンプル / Basic auth sample
 ├── vendor/                # Vendored libraries (no CDN required)
 │   ├── pdfjs/             #   PDF.js v4.9.155
 │   ├── pica/              #   Pica.js v10.0.2
@@ -152,6 +155,7 @@ Open `http://localhost:8000/comic-viewer.html` in your browser.
 | `E` キー | EPUB 構造解析 (ページ順の修正) / Analyze EPUB structure (fix page order) |
 | `T` キー | EPUB 目次の開閉 / Toggle EPUB table of contents |
 | `R` キー | EPUB 本文テキストを表示 / Open the EPUB text reader |
+| `O` キー | サーバーのライブラリを開く / Browse the server library |
 | `Escape` | UI再表示 / Show UI |
 | 左右スワイプ | ページ送り (スマホ対応) / Page navigation (touch) |
 
@@ -241,6 +245,78 @@ Append `?vips=1` to the URL to enable [wasm-vips](https://www.npmjs.com/package/
 PDFにアノテーションコメントがある場合、左下にフローティングボタン (💬) が表示されます。クリックでモーダル表示。
 
 When a PDF contains annotation comments, a floating button (💬) appears. Click to view in a modal grouped by page.
+
+### ライブラリ参照 (サーバー設置時のみ) / Server Library (self-hosted only)
+
+サーバーに設置して使う場合、サーバー上の指定フォルダを一覧・検索して直接開けます。`library.php` を置いていないサーバーや GitHub Pages 版では、この UI は自動的に隠れます。
+
+When self-hosted, you can browse and open files from a folder on the server. The UI hides itself automatically on servers without `library.php` (including the GitHub Pages build).
+
+**セットアップ / Setup**
+
+1. `library.config.example.php` を `library.config.php` にコピーし、`'root'` に公開したいフォルダの絶対パスを書く
+2. インターネットに公開するなら `'auth'` に ID / パスワードを書く（サーバー設定は不要）
+
+```php
+// library.config.php
+return [
+    'root'  => '/srv/library',   // DOCUMENT_ROOT の外でよい / may live outside DOCUMENT_ROOT
+    'label' => 'My Library',
+    // Basic 認証 (null なら認証なし) / Basic auth (null = disabled)
+    'auth'  => ['user' => 'yourname', 'pass' => 'yourpassword'],
+];
+```
+
+`'pass'` には `password_hash()` の出力も書けます（`$2y$` / `$argon2` で始まる文字列はハッシュとみなして `password_verify` で照合）。
+
+```bash
+php -r "echo password_hash('yourpassword', PASSWORD_DEFAULT), PHP_EOL;"
+```
+
+You can also put a `password_hash()` digest in `'pass'` instead of a plaintext password.
+
+**使い方 / Usage**
+
+| 操作 / Input | 動作 / Action |
+|------|------|
+| ヘッダーの `Library` ボタン / `O` キー | ライブラリを開く / Open the library |
+| パンくず・フォルダ行 | フォルダ移動 (設定フォルダより上には出られない) / Navigate folders (cannot escape the configured root) |
+| 検索ボックス | インクリメンタルサーチ / Incremental search |
+| 「サブフォルダも」 | ルート以下を横断検索 / Search across all subfolders |
+| 並び順 + ▲▼ | 名前 (自然順) / 更新日時 / サイズ / Sort by name (natural), date, or size |
+| ☰ リスト ⇄ ▦ サムネイル | 表示形式の切替 (次回も維持) / Toggle list and thumbnail view (persisted) |
+| マウスオーバー / ロングタップ | 表紙画像を拡大プレビュー / Preview the cover image |
+| `?lib=サブフォルダ/a.cbz` | 起動時に指定ファイルを自動で開く / Open a file directly on startup |
+
+**表紙画像 / Cover Images**
+
+表紙は**事前に用意された画像ファイルがあるものだけ**表示します（自動生成はしません）。元のファイル名の後ろに `.coverimage.<拡張子>` を付けた画像を隣に置いてください。
+
+Covers are shown only when a prepared image file exists — nothing is generated automatically. Place an image next to the book, named after the book plus `.coverimage.<ext>`.
+
+```
+Manga/SeriesA/vol01.cbz                    ← 本 / the book
+Manga/SeriesA/vol01.cbz.coverimage.webp    ← その表紙 / its cover
+```
+
+- 元のファイル名を丸ごと残すので、`vol01.cbz` と `vol01.pdf` が同居しても衝突しません / Keeping the full original name avoids collisions between same-named files with different extensions
+- 対応形式は `webp` / `avif` / `png` / `jpg` / `jpeg` / `gif`。命名規則は `library.config.php` の `coverSuffix` / `coverExts` で変更できます / The suffix and accepted extensions are configurable
+- サムネイル用の縮小画像を別途用意する必要はありません。サーバーに GD があれば表示サイズに合わせて自動的に縮小して配信し、ブラウザにキャッシュさせます / No separate thumbnails needed — the server downscales on the fly (when GD is available) and lets the browser cache the result
+- リスト表示では表紙があるファイルのアイコンが 🖼 になります / In list view, files with a cover show a 🖼 icon
+
+- しおりを有効にしていると、一覧に既読ページのバッジ (`p.42`) が出ます。しおりは「ファイル名 + サイズ」で識別するので、同じファイルをローカルから開いたときのしおりとそのまま共有されます / With bookmarks enabled, rows show a read-progress badge; bookmarks are keyed by name + size, so they are shared with the same file opened locally
+- 転送が途中で切れた場合は Range リクエストで受信済みの続きから再開します / Interrupted transfers resume from where they stopped via Range requests
+
+**制限事項 / Limitations**
+
+- 参照できるのは設定した `root` 以下だけです (シンボリックリンク経由の脱出も `realpath` で塞いでいます) / Only files under the configured `root` are reachable; symlink escapes are blocked via `realpath`
+- `root` を DOCUMENT_ROOT の外に置けば、直リンク用の URL が存在しないので **ブラウザから URL を直打ちしてのダウンロードは不可能** になります / Placing `root` outside DOCUMENT_ROOT makes direct-URL downloads impossible
+- ただし API 自体は HTTP なので、**curl 等で直接叩くのを防ぐことはできません**。アクセスを制限したい場合は Basic 認証等が必須です / The API is plain HTTP, so it cannot distinguish the app from `curl`; use Basic auth if access must be restricted
+- 表示できたファイルは既存の保存機能でダウンロードできます。DRM ではありません / Anything viewable can be saved with the existing export buttons — this is not DRM
+- Basic 認証は資格情報を毎リクエスト base64 で送るだけなので、公開するなら **HTTPS 必須**です / Basic auth just base64-encodes credentials on every request, so **HTTPS is required** for public deployments
+- 認証を有効にすると、ライブラリを最初に開いたタイミングでブラウザ標準の認証ダイアログが出ます（以降は自動送信）/ With auth enabled, the browser prompts once when the library is first opened, then sends credentials automatically
+- `.htaccess` 等サーバー設定側で認証を掛ける場合は、**`library.php` にだけ掛けてください。** アプリ全体に掛けると Service Worker のプリキャッシュが 401 で失敗し、PWA のオフライン動作が壊れます / If you use server-side auth instead, **apply it to `library.php` only** — applying it site-wide breaks the Service Worker precache and PWA offline support
+- **Apache + CGI / FastCGI / php-fpm** では Apache が `Authorization` ヘッダーを CGI 環境から落とすため、`CGIPassAuth On` または `SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1` が必要な場合があります（`library.htaccess.example` 参照）。mod_php / nginx + php-fpm では不要 / On **Apache + CGI/FastCGI/php-fpm**, Apache strips the `Authorization` header from the CGI environment; you may need `CGIPassAuth On` or the `SetEnvIf` workaround (see `library.htaccess.example`). Not needed on mod_php or nginx + php-fpm
 
 ---
 

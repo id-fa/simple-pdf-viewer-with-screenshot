@@ -8,7 +8,7 @@
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icons/icon-192.png" sizes="192x192" type="image/png">
 <link rel="apple-touch-icon" href="./icons/icon-192.png">
-<title>Comic Viewer - PDF/CBZ/CBR/CB7/EPUB</title>
+<title>Comic Viewer - PDF/CBZ/CBR/CB7/EPUB - id-fa/simple-pdf-viewer-with-screenshot</title>
 <script>
 // Capture launch files early — location.replace/reload would drop the launchQueue
 window.__launchFiles = null;
@@ -246,6 +246,65 @@ label.check input { cursor: pointer; }
 .help-row { display: flex; padding: 2px 0; font-size: 12px; }
 .help-key { min-width: 140px; color: #ccc; font-family: monospace; }
 .help-desc { color: #999; }
+
+/* ---- Library (server-side folder browsing) ---- */
+.lib-overlay { position: fixed; inset: 0; z-index: 540; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; }
+.lib-overlay.open { display: flex; }
+.lib-modal { background: #1e1e2e; border: 1px solid #333; border-radius: 10px; width: 94%; max-width: 900px; height: 86vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.6); }
+.lib-modal-header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #333; flex-shrink: 0; }
+.lib-modal-header h2 { font-size: 15px; font-weight: 600; flex-shrink: 0; }
+.lib-status { font-size: 11px; color: #888; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-close { background: none; border: none; color: #888; font-size: 20px; cursor: pointer; padding: 0 4px; line-height: 1; }
+.lib-close:hover { color: #e0e0e0; }
+.lib-toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 14px; border-bottom: 1px solid #2a2a3a; flex-shrink: 0; }
+.lib-toolbar input[type=search] { flex: 1; min-width: 160px; background: #16213e; border: 1px solid #0f3460; color: #e0e0e0; border-radius: 4px; padding: 5px 8px; font-size: 13px; }
+.lib-toolbar select, .lib-toolbar button { background: #16213e; border: 1px solid #0f3460; color: #e0e0e0; border-radius: 4px; padding: 5px 8px; font-size: 12px; cursor: pointer; }
+.lib-toolbar button:hover { background: #1f2b4d; }
+.lib-toolbar label.check { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #aaa; cursor: pointer; }
+.lib-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 6px 14px; font-size: 12px; border-bottom: 1px solid #2a2a3a; flex-shrink: 0; }
+.lib-crumb { background: none; border: none; color: #4a9eff; cursor: pointer; font-size: 12px; padding: 1px 3px; }
+.lib-crumb:hover { text-decoration: underline; }
+.lib-crumb.current { color: #ccc; cursor: default; }
+.lib-crumb.current:hover { text-decoration: none; }
+.lib-crumb-sep { color: #555; }
+.lib-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+/* ロングタップでプレビューを出すので、OS のテキスト選択・コールアウトを抑止する */
+.lib-row, .lib-tile { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.lib-row { display: flex; align-items: center; gap: 8px; padding: 7px 14px; cursor: pointer; border-bottom: 1px solid #22222f; }
+.lib-row:hover { background: #232338; }
+.lib-icon { flex-shrink: 0; width: 18px; text-align: center; font-size: 13px; }
+.lib-name { flex: 1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-dir .lib-name { color: #ffd479; }
+.lib-sub { font-size: 10px; color: #666; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-meta { flex-shrink: 0; font-size: 11px; color: #777; font-variant-numeric: tabular-nums; }
+.lib-badge { flex-shrink: 0; font-size: 10px; padding: 1px 5px; border-radius: 8px; background: #b45309; color: #fff; }
+.lib-empty { padding: 24px 14px; text-align: center; color: #666; font-size: 13px; }
+.lib-warn { padding: 6px 14px; font-size: 11px; color: #f0a; background: #2a1a2a; border-bottom: 1px solid #3a2a3a; }
+.lib-progress { flex-shrink: 0; padding: 8px 14px; border-top: 1px solid #333; font-size: 12px; color: #aaa; }
+.lib-progress .track { height: 4px; background: #0f3460; border-radius: 2px; overflow: hidden; margin-top: 4px; }
+.lib-progress .fill { height: 100%; width: 0; background: #4a9eff; transition: width 0.1s linear; }
+
+/* サムネイル (グリッド) 表示 */
+.lib-list.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 12px; padding: 12px 14px; align-content: start; }
+.lib-tile { display: flex; flex-direction: column; gap: 5px; cursor: pointer; }
+.lib-tile:hover .lib-thumb { border-color: #4a9eff; }
+.lib-thumb { position: relative; aspect-ratio: 2 / 3; background: #16213e; border: 1px solid #0f3460; border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.lib-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.lib-thumb .ph { font-size: 11px; color: #5a6a8a; letter-spacing: 0.06em; text-transform: uppercase; }
+.lib-tile.dir .lib-thumb { background: #1c1c2c; border-color: #33334a; }
+.lib-tile.dir .lib-thumb .ph { font-size: 30px; color: #ffd479; }
+.lib-thumb .lib-badge { position: absolute; left: 4px; top: 4px; }
+.lib-tile-name { font-size: 11px; line-height: 1.35; color: #ccc; word-break: break-all; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.lib-tile.dir .lib-tile-name { color: #ffd479; }
+.lib-tile-meta { font-size: 10px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 表紙プレビュー (マウスオーバー / ロングタップ) */
+.lib-preview { position: fixed; z-index: 560; pointer-events: none; background: #12121c; border: 1px solid #3a3a4a; border-radius: 6px; padding: 6px; box-shadow: 0 10px 30px rgba(0,0,0,0.7); }
+.lib-preview img { display: block; max-width: 260px; max-height: 58vh; width: auto; height: auto; border-radius: 3px; background: #0a0a12; }
+.lib-preview .cap { display: block; margin-top: 5px; font-size: 10px; color: #999; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-preview.centered { left: 50%; top: 50%; transform: translate(-50%, -50%); }
+.lib-preview.centered img { max-width: 78vw; max-height: 68vh; }
+.lib-preview.centered .cap { max-width: 78vw; }
 </style>
 </head>
 <body>
@@ -257,6 +316,7 @@ label.check input { cursor: pointer; }
       Open
       <input type="file" id="fileInput" accept=".pdf,.cbz,.cbr,.cb7,.epub,.zip,.rar,.7z">
     </label>
+    <button id="libraryBtn" title="サーバー上のライブラリを開く / Browse the server library (O)">Library</button>
     <button id="thumbToggle" disabled title="サムネイル一覧の表示切替 / Toggle thumbnail sidebar">Thumbs</button>
     <div class="nav">
       <button id="prevBtn" disabled title="前のページへ / Previous page">&lt;</button>
@@ -359,6 +419,7 @@ label.check input { cursor: pointer; }
     <div class="icon">COMIC</div>
     <p>PDF / CBZ / CBR / CB7 / EPUB をドラッグ&ドロップ、または「Open」で選択</p>
     <p style="font-size:12px; color:#555">対応形式: PDF, CBZ(ZIP), CBR(RAR), CB7(7z), EPUB(固定レイアウト / リフローは本文テキスト表示)</p>
+    <p id="dropzoneLibHint" hidden style="font-size:12px; color:#4a9eff; margin-top:10px"><button type="button" id="dropzoneLibBtn" style="background:none;border:1px solid #0f3460;color:#4a9eff;border-radius:4px;padding:5px 12px;cursor:pointer;font-size:12px">サーバーのライブラリから選ぶ (O)</button></p>
     <p style="font-size:11px; color:#444; margin-top:16px">Created by id-fa, built with Claude Code</p>
   </div>
 </div>
@@ -405,6 +466,39 @@ label.check input { cursor: pointer; }
   </div>
 </div>
 
+<!-- サーバー上の指定フォルダを参照する Library。API は library.php (未設置なら UI ごと隠れる) -->
+<div class="lib-overlay" id="libOverlay">
+  <div class="lib-modal">
+    <div class="lib-modal-header">
+      <h2>Library</h2>
+      <span class="lib-status" id="libStatus"></span>
+      <button class="lib-close" id="libClose" title="閉じる / Close">&times;</button>
+    </div>
+    <div class="lib-toolbar">
+      <input type="search" id="libSearch" placeholder="ファイル名で絞り込み / Filter by name" autocomplete="off">
+      <label class="check" title="ルート以下すべてを検索 / Search the whole library"><input type="checkbox" id="libDeep"> サブフォルダも</label>
+      <select id="libSort" title="並び順 / Sort order">
+        <option value="name">名前順</option>
+        <option value="mtime">更新日時順</option>
+        <option value="size">サイズ順</option>
+      </select>
+      <button id="libSortDir" title="昇順 / 降順を切替 / Toggle ascending / descending">▲ 昇順</button>
+      <button id="libViewToggle" title="リスト / サムネイル表示を切替 / Toggle list and thumbnail view">☰ リスト</button>
+      <button id="libReload" title="一覧を再取得 / Reload the file list">⟳</button>
+    </div>
+    <div class="lib-warn" id="libWarn" hidden></div>
+    <div class="lib-crumbs" id="libCrumbs"></div>
+    <div class="lib-list" id="libList"></div>
+    <div class="lib-progress" id="libProgress" hidden>
+      <span id="libProgressText"></span>
+      <div class="track"><div class="fill" id="libProgressFill"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- 表紙プレビュー (事前に用意された画像がある項目のみ。マウスオーバー / ロングタップで表示) -->
+<div class="lib-preview" id="libPreview" hidden><img id="libPreviewImg" alt=""><span class="cap" id="libPreviewCap"></span></div>
+
 <div class="toast" id="toast"></div>
 
 <div class="help-overlay" id="helpOverlay">
@@ -431,6 +525,11 @@ label.check input { cursor: pointer; }
         <div class="help-row"><span class="help-key">M</span><span class="help-desc">Jump to Max Read page</span></div>
         <div class="help-row"><span class="help-key">Escape</span><span class="help-desc">Show UI / Close modals (2x within 2s: close file)</span></div>
         <div class="help-row"><span class="help-key">?</span><span class="help-desc">Show this help</span></div>
+      </div>
+      <div class="help-section">
+        <h3>Library (server install only)</h3>
+        <div class="help-row"><span class="help-key">O</span><span class="help-desc">Browse the server library folder</span></div>
+        <div class="help-row"><span class="help-key">?lib=sub/a.cbz</span><span class="help-desc">Open a library file directly from the URL</span></div>
       </div>
       <div class="help-section">
         <h3>EPUB</h3>
@@ -3461,6 +3560,7 @@ document.addEventListener('drop', async e => {
 // launchQueue が渡してくるのは FileSystemFileHandle。読み込み失敗時に File を取り直せるよう保持する
 async function handleLaunchFiles(files) {
   if (!files || !files.length) return;
+  window.__libSkipAuto = true;   // ?lib= より OS から渡されたファイルを優先する
   const handle = files[0];
   const file = await handle.getFile();
   await openFile(file, handle);
@@ -3475,6 +3575,7 @@ window.__handleLaunch = handleLaunchFiles;
 (async () => {
   const sp = new URLSearchParams(location.search);
   if (sp.get('share') !== '1') return;
+  window.__libSkipAuto = true;   // ?lib= より共有されたファイルを優先する
   try {
     const cache = await caches.open('share-stash-v1');
     const metaResp = await cache.match('/__share__/meta.json');
@@ -3524,6 +3625,11 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && helpOverlay.classList.contains('open')) {
     e.preventDefault(); helpOverlay.classList.remove('open'); return;
   }
+  // ライブラリを開いている間は Escape で閉じるだけ (絞り込み入力を邪魔しない)
+  if (libIsOpen()) {
+    if (e.key === 'Escape') { e.preventDefault(); closeLibrary(); }
+    return;
+  }
   // 本文リーダーが開いている間は、その中のナビゲーションだけを受け付ける
   // (iframe にフォーカスがある場合はそもそもここに来ない)
   if (isEpubReaderOpen()) {
@@ -3532,6 +3638,11 @@ document.addEventListener('keydown', e => {
     else if (e.key === 'ArrowLeft') { e.preventDefault(); epubGoDoc(-1); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); epubGoDoc(1); }
     return;
+  }
+  // Library はファイル未読み込みでも使うので totalPages のガードより前に置く
+  if ((e.key === 'o' || e.key === 'O') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    e.preventDefault(); openLibrary(); return;
   }
   if (totalPages === 0 || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
   if (e.key === '?') { e.preventDefault(); helpOverlay.classList.toggle('open'); return; }
@@ -4173,6 +4284,683 @@ rotateSelect.addEventListener('change', () => {
 hqPdfCheck.addEventListener('change', () => {
   if (totalPages > 0 && isScrollMode()) { renderScrollView(currentPage); }
 });
+
+// ==================== Library (server-side folder browsing) ====================
+// サーバー上の指定フォルダ (library.php の 'root') を一覧・検索して直接開く機能。
+// 一覧はルート以下を1回で全件取得し、以降のフォルダ移動 / ソート / 絞り込みは
+// すべてクライアント側で完結させる (数百件想定なので追加リクエストが要らない)。
+// library.php が無い環境 (GitHub Pages 等) では初回アクセス時に検出して UI を隠す。
+
+const LIBRARY_API = './library.php';
+const LIB_ACCEPT = /\.(pdf|cbz|cbr|cb7|epub|zip|rar|7z)$/i;   // このビューアで開ける拡張子
+const libOpenDownloaded = (file) => openFile(file);
+const LIB_BACKOFF = [300, 700, 1500, 3000, 5000];             // 転送リトライの待ち時間
+const LIB_UNAVAILABLE_TTL = 24 * 60 * 60 * 1000;              // 「未設置」と判定した結果を保持する時間
+
+const libOverlay = document.getElementById('libOverlay');
+const libListEl = document.getElementById('libList');
+const libCrumbsEl = document.getElementById('libCrumbs');
+const libStatusEl = document.getElementById('libStatus');
+const libWarnEl = document.getElementById('libWarn');
+const libSearchEl = document.getElementById('libSearch');
+const libDeepEl = document.getElementById('libDeep');
+const libSortEl = document.getElementById('libSort');
+const libSortDirBtn = document.getElementById('libSortDir');
+const libProgressEl = document.getElementById('libProgress');
+const libProgressFill = document.getElementById('libProgressFill');
+const libProgressText = document.getElementById('libProgressText');
+const libViewToggle = document.getElementById('libViewToggle');
+const libPreviewEl = document.getElementById('libPreview');
+const libPreviewImg = document.getElementById('libPreviewImg');
+const libPreviewCap = document.getElementById('libPreviewCap');
+const libraryBtn = document.getElementById('libraryBtn');
+const dropzoneLibHint = document.getElementById('dropzoneLibHint');
+
+let libTree = null;            // { root, entries: [{path,size,mtime,cover?}], warnings }
+let libCwd = '';               // 表示中のフォルダ (ルートからの相対パス、'' がルート)
+let libSortKey = 'name';
+let libSortAsc = true;
+let libReadMap = new Map();    // path -> しおり (既読バッジ用)
+let libBusy = false;
+let libView = (localStorage.getItem('viewerLibraryView') === 'grid') ? 'grid' : 'list';
+
+function libIsOpen() { return libOverlay.classList.contains('open'); }
+
+// ---- 利用可否の記憶 ----
+// library.php が無いサーバーではボタンを出しても意味がないので、404/503 を踏んだら
+// 24時間だけ隠す。後から設置された場合は自動的に復活する。
+function libMarkUnavailable() {
+  try { localStorage.setItem('libraryUnavailableAt', String(Date.now())); } catch {}
+  libApplyAvailability();
+}
+function libMarkAvailable() {
+  try {
+    localStorage.removeItem('libraryUnavailableAt');
+    localStorage.setItem('libraryAvailable', '1');
+  } catch {}
+  libApplyAvailability();
+}
+function libRecentlyUnavailable() {
+  try {
+    const at = Number(localStorage.getItem('libraryUnavailableAt') || 0);
+    return at > 0 && Date.now() - at < LIB_UNAVAILABLE_TTL;
+  } catch { return false; }
+}
+function libApplyAvailability() {
+  const hidden = libRecentlyUnavailable();
+  if (libraryBtn) libraryBtn.hidden = hidden;
+  // dropzone の導線は「一度つながった実績がある」ときだけ出す (未設置環境で誤解を招かないため)
+  let known = false;
+  try { known = localStorage.getItem('libraryAvailable') === '1'; } catch {}
+  if (dropzoneLibHint) dropzoneLibHint.hidden = hidden || !known;
+}
+libApplyAvailability();
+
+// ---- API ----
+async function libFetchJson(action) {
+  const resp = await fetch(`${LIBRARY_API}?action=${action}`, { cache: 'no-store' });
+  if (resp.status === 404 || resp.status === 501) {
+    libMarkUnavailable();
+    throw new Error('このサーバーにはライブラリ機能 (library.php) が設置されていません');
+  }
+  if (resp.status === 401 || resp.status === 403) {
+    throw new Error('ライブラリの認証に失敗しました');
+  }
+  let data = null;
+  try { data = await resp.json(); } catch {}
+  if (!resp.ok) {
+    if (resp.status === 503) libMarkUnavailable();
+    throw new Error((data && data.error) || `ライブラリ API エラー (HTTP ${resp.status})`);
+  }
+  // PHP が動いていないサーバーでは library.php のソースがそのまま 200 で返る。
+  // その場合 JSON にならないので、200 でも「未設置」として扱う。
+  if (!data || typeof data !== 'object') {
+    libMarkUnavailable();
+    throw new Error('ライブラリ機能が有効ではありません (サーバーで PHP が動作していない可能性があります)');
+  }
+  libMarkAvailable();
+  return data;
+}
+
+async function libLoadTree(force = false) {
+  if (libTree && !force) return libTree;
+  libListEl.innerHTML = '<div class="lib-empty">読み込み中...</div>';
+  const data = await libFetchJson('tree');
+  const entries = (data.entries || []).filter(e => LIB_ACCEPT.test(e.path));
+  libTree = { root: data.root || 'Library', entries, warnings: data.warnings || [] };
+  libCwd = '';
+  await libComputeReadState();
+  return libTree;
+}
+
+// しおりのハッシュは「ファイル名|サイズ」なので、一覧の時点で既読状態を引ける。
+// ローカルで開いた同じファイルのしおりともそのまま共有される。
+async function libHashNameSize(name, size) {
+  const data = new TextEncoder().encode(name + '|' + size);
+  const buf = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
+}
+
+async function libComputeReadState() {
+  libReadMap = new Map();
+  if (!libTree || !isBookmarkEnabled()) return;
+  const all = loadAllBookmarks();
+  for (const e of libTree.entries) {
+    const name = e.path.split('/').pop();
+    const bm = all[await libHashNameSize(name, e.size)];
+    if (bm && (bm.lastRead || bm.maxRead)) libReadMap.set(e.path, bm);
+  }
+}
+
+// ---- 表示 ----
+function libFmtSize(n) {
+  if (!n) return '';
+  const u = ['B', 'KB', 'MB', 'GB'];
+  let i = 0, v = n;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return (i === 0 ? v : v.toFixed(v < 10 ? 1 : 0)) + ' ' + u[i];
+}
+
+function libFmtDate(sec) {
+  if (!sec) return '';
+  const d = new Date(sec * 1000);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function libNatCmp(a, b) {
+  const re = /(\d+)|(\D+)/g;
+  const ap = a.match(re) || [], bp = b.match(re) || [];
+  for (let i = 0; i < Math.max(ap.length, bp.length); i++) {
+    if (i >= ap.length) return -1;
+    if (i >= bp.length) return 1;
+    const an = parseInt(ap[i], 10), bn = parseInt(bp[i], 10);
+    if (!isNaN(an) && !isNaN(bn)) { if (an !== bn) return an - bn; }
+    else { const c = ap[i].localeCompare(bp[i]); if (c !== 0) return c; }
+  }
+  return 0;
+}
+
+/** 現在のフォルダ・検索条件から、表示するフォルダ行とファイル行を組み立てる */
+function libCollect() {
+  const q = libSearchEl.value.trim().toLowerCase();
+  const deep = libDeepEl.checked && q !== '';
+  const prefix = libCwd === '' ? '' : libCwd + '/';
+  const under = libTree.entries.filter(e => e.path.startsWith(prefix));
+
+  if (deep) {
+    // 全階層をフラットに検索。フォルダ行は出さず、パス付きで一覧する
+    const files = under.filter(e => e.path.slice(prefix.length).toLowerCase().includes(q));
+    return { dirs: [], files, deep: true };
+  }
+
+  const dirs = new Map();   // 直下のフォルダ名 -> 含まれるファイル数
+  const files = [];
+  for (const e of under) {
+    const rest = e.path.slice(prefix.length);
+    const slash = rest.indexOf('/');
+    if (slash === -1) {
+      if (q === '' || rest.toLowerCase().includes(q)) files.push(e);
+    } else {
+      const dir = rest.slice(0, slash);
+      dirs.set(dir, (dirs.get(dir) || 0) + 1);
+    }
+  }
+  // フォルダは名前で絞り込む (中身は「サブフォルダも」で探す)
+  const dirList = [...dirs.entries()]
+    .filter(([name]) => q === '' || name.toLowerCase().includes(q))
+    .map(([name, count]) => ({ name, count }));
+  return { dirs: dirList, files, deep: false };
+}
+
+function libSortFiles(files, deep) {
+  const dir = libSortAsc ? 1 : -1;
+  const key = (e) => deep ? e.path : e.path.split('/').pop();
+  return files.slice().sort((a, b) => {
+    if (libSortKey === 'mtime') { const d = a.mtime - b.mtime; if (d) return d * dir; }
+    else if (libSortKey === 'size') { const d = a.size - b.size; if (d) return d * dir; }
+    else return libNatCmp(key(a), key(b)) * dir;
+    return libNatCmp(key(a), key(b));
+  });
+}
+
+// ---- 表紙プレビュー ----
+// 表紙は「事前に用意されたサイドカー画像」だけを使う (自動生成はしない)。
+// tree が cover: true を返した項目にだけプレビューを付ける。
+const LIB_COVER_TILE_W = 320;      // サムネイル表示のタイル用
+const LIB_COVER_PREVIEW_W = 480;   // ホバー / ロングタップのプレビュー用
+const LIB_HOVER_DELAY = 320;       // ホバーしてから出るまで (誤爆防止)
+const LIB_LONGPRESS_MS = 450;
+
+function libCoverUrl(path, w) {
+  return `${LIBRARY_API}?action=cover&path=${encodeURIComponent(path)}&w=${w}`;
+}
+
+let libHoverTimer = null;
+let libPreviewAt = null;      // 直近のカーソル位置 (画像ロード後に位置を取り直すため)
+let libSuppressClick = false; // ロングタップ後の click を握り潰すフラグ
+
+function libPositionPreview(x, y) {
+  const r = libPreviewEl.getBoundingClientRect();
+  let left = x + 18;
+  let top = y + 18;
+  if (left + r.width > window.innerWidth - 8) left = x - r.width - 18;
+  if (left < 8) left = 8;
+  if (top + r.height > window.innerHeight - 8) top = window.innerHeight - r.height - 8;
+  if (top < 8) top = 8;
+  libPreviewEl.style.left = left + 'px';
+  libPreviewEl.style.top = top + 'px';
+}
+
+function libShowPreview(entry, x, y, centered) {
+  const url = libCoverUrl(entry.path, LIB_COVER_PREVIEW_W);
+  if (libPreviewImg.getAttribute('src') !== url) libPreviewImg.src = url;
+  libPreviewCap.textContent = entry.path.split('/').pop();
+  libPreviewEl.hidden = false;
+  libPreviewEl.classList.toggle('centered', !!centered);
+  if (centered) {
+    libPreviewAt = null;
+    libPreviewEl.style.left = '';
+    libPreviewEl.style.top = '';
+  } else {
+    libPreviewAt = { x, y };
+    libPositionPreview(x, y);
+  }
+}
+
+function libHidePreview() {
+  clearTimeout(libHoverTimer);
+  libHoverTimer = null;
+  libPreviewAt = null;
+  libPreviewEl.hidden = true;
+}
+
+// 画像は非同期に届くので、寸法が確定してから位置を取り直す
+libPreviewImg.addEventListener('load', () => {
+  if (libPreviewAt) libPositionPreview(libPreviewAt.x, libPreviewAt.y);
+});
+// 表紙が消えている等で読めなければプレビューを諦め、以後は出さない
+libPreviewImg.addEventListener('error', () => {
+  const failed = libPreviewImg.getAttribute('src') || '';
+  libHidePreview();
+  if (libTree) {
+    for (const e of libTree.entries) {
+      if (failed.includes(encodeURIComponent(e.path))) { delete e.cover; break; }
+    }
+  }
+});
+
+/** 行 / タイルにプレビュー操作を仕込む (表紙がある項目のみ) */
+function libAttachPreview(el, entry) {
+  if (!entry.cover) return;
+  let pressTimer = null;
+  let pressAt = null;
+
+  el.addEventListener('mouseenter', (e) => {
+    clearTimeout(libHoverTimer);
+    const { clientX, clientY } = e;
+    libHoverTimer = setTimeout(() => libShowPreview(entry, clientX, clientY, false), LIB_HOVER_DELAY);
+  });
+  el.addEventListener('mousemove', (e) => {
+    if (!libPreviewEl.hidden && libPreviewAt) {
+      libPreviewAt = { x: e.clientX, y: e.clientY };
+      libPositionPreview(e.clientX, e.clientY);
+    }
+  });
+  el.addEventListener('mouseleave', libHidePreview);
+
+  el.addEventListener('touchstart', (e) => {
+    libSuppressClick = false;
+    const t = e.touches[0];
+    pressAt = { x: t.clientX, y: t.clientY };
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => {
+      pressTimer = null;
+      libSuppressClick = true;   // 指を離したときの click でファイルを開かせない
+      libShowPreview(entry, 0, 0, true);
+    }, LIB_LONGPRESS_MS);
+  }, { passive: true });
+  el.addEventListener('touchmove', (e) => {
+    if (!pressAt) return;
+    const t = e.touches[0];
+    if (Math.hypot(t.clientX - pressAt.x, t.clientY - pressAt.y) > 12) {
+      clearTimeout(pressTimer);   // スクロール操作なのでロングタップ扱いにしない
+      pressTimer = null;
+    }
+  }, { passive: true });
+  const endTouch = () => {
+    clearTimeout(pressTimer);
+    pressTimer = null;
+    pressAt = null;
+    if (!libPreviewEl.hidden) libHidePreview();
+  };
+  el.addEventListener('touchend', endTouch);
+  el.addEventListener('touchcancel', endTouch);
+}
+
+function libRenderCrumbs() {
+  libCrumbsEl.innerHTML = '';
+  const parts = libCwd === '' ? [] : libCwd.split('/');
+  const mk = (label, path, current) => {
+    const b = document.createElement('button');
+    b.className = 'lib-crumb' + (current ? ' current' : '');
+    b.textContent = label;
+    if (!current) b.addEventListener('click', () => { libCwd = path; libSearchEl.value = ''; libRender(); });
+    return b;
+  };
+  libCrumbsEl.appendChild(mk(libTree ? libTree.root : 'Library', '', parts.length === 0));
+  let acc = '';
+  parts.forEach((p, i) => {
+    acc = acc === '' ? p : acc + '/' + p;
+    const sep = document.createElement('span');
+    sep.className = 'lib-crumb-sep';
+    sep.textContent = '/';
+    libCrumbsEl.append(sep, mk(p, acc, i === parts.length - 1));
+  });
+}
+
+function libRender() {
+  if (!libTree) return;
+  libRenderCrumbs();
+
+  if (libTree.warnings.length) {
+    libWarnEl.hidden = false;
+    libWarnEl.textContent = libTree.warnings.join(' / ');
+  } else {
+    libWarnEl.hidden = true;
+  }
+
+  const { dirs, files, deep } = libCollect();
+  const sorted = libSortFiles(files, deep);
+  dirs.sort((a, b) => libNatCmp(a.name, b.name) * (libSortAsc ? 1 : -1));
+
+  libStatusEl.textContent = deep
+    ? `全 ${libTree.entries.length} 件 · 検索結果 ${sorted.length} 件`
+    : `全 ${libTree.entries.length} 件 · このフォルダ ${sorted.length} 件`;
+
+  libHidePreview();
+  libListEl.className = 'lib-list' + (libView === 'grid' ? ' grid' : '');
+  libListEl.innerHTML = '';
+  if (dirs.length === 0 && sorted.length === 0) {
+    libListEl.innerHTML = '<div class="lib-empty">該当するファイルがありません</div>';
+    return;
+  }
+
+  const enterDir = (name) => {
+    libCwd = libCwd === '' ? name : libCwd + '/' + name;
+    libSearchEl.value = '';
+    libRender();
+    libListEl.scrollTop = 0;
+  };
+  const readBadge = (e) => {
+    const bm = libReadMap.get(e.path);
+    if (!bm) return null;
+    const badge = document.createElement('span');
+    badge.className = 'lib-badge';
+    badge.textContent = 'p.' + (bm.lastRead || bm.maxRead);
+    badge.title = `Last Read p.${bm.lastRead || '-'} / Max Read p.${bm.maxRead || '-'}`;
+    return badge;
+  };
+  // ロングタップでプレビューを出した直後の click は無視する
+  const openEntry = (e) => {
+    if (libSuppressClick) { libSuppressClick = false; return; }
+    libOpenEntry(e);
+  };
+
+  const frag = document.createDocumentFragment();
+
+  if (libView === 'grid') {
+    for (const d of dirs) {
+      const tile = document.createElement('div');
+      tile.className = 'lib-tile dir';
+      tile.innerHTML = '<div class="lib-thumb"><span class="ph">📁</span></div>';
+      const name = document.createElement('div');
+      name.className = 'lib-tile-name';
+      name.textContent = d.name;
+      const meta = document.createElement('div');
+      meta.className = 'lib-tile-meta';
+      meta.textContent = `${d.count} 件`;
+      tile.append(name, meta);
+      tile.addEventListener('click', () => enterDir(d.name));
+      frag.appendChild(tile);
+    }
+
+    for (const e of sorted) {
+      const base = e.path.split('/').pop();
+      const tile = document.createElement('div');
+      tile.className = 'lib-tile';
+      tile.title = e.path;
+
+      const thumb = document.createElement('div');
+      thumb.className = 'lib-thumb';
+      if (e.cover) {
+        const img = document.createElement('img');
+        img.loading = 'lazy';       // 画面外のタイルは取りに行かない
+        img.decoding = 'async';
+        img.alt = '';
+        img.src = libCoverUrl(e.path, LIB_COVER_TILE_W);
+        // 表紙が消えている等で読めなければプレースホルダに落とす
+        img.addEventListener('error', () => {
+          delete e.cover;
+          img.remove();
+          const ph = document.createElement('span');
+          ph.className = 'ph';
+          ph.textContent = (base.split('.').pop() || '').toUpperCase();
+          thumb.appendChild(ph);
+        });
+        thumb.appendChild(img);
+      } else {
+        const ph = document.createElement('span');
+        ph.className = 'ph';
+        ph.textContent = (base.split('.').pop() || '').toUpperCase();
+        thumb.appendChild(ph);
+      }
+      const badge = readBadge(e);
+      if (badge) thumb.appendChild(badge);
+      tile.appendChild(thumb);
+
+      const name = document.createElement('div');
+      name.className = 'lib-tile-name';
+      name.textContent = base;
+      const meta = document.createElement('div');
+      meta.className = 'lib-tile-meta';
+      meta.textContent = deep && e.path !== base
+        ? e.path.slice(0, e.path.length - base.length - 1)
+        : libFmtSize(e.size);
+      tile.append(name, meta);
+
+      libAttachPreview(tile, e);
+      tile.addEventListener('click', () => openEntry(e));
+      frag.appendChild(tile);
+    }
+    libListEl.appendChild(frag);
+    return;
+  }
+
+  for (const d of dirs) {
+    const row = document.createElement('div');
+    row.className = 'lib-row lib-dir';
+    row.innerHTML = '<span class="lib-icon">📁</span>';
+    const name = document.createElement('span');
+    name.className = 'lib-name';
+    name.textContent = d.name;
+    const meta = document.createElement('span');
+    meta.className = 'lib-meta';
+    meta.textContent = `${d.count} 件`;
+    row.append(name, meta);
+    row.addEventListener('click', () => enterDir(d.name));
+    frag.appendChild(row);
+  }
+
+  for (const e of sorted) {
+    const base = e.path.split('/').pop();
+    const row = document.createElement('div');
+    row.className = 'lib-row';
+    // 表紙がある項目はアイコンを変えて、ホバー / ロングタップで見られることを示す
+    row.innerHTML = `<span class="lib-icon">${e.cover ? '🖼' : '📄'}</span>`;
+    const nameWrap = document.createElement('span');
+    nameWrap.className = 'lib-name';
+    nameWrap.textContent = base;
+    nameWrap.title = e.path;
+    if (deep && e.path !== base) {
+      const sub = document.createElement('span');
+      sub.className = 'lib-sub';
+      sub.textContent = e.path.slice(0, e.path.length - base.length - 1);
+      nameWrap.appendChild(sub);
+    }
+    row.appendChild(nameWrap);
+
+    const badge = readBadge(e);
+    if (badge) row.appendChild(badge);
+
+    const meta = document.createElement('span');
+    meta.className = 'lib-meta';
+    meta.textContent = `${libFmtSize(e.size)}　${libFmtDate(e.mtime)}`;
+    row.appendChild(meta);
+
+    libAttachPreview(row, e);
+    row.addEventListener('click', () => openEntry(e));
+    frag.appendChild(row);
+  }
+  libListEl.appendChild(frag);
+}
+
+// ---- 転送 ----
+function libSetProgress(text, pct) {
+  libProgressEl.hidden = false;
+  libProgressText.textContent = text;
+  libProgressFill.style.width = (Number.isFinite(pct) ? Math.max(0, Math.min(100, pct)) : 0) + '%';
+}
+
+const libSleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+/**
+ * ライブラリのファイルを取得する。途中で切れた場合は Range で受信済みの続きから再開する
+ * (NAS 上のローカルファイルに対する readFileToBuffer と同じ考え方)。
+ */
+async function libDownload(path, size, onProgress) {
+  const url = `${LIBRARY_API}?action=file&path=${encodeURIComponent(path)}`;
+  const chunks = [];
+  let received = 0;
+  let attempt = 0;
+
+  for (;;) {
+    let resp;
+    const init = { cache: 'no-store' };
+    if (received > 0) init.headers = { Range: `bytes=${received}-` };
+    try {
+      resp = await fetch(url, init);
+    } catch (err) {
+      if (attempt >= LIB_BACKOFF.length) throw new Error('通信に失敗しました');
+      await libSleep(LIB_BACKOFF[attempt++]);
+      continue;
+    }
+    if (resp.status === 401 || resp.status === 403) throw new Error('ライブラリの認証に失敗しました');
+    if (resp.status === 404) throw new Error('ファイルが見つかりません (一覧を再取得してください)');
+    if (!resp.ok) throw new Error(`ダウンロードに失敗しました (HTTP ${resp.status})`);
+    // Range を投げたのに 200 が返る = サーバーが部分取得に対応していない → 最初からやり直す
+    if (received > 0 && resp.status !== 206) { chunks.length = 0; received = 0; }
+
+    if (!resp.body || !resp.body.getReader) {   // ReadableStream 非対応環境
+      const blob = await resp.blob();
+      return blob;
+    }
+    try {
+      const reader = resp.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        received += value.length;
+        onProgress(received, size);
+      }
+      break;
+    } catch (err) {
+      if (attempt >= LIB_BACKOFF.length) throw new Error('転送が中断されました');
+      await libSleep(LIB_BACKOFF[attempt++]);
+    }
+  }
+  return new Blob(chunks);
+}
+
+async function libOpenEntry(entry) {
+  if (libBusy) return;
+  libBusy = true;
+  const base = entry.path.split('/').pop();
+  try {
+    libSetProgress(`${base} を取得中... 0%`, 0);
+    const blob = await libDownload(entry.path, entry.size, (done, total) => {
+      const pct = total ? (done / total) * 100 : 0;
+      libSetProgress(`${base} を取得中... ${Math.floor(pct)}%`, pct);
+    });
+    // 以降は通常のローカルファイルと完全に同じ経路を通る。
+    // メモリ上の File なので readFileToBuffer のリトライも即座に成功する。
+    const file = new File([blob], base, { lastModified: (entry.mtime || 0) * 1000 });
+    libProgressEl.hidden = true;
+    closeLibrary();
+    await libOpenDownloaded(file);
+  } catch (err) {
+    console.error('[library]', err);
+    libSetProgress(err.message, 0);
+    showToast(err.message, 4000);
+  } finally {
+    libBusy = false;
+  }
+}
+
+// ---- 開閉 ----
+async function openLibrary() {
+  libOverlay.classList.add('open');
+  libProgressEl.hidden = true;
+  try {
+    await libLoadTree(false);
+    libRender();
+    libSearchEl.focus();
+  } catch (err) {
+    console.error('[library]', err);
+    libListEl.innerHTML = '';
+    const el = document.createElement('div');
+    el.className = 'lib-empty';
+    el.textContent = err.message;
+    libListEl.appendChild(el);
+    libStatusEl.textContent = '';
+  }
+}
+
+function closeLibrary() {
+  libOverlay.classList.remove('open');
+  libProgressEl.hidden = true;
+  libHidePreview();
+}
+
+function libUpdateViewToggle() {
+  libViewToggle.textContent = (libView === 'grid') ? '▦ サムネイル' : '☰ リスト';
+}
+libUpdateViewToggle();
+libViewToggle.addEventListener('click', () => {
+  libView = (libView === 'grid') ? 'list' : 'grid';
+  try { localStorage.setItem('viewerLibraryView', libView); } catch {}
+  libUpdateViewToggle();
+  libRender();
+  libListEl.scrollTop = 0;
+});
+
+// スクロール中にプレビューが取り残されないようにする
+libListEl.addEventListener('scroll', libHidePreview, { passive: true });
+
+if (libraryBtn) libraryBtn.addEventListener('click', openLibrary);
+if (dropzoneLibHint) {
+  document.getElementById('dropzoneLibBtn').addEventListener('click', openLibrary);
+}
+document.getElementById('libClose').addEventListener('click', closeLibrary);
+libOverlay.addEventListener('click', (e) => { if (e.target === libOverlay) closeLibrary(); });
+
+let libSearchTimer = null;
+libSearchEl.addEventListener('input', () => {
+  clearTimeout(libSearchTimer);
+  libSearchTimer = setTimeout(() => { libRender(); libListEl.scrollTop = 0; }, 120);
+});
+libDeepEl.addEventListener('change', libRender);
+libSortEl.addEventListener('change', () => {
+  libSortKey = libSortEl.value;
+  // 日時とサイズは「新しい順 / 大きい順」が自然なので既定を降順にする
+  libSortAsc = (libSortKey === 'name');
+  libUpdateSortDirBtn();
+  libRender();
+});
+function libUpdateSortDirBtn() {
+  libSortDirBtn.textContent = libSortAsc ? '▲ 昇順' : '▼ 降順';
+}
+libSortDirBtn.addEventListener('click', () => {
+  libSortAsc = !libSortAsc;
+  libUpdateSortDirBtn();
+  libRender();
+});
+document.getElementById('libReload').addEventListener('click', async () => {
+  try { await libLoadTree(true); libRender(); }
+  catch (err) { showToast(err.message, 4000); }
+});
+
+// ---- ?lib=<相対パス> による自動オープン ----
+// URL には書き戻さない: ?lib= が残っていると ESC 2回 (location.reload) でファイルを
+// 閉じたつもりが再び開いてしまうため、share=1 と同様に処理後すぐ URL から取り除く。
+(async () => {
+  const sp = new URLSearchParams(location.search);
+  const target = sp.get('lib');
+  if (!target || window.__libSkipAuto) return;
+  history.replaceState(null, '', location.pathname);
+  try {
+    await libLoadTree(false);
+    const entry = libTree.entries.find(e => e.path === target)
+      || libTree.entries.find(e => e.path.toLowerCase() === target.toLowerCase());
+    if (!entry) { showToast(`ライブラリに ${target} が見つかりません`, 4000); return; }
+    libCwd = entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : '';
+    await libOpenEntry(entry);
+  } catch (err) {
+    console.error('[library]', err);
+    showToast(err.message, 4000);
+  }
+})();
 
 </script>
 </body>
