@@ -45,6 +45,26 @@ return [
     'coverSuffix' => '.coverimage',
     'coverExts'   => ['webp', 'avif', 'png', 'jpg', 'jpeg', 'gif'],
 
+    // 表紙の一括生成ツール (tools/generate_coverimages.php) の既定値。
+    // 省略可 (書かなければツール側の既定が使われる)。コマンドラインオプションが最優先。
+    //
+    //   php tools/generate_coverimages.php --check     # 使えるバックエンドを確認
+    //   php tools/generate_coverimages.php --dry-run -v
+    //   php tools/generate_coverimages.php --mtime     # 表紙の日時を元ファイルに揃える
+    //
+    // 'coverTool' => [
+    //     'format'     => 'webp',    // webp | jpeg | png (coverExts に含まれる形式にすること)
+    //     'quality'    => 82,
+    //     'maxWidth'   => 1200,      // これを超える画像だけ縮小する (0 で無制限)
+    //     'maxHeight'  => 1600,
+    //     'sort'       => 'lexical', // 書庫内のファイル名順。lexical | natural
+    //     'epubCover'  => 'spine',   // EPUB の表紙。spine (読み順の1枚目) | metadata (OPF の cover-image 優先)
+    //     'matchMtime' => false,     // 表紙の更新日時を抽出元ファイル自体に揃える
+    //     'pdfDpi'     => 150,
+    //     // 外部コマンドが PATH に無い場合だけ絶対パスを書く
+    //     'commands'   => ['pdftoppm' => 'pdftoppm', '7z' => '7z', 'unrar' => 'unrar'],
+    // ],
+
     // 一覧の最大件数。超えると打ち切って warnings で通知する。
     'maxEntries' => 5000,
 

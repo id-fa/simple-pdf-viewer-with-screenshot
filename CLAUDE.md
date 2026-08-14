@@ -11,6 +11,7 @@
 - `library.php` — ライブラリ参照 API (サーバー設置時のみ。単一ファイル / 詳細は「ライブラリ参照機能」)
 - `library.config.example.php` — `library.php` の設定サンプル (実体の `library.config.php` は .gitignore 済み)
 - `library.htaccess.example` — Basic 認証のサンプル (Apache / nginx)
+- `tools/generate_coverimages.php` — ライブラリの表紙画像 (サイドカー) を一括生成する CLI 専用スクリプト (詳細は「表紙生成ツール」)
 - `vendor/` — ベンダー化された外部ライブラリ (CDN不要)
   - `pdfjs/pdf.min.mjs` `pdf.worker.min.mjs` — PDF.js v4.9.155
   - `pdfjs/cmaps/*.bcmap` — CJK (日中韓) 用の CMap データ (169 ファイル、~1.5MB)。フォント未埋め込み CJK PDF の文字解決に使用。on-demand ロード (PRECACHE 非対象 / 初回ネット使用時に `sw.js` の fetch ハンドラが自動キャッシュ)
@@ -507,6 +508,24 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - `action=cover` が受け取る `path` は**本のパス**で、表紙のファイル名はサーバー側で導出する。クライアントから画像パスを受け取らないので、表紙経由で任意ファイルを読ませる余地が無い。加えて表紙画像自体の拡張子 (`.png` 等) は `exts` に無いので `file` でも `cover` でも直接は取れない
 - `w=` があり GD が使えて元画像がそれより大きいときだけ縮小する (`lib_resize_image()`、WebP 優先 / 無ければ JPEG)。GD 無し・未対応形式・4000万画素超は原本をそのまま返す
 - **表紙だけはキャッシュを許可する** (`Cache-Control: private, max-age=604800` + ETag)。本体は `no-store` だが、表紙まで毎回取り直すとサムネイル表示のたびに全件再取得になる。SW は `library.php` を素通しするので、ここで指定したヘッダーがそのままブラウザキャッシュに効く。ETag には `w` も混ぜてあるのでサイズ違いは別エントリになる
+- **表紙そのものを作るのは `tools/generate_coverimages.php`** (下記)。`library.php` は配信専用で、リクエスト経路では一切生成しない
+
+#### 表紙生成ツール (`tools/generate_coverimages.php`、CLI 専用)
+`library.php` が配信する表紙サイドカーを一括生成するスタンドアロン CLI。**Web から叩かれても `PHP_SAPI !== 'cli'` で 403 を返して何もしない** (`tools/` を DOCUMENT_ROOT 下に置いてしまった場合の保険)。
+
+- **設定**: `library.config.php` をそのまま読む (`root` / `exts` / `coverSuffix` / `coverExts` / `maxDepth` / `followSymlinks` / `fsEncoding` を共有)。ツール固有の既定は `'coverTool' => [...]` で上書きでき、コマンドラインオプションが最優先。`library.config.php` が無くても `--root=PATH` だけで動く
+- **表紙の決め方** (ここがビューアと揃っている必要がある):
+  - PDF … 1 ページ目をレンダリング
+  - EPUB … `comic-viewer.html` の `analyzeEpub()` を移植 (container.xml → OPF → spine → XHTML の `<img>` / `<svg><image xlink:href>` / インライン `style` の `url()`) して**読み順の 1 枚目**を採る。spine で取れなければ manifest の `image/*` 記述順、それも駄目ならファイル名順。`--epub-cover=metadata` なら OPF の `properties="cover-image"` / `<meta name="cover">` を先に見る (取れなければ spine にフォールバック)
+  - 書庫 … ファイル名順の 1 ファイル目。既定 `lexical` / `--sort=natural` で `naturalCompare` 相当に切替 (どちらも comic-viewer.html の Sort と同じ規則)
+  - `__MACOSX/` と `._` 始まりのエントリは除外。先頭候補がデコードできなければ次の候補へ (`maxCandidates` 枚まで)
+- **書庫アクセス**: ZipArchive (cbz/zip/epub) → 7z → unrar の順に**一覧が取れたものを使う**ので、拡張子が偽装されていても (中身が rar の `.cbz` 等) 拾える。外部コマンドは `proc_open` の**配列形式**で起動しシェルを経由しない (空白・`%`・引用符を含むパスで壊れない)。7z/unrar からはパイプ経由で stdout に取り出すので一時ファイルを作らない
+- **PDF レンダラ**: `imagick` → `pdftoppm` → `mutool` → `magick` → `gs` を順に試し、**成功したエンジンを記憶して 2 件目以降は直行**する。いずれも stdout へ PNG を吐かせて受け取る。全滅時は理由を並べて 1 件失敗として続行 (他の形式は処理される)
+- **縮小**: `maxWidth` / `maxHeight` を超える画像だけ縮小 (拡大はしない、0 で無制限)。Imagick があれば `thumbnailImage`、無ければ GD の `imagecopyresampled`。出力形式が書き出せない環境では自動的に JPEG/PNG に落とし、**その拡張子が `coverExts` に無ければ起動時にエラー**にする (library.php が表紙として認識できないため)
+- **スキップ**: 既存の表紙が `coverExts` のどれかで見つかれば飛ばす。`--force` で全再生成、`--stale` で「表紙が元ファイルより古いものだけ」再生成
+- **`--mtime`**: 表紙の更新日時を**抽出元ファイル (PDF / EPUB / 書庫そのもの) の mtime** に合わせる。書庫内画像のタイムスタンプではない。スキップしたファイルにも適用されるので、後から `--mtime` だけ付けて回すこともできる
+- **書き込み**: 同じフォルダの `.covertmp_*` に書いてから `rename`。ドット始まりなので `lib_walk()` にも引っかからない。書き終えたら**別拡張子の古い表紙を消す** (`coverExts` の優先順で古い方が拾われ続けるのを防ぐ)
+- その他: `--dry-run` / `--check` (使えるバックエンド一覧) / `--filter` / `--path` / `--ext` / `--limit` / `--console-encoding=SJIS-win` (Windows コンソールの文字化け対策)。未知のオプションは黙って無視せずエラーにする
 
 #### Basic 認証 (`lib_require_auth()`)
 設定の `'auth' => ['user'=>..., 'pass'=>..., 'realm'=>...]` があるときだけ有効 (既定 `null` = 認証なし)。**サーバー設定が不要で、認証の影響範囲が `library.php` に閉じるのが利点** — `.htaccess` でアプリ全体に掛けてしまうと SW のプリキャッシュが 401 で静かに壊れるが、この方式ならその事故が構造的に起きない。設定読み込み直後・ファイルに触れる前に呼ぶ。
@@ -601,7 +620,7 @@ GitHub Pages 配信用の同期コピー。ルートと同じ構成 (HTML / sw.j
 1. `<title>` の末尾に ` - id-fa/simple-pdf-viewer-with-screenshot`
 2. `</style>` と `</head>` の間に Google Analytics の gtag ブロック
 
-`library.php` / `library.config*.php` は **docs/webapp/ にコピーしない**。GitHub Pages では PHP が動かず、置いてもソースがそのまま配信されるだけ。置かなければ 404 になり、クライアント側が「未設置」と判定して Library の UI を自動的に隠す。
+`library.php` / `library.config*.php` / `tools/` は **docs/webapp/ にコピーしない**。GitHub Pages では PHP が動かず、置いてもソースがそのまま配信されるだけ。置かなければ 404 になり、クライアント側が「未設置」と判定して Library の UI を自動的に隠す。
 
 ## 開発規約
 - Vanilla JS のみ、フレームワーク不使用

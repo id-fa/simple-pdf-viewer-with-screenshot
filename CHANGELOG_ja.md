@@ -140,3 +140,15 @@
    - ツールバーで「リスト表示 ⇄ サムネイル表示」を切替 (選択状態は次回も維持)
    - サムネイル用の縮小画像を別途用意する必要はない。サーバーに GD があれば表示サイズに合わせて自動縮小し、ブラウザにキャッシュさせる (表紙のみキャッシュ許可、本体は従来どおり no-store)
    - 表紙画像そのものは一覧にも出ず、直接ダウンロードもできない (本のパスから表紙名をサーバー側で導出する方式のため)
+
+### 2026.08.14 (3)
+ - ライブラリの表紙画像を一括生成する CLI ツールを追加 (`tools/generate_coverimages.php`)
+   - 設定は `library.config.php` をそのまま使う (`library.config.php` が無くても `--root=PATH` で動く)。ツール固有の既定値は `'coverTool' => [...]` に書ける
+   - 表紙にするページ: PDF = 1 ページ目 / 書庫 = ファイル名順 (既定 Lexical、`--sort=natural` で自然順) の 1 ファイル目 / EPUB = ビューアと同じ構造解析 (container.xml → OPF → spine → XHTML の `<img>` / `<svg><image>` / 背景 `url()`) で求めた**読み順の 1 枚目**
+     - EPUB はファイル名順が読み順と一致しないため、そのままでは違うページが表紙になってしまう。`--epub-cover=metadata` にすると OPF の `cover-image` 指定を優先することもできる
+   - 既に表紙があるファイルはスキップ (`--force` で全再生成、`--stale` で元ファイルより古い表紙だけ再生成)
+   - `--max-width` / `--max-height` を超える大きすぎる画像は縮小して保存 (既定 1200x1600、拡大はしない)。出力形式は webp / jpeg / png から選択
+   - `--mtime` で表紙の更新日時を**抽出元ファイル自体** (PDF / EPUB / 書庫) の更新日時に揃える (書庫内の画像の日時ではない)
+   - `--dry-run` で書き込まずに確認、`--check` で使えるバックエンド (Imagick / GD / PDF レンダラ / 7z / unrar) を一覧表示
+   - CBZ / ZIP / EPUB は PHP 標準の ZipArchive だけで動く。CBR / RAR / CB7 / 7z は `7z` または `unrar`、PDF は Imagick / `pdftoppm` / `mutool` / `magick` / `gs` のいずれかがあれば使う (無い形式だけがスキップされる)
+   - CLI 専用 (Web からアクセスされても何もしない)

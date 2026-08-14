@@ -17,6 +17,8 @@ pdf-viewer-with-screenshot/
 ├── library.php            # ライブラリ参照 API (任意) / Library API (optional, server install)
 ├── library.config.example.php   # library.php の設定サンプル / Config sample
 ├── library.htaccess.example     # Basic 認証のサンプル / Basic auth sample
+├── tools/
+│   └── generate_coverimages.php # 表紙画像の一括生成 (CLI) / Cover generator (CLI)
 ├── vendor/                # Vendored libraries (no CDN required)
 │   ├── pdfjs/             #   PDF.js v4.9.155
 │   ├── pica/              #   Pica.js v10.0.2
@@ -303,6 +305,40 @@ Manga/SeriesA/vol01.cbz.coverimage.webp    ← その表紙 / its cover
 - 対応形式は `webp` / `avif` / `png` / `jpg` / `jpeg` / `gif`。命名規則は `library.config.php` の `coverSuffix` / `coverExts` で変更できます / The suffix and accepted extensions are configurable
 - サムネイル用の縮小画像を別途用意する必要はありません。サーバーに GD があれば表示サイズに合わせて自動的に縮小して配信し、ブラウザにキャッシュさせます / No separate thumbnails needed — the server downscales on the fly (when GD is available) and lets the browser cache the result
 - リスト表示では表紙があるファイルのアイコンが 🖼 になります / In list view, files with a cover show a 🖼 icon
+
+**表紙の一括生成 / Generating Covers**
+
+`tools/generate_coverimages.php` で表紙をまとめて作れます（CLI 専用。Web から叩いても何もしません）。設定は `library.config.php` をそのまま使います。
+
+`tools/generate_coverimages.php` generates the covers in bulk. It is CLI-only and reads the same `library.config.php`.
+
+```bash
+php tools/generate_coverimages.php --check      # 使えるバックエンドを確認 / show available backends
+php tools/generate_coverimages.php --dry-run -v # 何が作られるか確認 / preview
+php tools/generate_coverimages.php              # 生成 (既存はスキップ) / generate, skipping existing
+php tools/generate_coverimages.php --mtime      # 表紙の日時を元ファイルに合わせる / match source mtime
+php tools/generate_coverimages.php --help
+```
+
+| 対象 / Type | 表紙にするページ / Cover page |
+|------|------|
+| PDF | 1 ページ目 / first page |
+| EPUB | ビューアと同じ構造解析で求めた**読み順の 1 枚目** / first image in reading order (same analysis as the viewer) |
+| CBZ / CBR / CB7 / ZIP / RAR / 7z | ファイル名順の 1 ファイル目 (`--sort=natural` で自然順) / first file by name |
+
+| オプション / Option | 説明 / Description |
+|------|------|
+| `--force` / `--stale` | 既存を作り直す / 元ファイルより古いものだけ作り直す |
+| `--mtime` | 表紙の更新日時を**抽出元ファイル自体** (PDF/EPUB/書庫) に合わせる / match the mtime of the source book, not of the image inside it |
+| `--max-width=N` `--max-height=N` | 最大解像度。超える画像だけ縮小 (既定 1200x1600) / downscale only when larger |
+| `--format=webp\|jpeg\|png` `--quality=N` | 出力形式と品質 (既定 webp / 82) |
+| `--sort=lexical\|natural` | 書庫内のファイル名の並び順 (既定 lexical) |
+| `--epub-cover=spine\|metadata` | EPUB の表紙を読み順の 1 枚目にするか、OPF の `cover-image` 指定を優先するか |
+| `--root` `--path` `--filter` `--ext` `--limit` | 処理対象の絞り込み |
+
+必要な外部依存は「あるものを自動で使う」方式です。CBZ/ZIP/EPUB は PHP 標準の ZipArchive だけで動きます。CBR/RAR/CB7/7z は `7z` または `unrar`、PDF は Imagick / `pdftoppm` / `mutool` / `magick` / `gs` のいずれかが必要で、無い形式だけがスキップされます（`--check` で確認できます）。
+
+Dependencies are picked up automatically: CBZ/ZIP/EPUB need nothing beyond PHP's ZipArchive; CBR/RAR/CB7/7z need `7z` or `unrar`; PDF needs Imagick, `pdftoppm`, `mutool`, `magick`, or `gs`. Missing tools only skip the affected formats — run `--check` to see what is available.
 
 - しおりを有効にしていると、一覧に既読ページのバッジ (`p.42`) が出ます。しおりは「ファイル名 + サイズ」で識別するので、同じファイルをローカルから開いたときのしおりとそのまま共有されます / With bookmarks enabled, rows show a read-progress badge; bookmarks are keyed by name + size, so they are shared with the same file opened locally
 - 転送が途中で切れた場合は Range リクエストで受信済みの続きから再開します / Interrupted transfers resume from where they stopped via Range requests
