@@ -1,2 +1,6 @@
 # library.php のローカル設定 (公開フォルダの絶対パスが入るのでコミットしない)
 library.config.php
+
+# Python (tools/generate_coverimages.py)
+__pycache__/
+*.pyc

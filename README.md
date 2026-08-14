@@ -18,7 +18,8 @@ pdf-viewer-with-screenshot/
 ├── library.config.example.php   # library.php の設定サンプル / Config sample
 ├── library.htaccess.example     # Basic 認証のサンプル / Basic auth sample
 ├── tools/
-│   └── generate_coverimages.php # 表紙画像の一括生成 (CLI) / Cover generator (CLI)
+│   ├── generate_coverimages.php # 表紙画像の一括生成 (CLI) / Cover generator (CLI)
+│   └── generate_coverimages.py  # 同上の Python 版 / same tool, Python version
 ├── vendor/                # Vendored libraries (no CDN required)
 │   ├── pdfjs/             #   PDF.js v4.9.155
 │   ├── pica/              #   Pica.js v10.0.2
@@ -339,6 +340,35 @@ php tools/generate_coverimages.php --help
 必要な外部依存は「あるものを自動で使う」方式です。CBZ/ZIP/EPUB は PHP 標準の ZipArchive だけで動きます。CBR/RAR/CB7/7z は `7z` または `unrar`、PDF は Imagick / `pdftoppm` / `mutool` / `magick` / `gs` のいずれかが必要で、無い形式だけがスキップされます（`--check` で確認できます）。
 
 Dependencies are picked up automatically: CBZ/ZIP/EPUB need nothing beyond PHP's ZipArchive; CBR/RAR/CB7/7z need `7z` or `unrar`; PDF needs Imagick, `pdftoppm`, `mutool`, `magick`, or `gs`. Missing tools only skip the affected formats — run `--check` to see what is available.
+
+**Python 版 / Python Version**
+
+Windows の PHP は Imagick や Ghostscript を入れるのが面倒なので、**同じ機能の Python 版**も用意しています（`tools/generate_coverimages.py`）。`pip` だけで PDF のレンダリングまで揃うのが利点です。オプション名・表紙の決め方・出力は PHP 版と同じですが、**`library.config.php` は読まず**、設定は `--root` などのオプションか `--config` の JSON で渡します。
+
+Installing Imagick/Ghostscript for PHP on Windows is a hassle, so the same tool is also provided in Python. Everything including PDF rendering installs via `pip`. Same options, same output; it does **not** read `library.config.php` — pass settings via options or `--config` JSON.
+
+```bash
+pip install pillow pypdfium2          # 必須 + PDF / required + PDF
+pip install py7zr rarfile             # 任意: 7z / RAR (無ければ外部の 7z / unrar を使う)
+
+python tools/generate_coverimages.py --root=D:/Books --check
+python tools/generate_coverimages.py --root=D:/Books --dry-run -v
+python tools/generate_coverimages.py --root=D:/Books --mtime
+python tools/generate_coverimages.py --config=cover.json
+```
+
+```json
+{
+  "root": "D:/Books",
+  "format": "webp",
+  "quality": 82,
+  "maxWidth": 1200,
+  "maxHeight": 1600,
+  "sort": "lexical",
+  "epubCover": "spine",
+  "matchMtime": true
+}
+```
 
 - しおりを有効にしていると、一覧に既読ページのバッジ (`p.42`) が出ます。しおりは「ファイル名 + サイズ」で識別するので、同じファイルをローカルから開いたときのしおりとそのまま共有されます / With bookmarks enabled, rows show a read-progress badge; bookmarks are keyed by name + size, so they are shared with the same file opened locally
 - 転送が途中で切れた場合は Range リクエストで受信済みの続きから再開します / Interrupted transfers resume from where they stopped via Range requests

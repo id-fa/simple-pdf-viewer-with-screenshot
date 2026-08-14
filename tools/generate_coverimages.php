@@ -135,6 +135,41 @@ function cov_die(string $s): void
     exit(1);
 }
 
+/** エラーメッセージを表示用に切り詰める (マルチバイト境界で割らない) */
+function cov_clip(string $s, int $max): string
+{
+    if (strlen($s) <= $max) return $s;
+    $cut = substr($s, 0, $max);
+    if (function_exists('mb_substr')) {
+        $safe = @mb_substr($cut, 0, (int)@mb_strlen($cut, 'UTF-8'), 'UTF-8');
+        if (is_string($safe) && $safe !== '') $cut = $safe;
+    }
+    return $cut . '…';
+}
+
+/** 一時作業フォルダを作る (外部レンダラの出力先)。失敗したら null */
+function cov_temp_dir(): ?string
+{
+    static $n = 0;
+    $base = rtrim(str_replace('\\', '/', sys_get_temp_dir()), '/');
+    for ($i = 0; $i < 20; $i++) {
+        $dir = $base . '/covimg_' . getmypid() . '_' . (++$n) . '_' . $i;
+        if (@mkdir($dir, 0700)) return $dir;
+        if (is_dir($dir)) continue;
+        return null;
+    }
+    return null;
+}
+
+/** cov_temp_dir() で作ったフォルダを中身ごと消す (1 階層で十分) */
+function cov_rm_tree(string $dir): void
+{
+    foreach ((array)@glob($dir . '/*') as $f) {
+        if (is_dir($f)) cov_rm_tree($f); else @unlink($f);
+    }
+    @rmdir($dir);
+}
+
 function cov_human_size(int $n): string
 {
     if ($n >= 1048576) return sprintf('%.1fMB', $n / 1048576);
@@ -263,7 +298,12 @@ function cov_run(array $cmd, int $timeoutSec = 120): array
     while (true) {
         $r = [$pipes[1], $pipes[2]];
         $w = $x = null;
-        if (@stream_select($r, $w, $x, 0, 200000) > 0) {
+        $n = @stream_select($r, $w, $x, 0, 200000);
+        if ($n === false) {
+            // Windows のパイプでは stream_select が失敗することがある。
+            // そのまま回すと CPU を食い潰すので、明示的に待ってからポーリングする
+            usleep(20000);
+        } elseif ($n > 0) {
             foreach ($r as $fh) {
                 $chunk = fread($fh, 65536);
                 if ($chunk === false || $chunk === '') continue;
@@ -283,17 +323,24 @@ function cov_run(array $cmd, int $timeoutSec = 120): array
             return ['code' => (int)$st['exitcode'], 'out' => $out, 'err' => $err];
         }
         if (microtime(true) > $deadline) {
-            proc_terminate($proc);
-            fclose($pipes[1]); fclose($pipes[2]);
-            proc_close($proc);
+            // パイプを先に閉じてから終了させる。proc_close は子の終了を待つので、
+            // 出力待ちで固まっている子をそのまま proc_close に渡すとここでハングする
+            @fclose($pipes[1]); @fclose($pipes[2]);
+            @proc_terminate($proc, 9);
+            for ($i = 0; $i < 100; $i++) {          // 最大 2 秒だけ終了を待つ
+                $s = proc_get_status($proc);
+                if (!$s['running']) break;
+                usleep(20000);
+            }
+            @proc_close($proc);
             return ['code' => -1, 'out' => $out, 'err' => 'タイムアウト (' . $timeoutSec . 's)'];
         }
     }
 }
 
 /**
- * コマンドが実行できるか確かめる。結果はキャッシュする (1 ファイルごとに探し直さない)。
- * Windows では PATH に無いことが多いので、よくあるインストール先も試す。
+ * コマンドの実体を探す。結果はキャッシュする (1 ファイルごとに探し直さない)。
+ * Windows では PATH に入っていないことが多いので、よくあるインストール先も見る。
  */
 function cov_which(string $key, array $cfg): ?string
 {
@@ -302,25 +349,76 @@ function cov_which(string $key, array $cfg): ?string
 
     $cands = [$cfg['commands'][$key] ?? $key];
     if (DIRECTORY_SEPARATOR === '\\') {
-        $win = [
-            '7z'       => ['C:\\Program Files\\7-Zip\\7z.exe', 'C:\\Program Files (x86)\\7-Zip\\7z.exe'],
-            'unrar'    => ['C:\\Program Files\\WinRAR\\UnRAR.exe', 'C:\\Program Files (x86)\\UnRAR\\UnRAR.exe'],
-            'pdftoppm' => ['C:\\Program Files\\poppler\\bin\\pdftoppm.exe'],
-            'gs'       => ['C:\\Program Files\\gs\\bin\\gswin64c.exe'],
+        // Windows のインストーラは PATH を通さないことが多いので、定番の場所も見る。
+        // '*' を含むものは glob で展開する (バージョン番号付きフォルダ対策)
+        $pf = ['C:/Program Files', 'C:/Program Files (x86)'];
+        $rel = [
+            '7z'       => ['7-Zip/7z.exe'],
+            'unrar'    => ['WinRAR/UnRAR.exe', 'UnRAR/UnRAR.exe'],
+            'pdftoppm' => ['poppler/bin/pdftoppm.exe', 'poppler*/Library/bin/pdftoppm.exe', 'poppler*/bin/pdftoppm.exe'],
+            'mutool'   => ['mupdf*/mutool.exe'],
+            'magick'   => ['ImageMagick*/magick.exe'],
+            'gs'       => ['gs/*/bin/gswin64c.exe', 'gs/*/bin/gswin32c.exe'],
         ];
-        foreach ($win[$key] ?? [] as $p) $cands[] = $p;
+        foreach ($rel[$key] ?? [] as $r) {
+            foreach ($pf as $base) {
+                $p = $base . '/' . $r;
+                if (strpos($p, '*') === false) { $cands[] = $p; continue; }
+                foreach ((array)@glob($p) as $hit) $cands[] = str_replace('\\', '/', $hit);
+            }
+        }
     }
 
     foreach ($cands as $bin) {
         if ($bin === '') continue;
-        // 7z / unrar は引数無しでも usage を吐いて終了する。gs だけ --version でないと対話に入る
-        if ($key === '7z' || $key === 'unrar') $probe = [$bin];
-        elseif ($key === 'gs') $probe = [$bin, '--version'];
-        else $probe = [$bin, '-v'];
-        $r = cov_run($probe, 20);
-        if ($r['code'] !== -1) { $cache[$key] = $bin; return $bin; }
+        $found = cov_find_bin((string)$bin);
+        if ($found !== null) { $cache[$key] = $found; return $found; }
     }
     $cache[$key] = null;
+    return null;
+}
+
+/**
+ * PATH (Windows は PATHEXT も) を自前で走査して実行ファイルを探す。
+ *
+ * **存在確認のためにコマンドを起動してはいけない。** 以前は `cmd -v` 等で試し起動していたが、
+ * 引数を認識しないコマンドが対話モードに入って `--check` がそこで止まる
+ * (ImageMagick の `magick -v` が実測で該当)。何が起きても止まらないよう、
+ * ここではファイルの有無だけを見る。実際に動くかどうかは使うときに分かる。
+ */
+function cov_find_bin(string $bin): ?string
+{
+    $isWin = (DIRECTORY_SEPARATOR === '\\');
+    $exts = [''];
+    if ($isWin) {
+        $pathext = (string)(getenv('PATHEXT') ?: '.COM;.EXE;.BAT;.CMD');
+        foreach (explode(';', $pathext) as $e) {
+            $e = trim($e);
+            if ($e !== '') $exts[] = $e;
+        }
+    }
+
+    $ok = function (string $p) use ($isWin): bool {
+        // Windows のファイルは実行ビットを持たないので is_executable を見ない
+        return is_file($p) && ($isWin || is_executable($p));
+    };
+
+    // 区切りを含む = パス指定なので PATH は引かない
+    if (strpbrk($bin, '/\\') !== false) {
+        foreach ($exts as $e) {
+            if ($ok($bin . $e)) return $bin . $e;
+        }
+        return null;
+    }
+
+    foreach (explode($isWin ? ';' : ':', (string)getenv('PATH')) as $dir) {
+        $dir = rtrim(str_replace('\\', '/', trim(trim($dir), '"')), '/');
+        if ($dir === '') continue;
+        foreach ($exts as $e) {
+            $cand = $dir . '/' . $bin . $e;
+            if ($ok($cand)) return $cand;
+        }
+    }
     return null;
 }
 
@@ -652,27 +750,47 @@ function cov_pdf_first_page(string $path, array $cfg, ?string &$err): ?string
         } else {
             $bin = cov_which($eng, $cfg);
             if ($bin === null) { $errs[] = $eng . ': 見つかりません'; continue; }
-            switch ($eng) {
-                case 'pdftoppm':
-                    $cmd = [$bin, '-png', '-r', (string)$dpi, '-f', '1', '-l', '1', '-singlefile', $path, '-'];
-                    break;
-                case 'mutool':
-                    $cmd = [$bin, 'draw', '-F', 'png', '-o', '-', '-r', (string)$dpi, $path, '1'];
-                    break;
-                case 'magick':
-                    $cmd = [$bin, '-density', (string)$dpi, $path . '[0]', '-background', 'white', '-flatten', 'png:-'];
-                    break;
-                case 'gs':
-                    $cmd = [$bin, '-q', '-dNOPAUSE', '-dBATCH', '-dSAFER', '-sDEVICE=png16m',
-                            '-dFirstPage=1', '-dLastPage=1', '-r' . $dpi, '-sOutputFile=-', $path];
-                    break;
-                default:
-                    $errs[] = $eng . ': 不明なエンジン';
-                    continue 2;
+
+            // 出力は必ず一時ファイルで受け取る。stdout 経由 (pdftoppm の '-' 等) は移植性が無く、
+            // Windows 版 pdftoppm 26.x は '-' を **ファイル名扱い**してカレントに '-.png' を作る
+            // (実測)。テキストモードで改行が化ける危険もあるので、バイナリはファイルで渡す。
+            $tmpDir = cov_temp_dir();
+            if ($tmpDir === null) { $errs[] = $eng . ': 一時フォルダを作れません'; continue; }
+            $prefix = $tmpDir . '/page';
+            try {
+                switch ($eng) {
+                    case 'pdftoppm':
+                        $cmd = [$bin, '-png', '-r', (string)$dpi, '-f', '1', '-l', '1', '-singlefile', $path, $prefix];
+                        break;
+                    case 'mutool':
+                        $cmd = [$bin, 'draw', '-F', 'png', '-o', $prefix . '.png', '-r', (string)$dpi, $path, '1'];
+                        break;
+                    case 'magick':
+                        $cmd = [$bin, '-density', (string)$dpi, $path . '[0]', '-background', 'white', '-flatten', $prefix . '.png'];
+                        break;
+                    case 'gs':
+                        $cmd = [$bin, '-q', '-dNOPAUSE', '-dBATCH', '-dSAFER', '-sDEVICE=png16m',
+                                '-dFirstPage=1', '-dLastPage=1', '-r' . $dpi, '-sOutputFile=' . $prefix . '.png', $path];
+                        break;
+                    default:
+                        $errs[] = $eng . ': 不明なエンジン';
+                        continue 2;
+                }
+                $r = cov_run($cmd, 300);
+                // -singlefile が効かない版に備えて prefix* も拾う (page-1.png / page-01.png 等)
+                $hits = (array)@glob($prefix . '*.png');
+                sort($hits, SORT_STRING);
+                if ($hits) {
+                    $raw = @file_get_contents($hits[0]);
+                    if ($raw !== false && $raw !== '') $bytes = $raw;
+                }
+                if ($bytes === null) {
+                    $msg = trim((string)preg_replace('/\s+/', ' ', $r['err'] !== '' ? $r['err'] : $r['out']));
+                    $errs[] = $eng . ': ' . ($msg !== '' ? cov_clip($msg, 200) : '画像が出力されません');
+                }
+            } finally {
+                cov_rm_tree($tmpDir);
             }
-            $r = cov_run($cmd, 300);
-            if ($r['out'] !== '') $bytes = $r['out'];
-            else $errs[] = $eng . ': ' . trim(substr($r['err'], 0, 200));
         }
 
         if ($bytes !== null && $bytes !== '' && cov_probe($bytes) !== null) {

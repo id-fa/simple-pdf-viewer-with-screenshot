@@ -152,3 +152,7 @@
    - `--dry-run` で書き込まずに確認、`--check` で使えるバックエンド (Imagick / GD / PDF レンダラ / 7z / unrar) を一覧表示
    - CBZ / ZIP / EPUB は PHP 標準の ZipArchive だけで動く。CBR / RAR / CB7 / 7z は `7z` または `unrar`、PDF は Imagick / `pdftoppm` / `mutool` / `magick` / `gs` のいずれかがあれば使う (無い形式だけがスキップされる)
    - CLI 専用 (Web からアクセスされても何もしない)
+ - 表紙生成ツールの Python 版を追加 (`tools/generate_coverimages.py`)
+   - Windows の PHP は Imagick / Ghostscript の導入が面倒なため。`pip install pillow pypdfium2` だけで PDF のレンダリングまで完結する (Linux ではどちらを使ってもよい)
+   - 表紙の決め方・オプション名・出力は PHP 版と同じ。ただし **`library.config.php` は読まず**、設定は `--root` 等のオプションか `--config=cover.json` (JSON) で渡す
+   - 画像は Pillow (必須)、PDF は PyMuPDF / pypdfium2 / pdftoppm / mutool / magick / gs、書庫は標準の zipfile + py7zr / rarfile / 外部 7z / unrar のうち「あるもの」を自動で使う

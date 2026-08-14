@@ -12,6 +12,7 @@
 - `library.config.example.php` — `library.php` の設定サンプル (実体の `library.config.php` は .gitignore 済み)
 - `library.htaccess.example` — Basic 認証のサンプル (Apache / nginx)
 - `tools/generate_coverimages.php` — ライブラリの表紙画像 (サイドカー) を一括生成する CLI 専用スクリプト (詳細は「表紙生成ツール」)
+- `tools/generate_coverimages.py` — 同じものの Python 版 (Windows ではこちらの方が導入が楽。詳細は「Python 版」)
 - `vendor/` — ベンダー化された外部ライブラリ (CDN不要)
   - `pdfjs/pdf.min.mjs` `pdf.worker.min.mjs` — PDF.js v4.9.155
   - `pdfjs/cmaps/*.bcmap` — CJK (日中韓) 用の CMap データ (169 ファイル、~1.5MB)。フォント未埋め込み CJK PDF の文字解決に使用。on-demand ロード (PRECACHE 非対象 / 初回ネット使用時に `sw.js` の fetch ハンドラが自動キャッシュ)
@@ -520,12 +521,26 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
   - 書庫 … ファイル名順の 1 ファイル目。既定 `lexical` / `--sort=natural` で `naturalCompare` 相当に切替 (どちらも comic-viewer.html の Sort と同じ規則)
   - `__MACOSX/` と `._` 始まりのエントリは除外。先頭候補がデコードできなければ次の候補へ (`maxCandidates` 枚まで)
 - **書庫アクセス**: ZipArchive (cbz/zip/epub) → 7z → unrar の順に**一覧が取れたものを使う**ので、拡張子が偽装されていても (中身が rar の `.cbz` 等) 拾える。外部コマンドは `proc_open` の**配列形式**で起動しシェルを経由しない (空白・`%`・引用符を含むパスで壊れない)。7z/unrar からはパイプ経由で stdout に取り出すので一時ファイルを作らない
-- **PDF レンダラ**: `imagick` → `pdftoppm` → `mutool` → `magick` → `gs` を順に試し、**成功したエンジンを記憶して 2 件目以降は直行**する。いずれも stdout へ PNG を吐かせて受け取る。全滅時は理由を並べて 1 件失敗として続行 (他の形式は処理される)
+- **PDF レンダラ**: `imagick` → `pdftoppm` → `mutool` → `magick` → `gs` を順に試し、**成功したエンジンを記憶して 2 件目以降は直行**する。全滅時は理由を並べて 1 件失敗として続行 (他の形式は処理される)
+  - **外部レンダラの出力は必ず一時フォルダのファイルで受け取る** (`cov_temp_dir()` → 読み込み → `cov_rm_tree()`)。stdout 経由は移植性が無く、**Windows 版 pdftoppm 26.x は出力先の `-` を stdout ではなくファイル名として扱い、カレントに `-.png` を作って stdout には何も出さない** (実測)。テキストモードで改行が化ける危険もある
+  - `magick` は PDF を自前で描けず Ghostscript を呼ぶので、gs 未導入の環境では `FailedToExecuteCommand gswin64c.exe` で失敗する。auto では `pdftoppm` が先に来るので通常は問題にならない
+- **外部コマンドの検出 (`cov_find_bin()`)**: PATH (Windows は PATHEXT も) を**自前で走査してファイルの有無を見るだけ**。存在確認のために試し起動してはいけない — 引数を認識しないコマンドが対話モードに入り、`--check` がそこで固まる (`magick -v` が実測で該当)。Windows 向けに `C:\Program Files\...` の定番の場所も glob で見る (`gs/*/bin/gswin64c.exe` 等)
 - **縮小**: `maxWidth` / `maxHeight` を超える画像だけ縮小 (拡大はしない、0 で無制限)。Imagick があれば `thumbnailImage`、無ければ GD の `imagecopyresampled`。出力形式が書き出せない環境では自動的に JPEG/PNG に落とし、**その拡張子が `coverExts` に無ければ起動時にエラー**にする (library.php が表紙として認識できないため)
 - **スキップ**: 既存の表紙が `coverExts` のどれかで見つかれば飛ばす。`--force` で全再生成、`--stale` で「表紙が元ファイルより古いものだけ」再生成
 - **`--mtime`**: 表紙の更新日時を**抽出元ファイル (PDF / EPUB / 書庫そのもの) の mtime** に合わせる。書庫内画像のタイムスタンプではない。スキップしたファイルにも適用されるので、後から `--mtime` だけ付けて回すこともできる
 - **書き込み**: 同じフォルダの `.covertmp_*` に書いてから `rename`。ドット始まりなので `lib_walk()` にも引っかからない。書き終えたら**別拡張子の古い表紙を消す** (`coverExts` の優先順で古い方が拾われ続けるのを防ぐ)
 - その他: `--dry-run` / `--check` (使えるバックエンド一覧) / `--filter` / `--path` / `--ext` / `--limit` / `--console-encoding=SJIS-win` (Windows コンソールの文字化け対策)。未知のオプションは黙って無視せずエラーにする
+
+#### 表紙生成ツール Python 版 (`tools/generate_coverimages.py`)
+**Windows の PHP は Imagick / Ghostscript を入れるのが面倒**なのに対し、Python は `pip install pillow pypdfium2` だけで PDF レンダリングまで揃う。Linux ではどちらでもよい。**PHP 版と表紙の決め方・オプション名・出力を揃えてあるので、片方を直したらもう片方も追うこと。**
+
+- **`library.config.php` は読まない** (PHP を経由せず使えるようにするため)。設定は `--root` 等のオプション、または `--config=cover.json` (JSON、キー名は PHP 版の `coverTool` と同じ camelCase + `root` / `exts` / `coverSuffix` / `coverExts`)
+- **バックエンド**: 画像は Pillow (必須)。PDF は `pymupdf` → `pypdfium2` → `pdftoppm` → `mutool` → `magick` → `gs`、書庫は `zipfile` (標準) / `py7zr` / `rarfile` → 外部 `7z` / `unrar`。**pip で入る範囲だけで PDF まで完結する**のが PHP 版との最大の差
+  - `import fitz` は PyMuPDF 1.24.3+ で deprecation 警告を出すので `import pymupdf` を先に試す
+  - **py7zr 1.x は `read()` が廃止され `extract()` だけになった**ので、`getattr(sz, "read", None)` で 0.x と分岐し、1.x では一時フォルダに 1 件だけ展開して読む
+- **ZIP のファイル名順**: UTF-8 フラグ (`flag_bits & 0x800`) が無い ZIP は Python が cp437 でデコードするので、**生バイトに戻してからソートキーにする**。PHP 版 (バイト列ソート) と同じ順序を保つため
+- ファイル名は Python が Unicode で扱うので `fsEncoding` 相当の設定は不要。Windows の cp932 コンソール対策は `sys.stdout.reconfigure(errors="replace")` で行う (`--console-encoding` で明示指定も可)
+- 外部レンダラの出力を一時ファイルで受ける理由、コマンド検出で試し起動しない理由は PHP 版と同じ
 
 #### Basic 認証 (`lib_require_auth()`)
 設定の `'auth' => ['user'=>..., 'pass'=>..., 'realm'=>...]` があるときだけ有効 (既定 `null` = 認証なし)。**サーバー設定が不要で、認証の影響範囲が `library.php` に閉じるのが利点** — `.htaccess` でアプリ全体に掛けてしまうと SW のプリキャッシュが 401 で静かに壊れるが、この方式ならその事故が構造的に起きない。設定読み込み直後・ファイルに触れる前に呼ぶ。
