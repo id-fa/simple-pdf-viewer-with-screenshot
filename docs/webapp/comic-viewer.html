@@ -273,6 +273,10 @@ label.check input { cursor: pointer; }
 .lib-row { display: flex; align-items: center; gap: 8px; padding: 7px 14px; cursor: pointer; border-bottom: 1px solid #22222f; }
 .lib-row:hover { background: #232338; }
 .lib-icon { flex-shrink: 0; width: 18px; text-align: center; font-size: 13px; }
+/* 小さい絵文字どうし (🖼 と 📄) では区別が付きにくいので、表紙ありは青リングのチップ、
+   表紙なしは彩度と輝度を落として差を付ける (行の高さは変えない) */
+.lib-icon.cover { box-sizing: border-box; width: 20px; height: 18px; line-height: 16px; font-size: 11px; border: 1px solid #4a9eff; border-radius: 4px; background: #14294d; }
+.lib-icon.plain { filter: grayscale(1); opacity: 0.45; }
 .lib-name { flex: 1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lib-dir .lib-name { color: #ffd479; }
 .lib-sub { font-size: 10px; color: #666; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -4388,7 +4392,9 @@ async function libLoadTree(force = false) {
   const data = await libFetchJson('tree');
   const entries = (data.entries || []).filter(e => LIB_ACCEPT.test(e.path));
   libTree = { root: data.root || 'Library', entries, warnings: data.warnings || [] };
-  libCwd = '';
+  // 更新 (⟳) では現在のフォルダも絞り込みも保持する (片方だけ残ると「フィルタ付きのルート」
+  // という意図しない表示になる)。フォルダごと消えていたときだけルートに戻す。
+  if (libCwd !== '' && !entries.some(e => e.path.startsWith(libCwd + '/'))) libCwd = '';
   await libComputeReadState();
   return libTree;
 }
@@ -4757,7 +4763,7 @@ function libRender() {
     const row = document.createElement('div');
     row.className = 'lib-row';
     // 表紙がある項目はアイコンを変えて、ホバー / ロングタップで見られることを示す
-    row.innerHTML = `<span class="lib-icon">${e.cover ? '🖼' : '📄'}</span>`;
+    row.innerHTML = `<span class="lib-icon ${e.cover ? 'cover' : 'plain'}">${e.cover ? '🖼' : '📄'}</span>`;
     const nameWrap = document.createElement('span');
     nameWrap.className = 'lib-name';
     nameWrap.textContent = base;
@@ -4937,8 +4943,12 @@ libSortDirBtn.addEventListener('click', () => {
   libRender();
 });
 document.getElementById('libReload').addEventListener('click', async () => {
-  try { await libLoadTree(true); libRender(); }
-  catch (err) { showToast(err.message, 4000); }
+  const keepScroll = libListEl.scrollTop;   // 再描画で 0 に戻るので位置も戻す
+  try {
+    await libLoadTree(true);
+    libRender();
+    libListEl.scrollTop = keepScroll;
+  } catch (err) { showToast(err.message, 4000); }
 });
 
 // ---- ?lib=<相対パス> による自動オープン ----

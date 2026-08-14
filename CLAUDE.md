@@ -527,13 +527,14 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - 取得した Blob を `new File([blob], base, {lastModified})` に包んで既存の `openFile()` / `openPdfFile()` に渡すだけ。以降は通常のローカルファイルと完全に同じ経路 (PDF / アーカイブ判定・しおり・EPUB 解析・フィルタすべてそのまま動く)。メモリ上の File なので `readFileToBuffer` のリトライは即成功する
 - `libDownload()` は転送中断時に **Range で受信済みの続きから再開**する (`LIB_BACKOFF`)。Range を投げたのに 200 が返る (サーバーが部分取得非対応) 場合はバッファを捨てて最初からやり直す
 - **既読バッジ**: しおりのハッシュが `ファイル名|サイズ` なので、`tree` の `size` から一覧描画前に既読状態を引ける (`libComputeReadState`)。ローカルで開いた同じファイルのしおりとそのまま共有される
+- **更新ボタン (⟳) は現在のフォルダ・絞り込み・スクロール位置をすべて保持する**。`libLoadTree(true)` が無条件に `libCwd = ''` していた頃は「絞り込みは残っているのにルートに戻る」という中途半端な状態になっていた。新しい `tree` にそのフォルダが1件も無いときだけルートに戻す (フォルダごと消えた場合)
 - **表示切替** (`libView`、localStorage `viewerLibraryView`): リスト ⇄ サムネイル (グリッド)。`libRender()` が `libView` で分岐して行 / タイルを作る。グリッドの `<img>` は `loading="lazy"` なので画面外のタイルは取りに行かない
 - **表紙プレビュー** (`libAttachPreview()`): `cover: true` の項目にだけ仕込む。マウスは `mouseenter` から 320ms 遅らせて出す (一覧を横切っただけで出ないように)、`mousemove` で追従。タッチは 450ms のロングタップで画面中央に大きく出す
   - ロングタップ後に指を離すと `click` が飛んでファイルが開いてしまうので、`libSuppressClick` を立てて `libRender()` 内の `openEntry()` が握り潰す。`touchstart` のたびに false に戻す
   - `touchmove` が 12px を超えたらスクロール操作とみなしてロングタップを取り消す
   - CSS で `user-select: none` / `-webkit-touch-callout: none` を当て、OS のテキスト選択・コールアウトが割り込まないようにする
   - 表紙が消えている等で `<img>` が `error` になったら、そのエントリの `cover` を落として以後は出さない (グリッドは拡張子プレースホルダに差し替える)
-  - リストのアイコンは表紙があれば 🖼 / なければ 📄。ホバーで見られることの目印を兼ねる
+  - リストのアイコンは表紙があれば 🖼 / なければ 📄。ホバーで見られることの目印を兼ねる。**小さい絵文字どうしでは区別が付かない**ので、CSS で差を付けている: 表紙あり = `.lib-icon.cover` (青リング + 濃紺のチップ)、表紙なし = `.lib-icon.plain` (`grayscale(1)` + `opacity: 0.45`)。チップは 20×18px に収めてあり行の高さは変わらない
 - **利用可否の判定**: 起動時の probe はしない (Basic 認証のダイアログが起動直後に出てしまうため)。ヘッダーの `Library` ボタンは常時表示し、初回クリックで 404 / 503 / **JSON でないレスポンス** (PHP が動いていないサーバーが `library.php` のソースをそのまま 200 で返すケース) を踏んだら `libraryUnavailableAt` を localStorage に記録して24時間だけ UI を隠す。後から設置されれば自動的に復活する。dropzone の導線は「一度つながった実績がある」(`libraryAvailable`) ときだけ出す
 - **`?lib=<相対パス>`**: 起動時に自動オープン。**URL には書き戻さない** — `?lib=` が残っていると ESC 2回 (`location.reload()`) でファイルを閉じたつもりが再び開いてしまうため、`?share=1` と同様に `history.replaceState` で即座に取り除く。launchQueue / share_target が先に走った場合は `window.__libSkipAuto` で抑止する
 - **`O` キー**: ファイル未読み込みでも使うので、keydown ハンドラの `totalPages === 0` / `!pdfDoc` ガードより**前**に置く。モーダルが開いている間は Escape で閉じるだけにして、絞り込み入力を邪魔しない

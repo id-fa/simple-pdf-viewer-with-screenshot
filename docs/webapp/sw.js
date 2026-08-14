@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pdf-viewer-v36';
+const CACHE_NAME = 'pdf-viewer-v37';
 const SHARE_CACHE = 'share-stash-v1';
 const PRECACHE_URLS = [
   './',
