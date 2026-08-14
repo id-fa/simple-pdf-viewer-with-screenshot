@@ -32,10 +32,14 @@ jobs:
           if not GA:
               print('GA not set; skipping injection')
           else:
-              files = glob.glob('docs/**/*.html', recursive=True) + glob.glob('docs/*.html')
+              patterns = ['docs/*.html', 'docs/**/*.html']
+              files = []
+              for p in patterns:
+                  files += glob.glob(p, recursive=True)
+              files = sorted(set(files))
               modified = []
               insert = (
-                  f"<script async src=\"https://www.googletagmanager.com/gtag/js?id={GA}\"></script>\n"
+                  f'<script async src="https://www.googletagmanager.com/gtag/js?id={GA}"></script>\n'
                   "<script>\n"
                   "  window.dataLayer = window.dataLayer || [];\n"
                   "  function gtag(){dataLayer.push(arguments);}\n"
@@ -43,30 +47,34 @@ jobs:
                   f"  gtag('config', '{GA}');\n"
                   "</script>\n"
               )
-              for p in sorted(set(files)):
+              for p in files:
                   try:
                       with open(p, 'r', encoding='utf-8') as f:
                           s = f.read()
                   except Exception as e:
-                      print('skip', p, e)
+                      print('skip (read error):', p, e)
                       continue
-                  if 'googletagmanager.com' in s or 'gtag(' in s:
+                  # Skip if already contains GA/gtag/gtm
+                  if 'googletagmanager.com' in s or 'gtag(' in s or 'gtm.js' in s:
                       continue
                   if '</head>' in s:
-                      s = s.replace('</head>', insert + '</head>')
-                      with open(p, 'w', encoding='utf-8') as f:
-                          f.write(s)
-                      modified.append(p)
+                      s2 = s.replace('</head>', insert + '</head>')
+                      if s2 != s:
+                          with open(p, 'w', encoding='utf-8') as f:
+                              f.write(s2)
+                          modified.append(p)
               print('Modified files:', modified)
           PY
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
+
       - name: Build with Jekyll
         uses: actions/jekyll-build-pages@v1
         with:
           source: ./docs
           destination: ./_site
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
 
