@@ -58,7 +58,9 @@ jobs:
                   if 'googletagmanager.com' in s or 'gtag(' in s or 'gtm.js' in s:
                       continue
                   if '</head>' in s:
-                      s2 = s.replace('</head>', insert + '</head>')
+                      # Replace only the first occurrence: comic-viewer.html has a
+                      # second '</head>' inside the EPUB reader's srcdoc template literal.
+                      s2 = s.replace('</head>', insert + '</head>', 1)
                       if s2 != s:
                           with open(p, 'w', encoding='utf-8') as f:
                               f.write(s2)
