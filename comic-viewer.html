@@ -784,12 +784,73 @@ annotationOverlay.addEventListener('click', e => {
   if (e.target === annotationOverlay) annotationOverlay.classList.remove('open');
 });
 
+// ---- SHA-256 ----
+// crypto.subtle は secure context (HTTPS / localhost) にしか存在しない。iOS で LAN の
+// http://192.168.x.x:8000 を開くと undefined になり、openFile 冒頭のハッシュ計算が
+// "undefined is not an object (evaluating 'crypto.subtle.digest')" で落ちて
+// ファイルが一切開けなくなる。そのため無い環境では同じ SHA-256 を JS で計算する。
+// 出力はビット単位で一致するので、しおりは HTTPS 環境・他端末とそのまま共有できる。
+async function sha256Hex(str) {
+  const data = new TextEncoder().encode(str);
+  if (globalThis.crypto && crypto.subtle) {
+    const buf = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+  return sha256HexJS(data);
+}
+
+const SHA256_K = new Uint32Array([
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+]);
+
+// FIPS 180-4 そのままの実装。入力は数十バイト (ファイル名|サイズ) なので速度は問題にならない。
+function sha256HexJS(bytes) {
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+  const h = new Uint32Array([
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+  ]);
+  const len = bytes.length;
+  const total = ((len + 9 + 63) >> 6) << 6; // 0x80 + 64bit 長さ を含めて 64 の倍数に切り上げ
+  const msg = new Uint8Array(total);
+  msg.set(bytes);
+  msg[len] = 0x80;
+  const view = new DataView(msg.buffer);
+  const bits = len * 8;
+  view.setUint32(total - 8, Math.floor(bits / 0x100000000));
+  view.setUint32(total - 4, bits >>> 0);
+  const w = new Uint32Array(64);
+  for (let off = 0; off < total; off += 64) {
+    for (let i = 0; i < 16; i++) w[i] = view.getUint32(off + i * 4);
+    for (let i = 16; i < 64; i++) {
+      const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+      const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, hh] = h;
+    for (let i = 0; i < 64; i++) {
+      const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+      const t1 = (hh + S1 + ((e & f) ^ (~e & g)) + SHA256_K[i] + w[i]) >>> 0;
+      const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+      const t2 = (S0 + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+      hh = g; g = f; f = e; e = (d + t1) >>> 0;
+      d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    const next = [a, b, c, d, e, f, g, hh];
+    for (let i = 0; i < 8; i++) h[i] = (h[i] + next[i]) >>> 0;
+  }
+  return Array.from(h).map(x => x.toString(16).padStart(8, '0')).join('');
+}
+
 // ---- Bookmark system ----
 async function generateFileHash(file) {
-  const data = new TextEncoder().encode(file.name + '|' + file.size);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
+  return (await sha256Hex(file.name + '|' + file.size)).substring(0, 16);
 }
 
 function isBookmarkEnabled() {
@@ -3397,9 +3458,7 @@ async function loadArchive(srcFile, handle = null) {
       if (!chosen) return; // cancelled
 
       // Re-hash with outer+inner names for nested archives
-      const combinedData = new TextEncoder().encode(file.name + '|' + file.size + '|' + chosen.name);
-      const hashBuf = await crypto.subtle.digest('SHA-256', combinedData);
-      currentFileHash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
+      currentFileHash = (await sha256Hex(file.name + '|' + file.size + '|' + chosen.name)).substring(0, 16);
       sessionLastRead = isBookmarkEnabled() ? (getBookmarkForFile(currentFileHash).lastRead || null) : null;
 
       const innerLoading = showLoading(`${chosen.name} を展開中...`);
@@ -4402,9 +4461,7 @@ async function libLoadTree(force = false) {
 // しおりのハッシュは「ファイル名|サイズ」なので、一覧の時点で既読状態を引ける。
 // ローカルで開いた同じファイルのしおりともそのまま共有される。
 async function libHashNameSize(name, size) {
-  const data = new TextEncoder().encode(name + '|' + size);
-  const buf = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
+  return (await sha256Hex(name + '|' + size)).substring(0, 16);
 }
 
 async function libComputeReadState() {

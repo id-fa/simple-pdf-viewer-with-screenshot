@@ -354,6 +354,8 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 ### しおり（ブックマーク）機能
 - サイドバーを「Bookmarks」「Thumbs」の排他タブに分割
 - localStorage にファイルハッシュ (SHA-256先頭16文字、`file.name + '|' + file.size`) とページ番号を保存
+- **ハッシュ計算は `sha256Hex()` に集約 (両ビューア共通)**。`crypto.subtle` は **secure context (HTTPS / localhost) にしか存在しない**ため、iOS で LAN の `http://192.168.x.x:8000` を開くと `undefined is not an object (evaluating 'crypto.subtle.digest')` になる。しかも `openFile` / `openPdfFile` の**冒頭**で `generateFileHash` を呼んでいるので、しおり無効でも、ライブラリ経由でもローカルのドロップでも**ファイルが一切開けなくなる**。そのため `crypto.subtle` が無い環境では純 JS 実装 `sha256HexJS()` (FIPS 180-4 そのまま、K定数は `SHA256_K`) にフォールバックする。**出力は `crypto.subtle` とビット単位で一致する**ので、しおりは HTTPS 環境・他端末とそのまま共有できる (Node の `crypto` および Chrome の `crypto.subtle` と padding 境界 55/56/63/64/65 バイト含めて照合済み)。呼び出し側は `(await sha256Hex(...)).substring(0, 16)`。使用箇所は `generateFileHash` / 二重アーカイブの再ハッシュ (comic) / `libHashNameSize` (ライブラリの既読バッジ)
+- なお http のままでは Service Worker が登録できない (`navigator.serviceWorker` 自体が無いので `comic-viewer.html:29` のガードで no-op) ため、PWA インストール・オフライン動作・COOP/COEP (wasm-vips) は使えない。ファイルを開いて読むことはできる
 - `BOOKMARK_STORE_FILENAME` 変数 (デフォルト `false`) でファイル名の保存可否を制御（プライバシー保護）
 - **手動しおり**: サムネイル上の `●` マーカークリックでトグル
 - **自動しおり**: `lastRead` (最後に表示したページ) / `maxRead` (到達最深ページ) を `renderView()` 時に自動更新
@@ -631,9 +633,10 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 
 ## docs/webapp/
 GitHub Pages 配信用の同期コピー。ルートと同じ構成 (HTML / sw.js / manifest / vendor / icons) を持つ。
-ルートに変更を加えたら docs/webapp/ にも同期が必要。HTML の diff は**次の2箇所だけ**なので、ルートのファイルをコピーして再適用するのが確実:
-1. `<title>` の末尾に ` - id-fa/simple-pdf-viewer-with-screenshot`
-2. `</style>` と `</head>` の間に Google Analytics の gtag ブロック
+ルートに変更を加えたら docs/webapp/ にも同期が必要。**HTML の中身は完全に同一なので、単純にファイルをコピーすればよい** (差分を再適用する必要はない):
+- `<title>` は**ルート側にも ` - id-fa/simple-pdf-viewer-with-screenshot` を付けて意図的に揃えてある**。コピーだけで同期できるようにするためなので、ルートの title からサフィックスを外さないこと
+- Google Analytics の gtag ブロックは**リポジトリには含めない**。`.github/workflows/jekyll-gh-pages.yml` が Pages のビルド時に `<head>` へ注入する (既に `googletagmanager.com` / `gtag(` があればスキップするガード付き)。HTML に手で書き足さないこと
+- gtag が残っているのは `v1/` / `docs/webapp/v1/` の旧版スナップショットだけ
 
 `library.php` / `library.config*.php` / `tools/` は **docs/webapp/ にコピーしない**。GitHub Pages では PHP が動かず、置いてもソースがそのまま配信されるだけ。置かなければ 404 になり、クライアント側が「未設置」と判定して Library の UI を自動的に隠す。
 
