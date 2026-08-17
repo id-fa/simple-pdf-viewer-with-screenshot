@@ -511,12 +511,17 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdfjs/pdf.worker.min.mjs';
 // 'ww' = Web Worker。縮小処理をメインスレッドから外し Page Unresponsive を防ぐ。
 const picaInstance = new Pica({ features: ['js', 'wasm', 'ww'] });
 
-// nodeca/pica#223 の workaround。Pica v10 の書き直しで失われた (v7.1.1 の da292f78 で
-// 入っていた `returnBitmap` 無効化が v10 には無い) ため外から再適用する。
+// nodeca/pica#223 (v10 での再発は #258) の workaround。
 // ww_offscreen_canvas が真だと __extractTileData が tile を transferToImageBitmap() で
-// worker へ渡すが、Chrome はこの ImageBitmap 往復でタイル境界を壊す (境界に 1px の差、
-// 高周波パターンで最大 27/255。concurrency>1 では実行ごとに結果が変わる)。偽にすると
-// getImageData による typed array 経路になり、出力が非 worker 経路とビット一致する。
+// worker へ渡し、worker も結果を ImageBitmap で返す。Chrome はこの ImageBitmap 往復で
+// タイル境界を壊す (境界に 1px の差、高周波パターンで最大 27/255。concurrency>1 では
+// 実行ごとに結果が変わる)。偽にすると getImageData による typed array 経路になり、
+// 出力が非 worker 経路とビット一致する。
+// pica 10.0.3 で上流は復帰路 (worker → main) を常に typed array に戻したが、往路
+// (main → worker) は ImageBitmap 転送のままなので **Chrome ではまだ継ぎ目が残る**
+// (10.0.3 実測: 2048px 市松 → 900px で 7071px が非一致・最大差 66/255、差分はタイル境界
+// ±destTileBorder の列に集中)。非決定性だけは解消された。よってこの上書きは 10.0.3 でも
+// 必須。上書きすると出力は非 worker 経路とビット一致 (差 0) になる。
 // この capability は createCanvas() では最終フォールバックにしか使われず (document 環境では
 // 到達不能)、別フラグの offscreen_canvas は真のままなので副作用は無い。
 let picaReady = null;

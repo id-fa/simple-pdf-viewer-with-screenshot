@@ -17,7 +17,7 @@
   - `pdfjs/pdf.min.mjs` `pdf.worker.min.mjs` — PDF.js v4.9.155
   - `pdfjs/cmaps/*.bcmap` — CJK (日中韓) 用の CMap データ (169 ファイル、~1.5MB)。フォント未埋め込み CJK PDF の文字解決に使用。on-demand ロード (PRECACHE 非対象 / 初回ネット使用時に `sw.js` の fetch ハンドラが自動キャッシュ)
   - `pdfjs/standard_fonts/` — Foxit/Liberation 製の代替フォント (16 ファイル、~800KB)。標準14フォント (Helvetica/Times 等) 未埋め込み PDF の代替に使用。on-demand ロード
-  - `pica/pica.js` — Pica.js v10.0.2
+  - `pica/pica.js` — Pica.js v10.0.3
   - `libarchive/libarchive.js` `worker-bundle.js` `libarchive.wasm` — libarchive.js v2.0.2
   - `vips/vips-es6.js` `vips.wasm` — wasm-vips (`?vips=1` 時のみロード)
 - `icons/` — PWA アイコン (192 / 512 / maskable) + 生成スクリプト `_generate.py`
@@ -34,7 +34,7 @@
 
 ### 依存
 - **PDF.js** v4.9.155 — `vendor/pdfjs/` からローカル読み込み
-- **Pica.js** v10.0.2 — `vendor/pica/pica.js` — 高品質画像縮小 (Lanczos3 + unsharp mask)
+- **Pica.js** v10.0.3 — `vendor/pica/pica.js` — 高品質画像縮小 (Lanczos3 + unsharp mask)
 
 ### getDocument オプション (両ビューア共通)
 - `cMapUrl` — フォント未埋め込み CJK PDF (日本語/中国語/韓国語) の文字描画に必要。指定が無いと iPhone Safari 等で文字が表示されない (グリフ不一致)
@@ -60,7 +60,7 @@
 
 ### 依存
 - **PDF.js** v4.9.155 — `vendor/pdfjs/` からローカル読み込み
-- **Pica.js** v10.0.2 — `vendor/pica/pica.js`
+- **Pica.js** v10.0.3 — `vendor/pica/pica.js`
 - **libarchive.js** v2.0.2 — `vendor/libarchive/` — WASM ベース、遅延読み込み
 
 ### 対応形式
@@ -274,7 +274,10 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
   - **`'ww'` (Web Worker) を有効化済み** — 縮小処理がメインスレッドから外れる。combined build (`pica.min.mjs`) は worker を文字列で内包し blob URL で起動するので、`workerURL` 指定も split build も**不要**。COOP/COEP (`crossOriginIsolated`) 下でも問題なく動作する
   - **`ensurePicaReady()` で `capabilities.ww_offscreen_canvas = false` を強制すること (nodeca/pica#223 の workaround)**:
     - v10 の `__extractTileData` は `ww && ww_offscreen_canvas` が真だと tile を `transferToImageBitmap()` で worker へ渡す (`kind: 'bitmap'`)。Chrome はこの ImageBitmap 往復で**タイル境界を壊す** — 境界に 1px 幅の差 (高周波パターンで最大 27/255、なだらかな階調では最大 1/255) が出て、`concurrency > 1` では**実行ごとに結果が変わる** (毎回 600〜1400px が変化)。差分を増幅するとタイル境界の格子線と完全に一致する
-    - これは **2021年に upstream が #223 として修正済みだった不具合の再発**。v7.1.1 のコミット `da292f78` "Force WW always return typed array (Chrome workaround)" で `returnBitmap = true` をコメントアウトしていたが、**v10 の書き直しでこの workaround が失われた** (v10.0.2 には `#223` への言及も `returnBitmap` ガードも無い)
+    - これは **2021年に upstream が #223 として修正済みだった不具合の再発**。v7.1.1 のコミット `da292f78` "Force WW always return typed array (Chrome workaround)" で `returnBitmap = true` をコメントアウトしていたが、**v10 の書き直しでこの workaround が失われていた** (v10.0.2 には `#223` への言及も `returnBitmap` ガードも無かった)
+    - **上流は 10.0.3 (2026-08-15) で部分的に修正** (issue #258 として報告 → "Restored lost workaround" + 回帰テスト追加)。worker 側 `resizeBitmap()` が結果を `transferToImageBitmap()` で返すのをやめ、`kind: 'bitmap'` のジョブでも**常に typed array を返す**ようになった。復帰路が array になると main 側は `drawImage` ではなく**内側領域を切り出す `putImageData`** を通るので、タイル境界のはみ出しは起きなくなった
+    - **しかし往路 (main → worker) は 10.0.3 でも `transferToImageBitmap()` のままで、継ぎ目は残っている**。10.0.3 を Chrome で実測 (2048px 市松 → 900px、`ww_offscreen_canvas` を上書きしない場合): **7071px が非 worker 経路と非一致・最大差 66/255**。差分は `innerTileWidth` 境界 (この条件では x=444 / 888) の手前 `destTileBorder` (=3) 列、つまり **441-443 / 888-890 に集中**し、垂直な線として並ぶ。なだらかな階調では差 1/255 に収まるがスクリーントーン等の高周波では見える。**解消されたのは非決定性だけ** (同条件の2回実行はビット一致)。上書きを入れると差 0
+    - したがって **`ensurePicaReady()` の上書きは 10.0.3 でも必須** (性能上の都合ではない)。なお 10.0.2 時代に array 経路が速かったのは復帰路の ImageBitmap が原因で、10.0.3 では両者の所要時間はほぼ同じ (単発 resize で 51ms / 51ms)
     - `ww_offscreen_canvas` を偽にすると `getImageData` による `kind: 'array'` 経路になり、**出力が非 worker 経路とビット完全一致** (差 0)、かつ決定的になる。この capability は `createCanvas()` では最終フォールバックにしか使われず document 環境では到達不能、別フラグの `offscreen_canvas` は真のままなので副作用は無い
     - `init()` 後に上書きする必要がある (feature detection が `init()` 内で値を書き込むため、事前設定では上書きされてしまう)。`init()` は `__initPromise` をキャッシュするので `resize()` 内部の再 init で戻ることはない。トップレベル await は cold start の launchQueue 処理を遅らせるので使わず、初回 `resize` の直前に `await ensurePicaReady()` する遅延ゲート方式にしている
   - 実測 (12ページ CBZ / 2000×2900 スクリーントーン / HQ ON、`fileInput` の change から全サムネイル生成完了まで):
@@ -286,7 +289,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
     | **ww + array 経路 (採用)** | **1118ms** | **66ms** | 4回 | **基準とビット一致** |
 
     `yieldToMain()` によるメインスレッド占有対策と併用する
-  - **更新手順**: npm パッケージ `pica` の tarball から `package/dist/pica.min.mjs` を `vendor/pica/pica.js` と `docs/webapp/vendor/pica/pica.js` にコピー (自己完結型 ESM、`glur` / `multimath` はバンドル済み)。先頭にバージョン明記のバナーコメントを付ける (minified 本体にはバージョン文字列が無いため)。**更新時は #223 が上流で再修正されたか確認する**。修正されていれば `ensurePicaReady()` の capability 上書きは不要になる (残っていても無害)
+  - **更新手順**: npm パッケージ `pica` の tarball から `package/dist/pica.min.mjs` を `vendor/pica/pica.js` と `docs/webapp/vendor/pica/pica.js` にコピー (自己完結型 ESM、`glur` / `multimath` はバンドル済み)。先頭にバージョン明記のバナーコメントを付ける (minified 本体にはバージョン文字列が無いため)。**更新時は #223 / #258 系の回帰を必ず確認する**。復帰路は `grep -o 'postMessage({kind:"[a-z]*"' vendor/pica/pica.js` が `array` だけを返せば健全。往路まで直ったか (= `ensurePicaReady()` の上書きを外せるか) は grep では分からないので、`ww_offscreen_canvas` を上書きした場合としない場合の出力を実際に突き合わせて差 0 を確認すること
   - **注意**: Pica の既定フィルタは v8.0.0 以降 `mks2013` で、Lanczos3 ではない。`resize` に `filter` を渡していないので実際に効いているのは mks2013
 - **サムネイル生成**: `renderPageToCanvas(pageNum, scale, false)` で vips をスキップし Pica を使用 (WASM ヒープ節約)
 - **アーカイブ画像** (comic-viewer.html): 常時 Pica/vips 経由で縮小、Filter の Sharpen 値が適用される
@@ -590,7 +593,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 ## PWA / Service Worker
 
 ### `sw.js`
-- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v36`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v39`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
 - **`SHARE_CACHE`**: `share-stash-v1` — Web Share Target で受信したファイルを一時保存する専用キャッシュ (activate 時も削除対象外)
 - **`PRECACHE_URLS`**: インストール時に一括取得するリソース (HTML 2種、vendor/ 配下全ファイル、manifest、icons)。`fetch(url, { cache: 'reload' })` でブラウザキャッシュをバイパス
 - **`activate`**: `CACHE_NAME` と `SHARE_CACHE` 以外の旧キャッシュを削除し `self.clients.claim()`
