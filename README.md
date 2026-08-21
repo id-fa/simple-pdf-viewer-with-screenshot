@@ -6,6 +6,8 @@ A browser-based viewer + image export toolkit. Installable as a PWA and fully fu
 
 Created by id-fa, built with Claude Code.
 
+![Screenshot](screenshots/wide-1280x800.png)
+
 ## ファイル構成 / File Structure
 
 ```
