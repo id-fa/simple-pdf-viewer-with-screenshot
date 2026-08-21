@@ -1,4 +1,4 @@
-# PDF Viewer with Screenshot
+# PDF/Comic Viewer with Screenshot
 
 ブラウザベースのビューア＋画像エクスポートツール群。PWA としてインストール可能、オフラインで動作する。
 
