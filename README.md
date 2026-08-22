@@ -215,14 +215,15 @@ Switch viewMode to **Scroll** to display all pages in a continuous vertical scro
 
 ### 色調補正フィルター / Color Adjustment Filters
 
-**Filter** ボタンでポップアップを開き、4種のスライダーで色調を調整できます。
+**Filter** ボタンでポップアップを開き、8種のスライダーで色調を調整できます。
 
-Click **Filter** to open the popup and adjust colors with 4 sliders.
+Click **Filter** to open the popup and adjust colors with 8 sliders.
 
 | スライダー / Slider | 範囲 / Range | 説明 / Description |
 |------|------|------|
 | Brightness | 50% – 150% | 明るさ (CSS filter) |
 | Contrast | 50% – 150% | コントラスト (CSS filter) |
+| Gamma | 0.20 – 3.00 | ガンマ補正。1.00 より大きいと中間調が明るくなる (SVG `feComponentTransfer`) / Gamma correction; >1.00 brightens midtones |
 | Sepia | 0% – 100% | セピア (CSS filter) |
 | Invert | 0% – 100% | 色反転 (CSS filter) |
 | Sharpen | 0 – 500 | シャープネス強度 (Pica unsharp mask) |
@@ -230,7 +231,7 @@ Click **Filter** to open the popup and adjust colors with 4 sliders.
 | Sh.Thresh | 0 – 255 | シャープネスしきい値 / Unsharp threshold |
 
 - **Sharpen 操作時**: HQ 未チェックなら自動的に HQ を ON にする / Auto-enables HQ when Sharpen is adjusted
-- **プリセット保存**: 3スロット (Save 1-3 / Load 1-3)。localStorage に保存され、両ビューアで共有。シャープネス設定も含む / 3 preset slots shared between both viewers via localStorage, including sharpness settings
+- **プリセット保存**: 3スロット (Save 1-3 / Load 1-3)。localStorage に保存され、両ビューアで共有。ガンマ・シャープネス設定も含む / 3 preset slots shared between both viewers via localStorage, including gamma and sharpness settings
 - **Reset**: 全スライダーを初期値に戻す / Reset all sliders to default
 
 ### wasm-vips (オプション) / wasm-vips (Optional)

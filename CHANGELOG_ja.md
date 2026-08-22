@@ -156,3 +156,9 @@
    - Windows の PHP は Imagick / Ghostscript の導入が面倒なため。`pip install pillow pypdfium2` だけで PDF のレンダリングまで完結する (Linux ではどちらを使ってもよい)
    - 表紙の決め方・オプション名・出力は PHP 版と同じ。ただし **`library.config.php` は読まず**、設定は `--root` 等のオプションか `--config=cover.json` (JSON) で渡す
    - 画像は Pillow (必須)、PDF は PyMuPDF / pypdfium2 / pdftoppm / mutool / magick / gs、書庫は標準の zipfile + py7zr / rarfile / 外部 7z / unrar のうち「あるもの」を自動で使う
+
+### 2026.08.22
+ - Filter に Gamma (ガンマ補正) スライダーを追加 (両ビューア共通)
+   - 0.20〜3.00。1.00 より大きいと中間調が明るくなる (暗いスキャンを白飛びさせずに持ち上げられる)
+   - CSS filter にガンマが無いため SVG の `feComponentTransfer` を参照する方式。Brightness/Contrast と同じく即時適用 (再レンダリング不要)
+   - Filter プリセット (Save/Load 1-3) にも保存される (既存のプリセットは 1.00 として読み込まれる)

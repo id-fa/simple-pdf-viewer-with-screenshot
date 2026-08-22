@@ -455,7 +455,13 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 
 ### 色調補正フィルター (Filter、両ビューア共通)
 - ヘッダーに **Filter** ボタン + ポップアップ
-- **CSS フィルター** (即時適用): Brightness (50-150%), Contrast (50-150%), Sepia (0-100%), Invert (0-100%)
+- **CSS フィルター** (即時適用): Brightness (50-150%), Contrast (50-150%), Gamma (0.20-3.00), Sepia (0-100%), Invert (0-100%)
+- **ガンマ補正** (Gamma、即時適用): CSS の `filter` にガンマ関数が無いので、`<body>` 直後にインラインで置いた SVG フィルター (`#gammaFilter`) を `filter: url(#gammaFilter)` で参照して実現する
+  - スライダーは整数 20-300 で管理し /100 して表示 (`1.00` = 無補正)。`feFuncR/G/B` の `exponent` に **`1/γ`** を書き込むので、1.00 より大きい値で中間調が明るくなる (画像のガンマ補正と同じ向き)
+  - `color-interpolation-filters="sRGB"` が必須。SVG フィルターの既定は linearRGB で、そのままでは CSS の brightness/contrast (sRGB 上で動作) と食い違う。指定すると出力は理論値どおりになる (実測: 128 → γ2.2 → 186 = `(128/255)^(1/2.2)*255`)
+  - フィルタ領域は `x=-2% y=-2% width=104% height=104%`。既定の 120% は Scroll モードの巨大な `.viewer` では無駄が大きく、かといって 100% ちょうどだと `.page-container` の `box-shadow` が切れる
+  - `parts` の**先頭**に積む (元画像にガンマ → その結果に brightness/contrast が効く)。γ が 1.00 のときは `url()` 自体を積まない (参照フィルターは合成コストが高いため)
+  - 他の CSS フィルターと同じく**表示のみ**で、エクスポート (`exportPageCanvas`) やクリップボードコピーには乗らない
 - **シャープネス** (Pica unsharp mask、再レンダリング必要):
   - Sharpen (0-500): unsharpAmount、シャープネス強度。0 = 無効
   - Sh.Radius (0.5-2.0): unsharpRadius、ぼかし半径。内部は整数 5-20 で管理し /10 で表示
@@ -467,7 +473,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - Reset ボタンで全スライダーを初期値に復帰 (シャープネスは 0, Radius=0.6, Threshold=2)
 - ポップアップ外クリックで自動クローズ
 - **プリセット保存**: 3スロット (Save 1-3 / Load 1-3)、localStorage キー `viewerFilterPresets` でシステム共通 (ファイル毎ではない)
-  - 保存データ: `{ b, c, s, i, sh, shr, sht }` (旧プリセットとの後方互換: `sh/shr/sht` 未設定時はデフォルト値にフォールバック)
+  - 保存データ: `{ b, c, s, i, g, sh, shr, sht }` (旧プリセットとの後方互換: `g` 未設定時は 100 = 1.00、`sh/shr/sht` 未設定時はデフォルト値にフォールバック)
   - Save ボタンで現在のスライダー値を保存、Load ボタンで復元・即時適用
   - 未保存スロットの Load ボタンは disabled、保存済みスロットはツールチップに設定値を表示
 

@@ -283,6 +283,17 @@ label.check input { cursor: pointer; }
 </head>
 <body>
 
+<!-- ガンマ補正用 SVG フィルター (CSS filter に gamma が無いため feComponentTransfer で代用。applyFilters() が exponent を書き換える) -->
+<svg width="0" height="0" style="position:absolute;width:0;height:0;pointer-events:none" aria-hidden="true">
+  <filter id="gammaFilter" color-interpolation-filters="sRGB" x="-2%" y="-2%" width="104%" height="104%">
+    <feComponentTransfer>
+      <feFuncR type="gamma" exponent="1"/>
+      <feFuncG type="gamma" exponent="1"/>
+      <feFuncB type="gamma" exponent="1"/>
+    </feComponentTransfer>
+  </filter>
+</svg>
+
 <div class="header">
   <div class="title-row"><h1 id="appTitle" title="タップでファイルを閉じる">PDF Viewer</h1><span class="info" id="fileInfo"></span></div>
   <div class="controls">
@@ -355,6 +366,7 @@ label.check input { cursor: pointer; }
       <div class="filter-popup" id="filterPopup">
         <div class="filter-row"><span>Brightness</span><input type="range" id="filterBrightness" min="50" max="150" value="100"><span class="filter-val" id="filterBrightnessVal">100%</span></div>
         <div class="filter-row"><span>Contrast</span><input type="range" id="filterContrast" min="50" max="150" value="100"><span class="filter-val" id="filterContrastVal">100%</span></div>
+        <div class="filter-row"><span>Gamma</span><input type="range" id="filterGamma" min="20" max="300" value="100" title="ガンマ補正: 1.00 より大きいと中間調が明るく / Gamma: >1.00 brightens midtones"><span class="filter-val" id="filterGammaVal">1.00</span></div>
         <div class="filter-row"><span>Sepia</span><input type="range" id="filterSepia" min="0" max="100" value="0"><span class="filter-val" id="filterSepiaVal">0%</span></div>
         <div class="filter-row"><span>Invert</span><input type="range" id="filterInvert" min="0" max="100" value="0"><span class="filter-val" id="filterInvertVal">0%</span></div>
         <div class="filter-row"><span>Sharpen</span><input type="range" id="filterSharpen" min="0" max="500" value="0"><span class="filter-val" id="filterSharpenVal">0</span></div>
@@ -2804,6 +2816,8 @@ const filterBrightness = document.getElementById('filterBrightness');
 const filterContrast = document.getElementById('filterContrast');
 const filterSepia = document.getElementById('filterSepia');
 const filterInvert = document.getElementById('filterInvert');
+const filterGamma = document.getElementById('filterGamma');
+const gammaFuncs = document.querySelectorAll('#gammaFilter feFuncR, #gammaFilter feFuncG, #gammaFilter feFuncB');
 const filterSharpen = document.getElementById('filterSharpen');
 const filterShRadius = document.getElementById('filterShRadius');
 const filterShThreshold = document.getElementById('filterShThreshold');
@@ -2826,14 +2840,22 @@ function applyFilters() {
   const c = filterContrast.value;
   const s = filterSepia.value;
   const inv = filterInvert.value;
+  const g = +filterGamma.value / 100;
   document.getElementById('filterBrightnessVal').textContent = b + '%';
   document.getElementById('filterContrastVal').textContent = c + '%';
   document.getElementById('filterSepiaVal').textContent = s + '%';
   document.getElementById('filterInvertVal').textContent = inv + '%';
+  document.getElementById('filterGammaVal').textContent = g.toFixed(2);
   document.getElementById('filterSharpenVal').textContent = filterSharpen.value;
   document.getElementById('filterShRadiusVal').textContent = (+filterShRadius.value / 10).toFixed(1);
   document.getElementById('filterShThresholdVal').textContent = filterShThreshold.value;
   const parts = [];
+  // ガンマは元画像に先に当てる (以降の brightness/contrast は補正後の値に効く)
+  if (g !== 1) {
+    const exp = (1 / g).toFixed(4);
+    gammaFuncs.forEach(f => f.setAttribute('exponent', exp));
+    parts.push('url(#gammaFilter)');
+  }
   if (b !== '100') parts.push(`brightness(${b}%)`);
   if (c !== '100') parts.push(`contrast(${c}%)`);
   if (s !== '0') parts.push(`sepia(${s}%)`);
@@ -2847,7 +2869,7 @@ function getSharpenOpts() {
   return { unsharpAmount: amt, unsharpRadius: +filterShRadius.value / 10, unsharpThreshold: +filterShThreshold.value };
 }
 
-[filterBrightness, filterContrast, filterSepia, filterInvert].forEach(el => el.addEventListener('input', applyFilters));
+[filterBrightness, filterContrast, filterSepia, filterInvert, filterGamma].forEach(el => el.addEventListener('input', applyFilters));
 
 let sharpenDebounce = null;
 function rerenderForSharpen() {
@@ -2878,6 +2900,7 @@ document.getElementById('filterReset').addEventListener('click', () => {
   filterContrast.value = 100;
   filterSepia.value = 0;
   filterInvert.value = 0;
+  filterGamma.value = 100;
   filterSharpen.value = 0;
   filterShRadius.value = 6;
   filterShThreshold.value = 2;
@@ -2907,14 +2930,14 @@ function updatePresetLoadButtons() {
     const slot = +btn.dataset.slot;
     const p = presets[slot];
     btn.disabled = !p;
-    if (p) btn.title = `B:${p.b} C:${p.c} S:${p.s} I:${p.i} Sh:${p.sh||0} R:${(p.shr||6)/10} T:${p.sht??2}`;
+    if (p) btn.title = `B:${p.b} C:${p.c} S:${p.s} I:${p.i} G:${((p.g??100)/100).toFixed(2)} Sh:${p.sh||0} R:${(p.shr||6)/10} T:${p.sht??2}`;
     else btn.title = `Slot ${slot + 1}: empty`;
   });
 }
 document.querySelectorAll('.filter-preset-save').forEach(btn => btn.addEventListener('click', () => {
   const slot = +btn.dataset.slot;
   const presets = getFilterPresets();
-  presets[slot] = { b: +filterBrightness.value, c: +filterContrast.value, s: +filterSepia.value, i: +filterInvert.value, sh: +filterSharpen.value, shr: +filterShRadius.value, sht: +filterShThreshold.value };
+  presets[slot] = { b: +filterBrightness.value, c: +filterContrast.value, s: +filterSepia.value, i: +filterInvert.value, g: +filterGamma.value, sh: +filterSharpen.value, shr: +filterShRadius.value, sht: +filterShThreshold.value };
   saveFilterPresets(presets);
   updatePresetLoadButtons();
   showToast(`Filter preset ${slot + 1} saved`);
@@ -2928,6 +2951,7 @@ document.querySelectorAll('.filter-preset-load').forEach(btn => btn.addEventList
   filterContrast.value = p.c;
   filterSepia.value = p.s;
   filterInvert.value = p.i;
+  filterGamma.value = p.g ?? 100;
   filterSharpen.value = p.sh || 0;
   filterShRadius.value = p.shr || 6;
   filterShThreshold.value = p.sht ?? 2;
