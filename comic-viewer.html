@@ -549,9 +549,9 @@ label.check input { cursor: pointer; }
       </div>
       <div class="help-section">
         <h3>EPUB</h3>
-        <div class="help-row"><span class="help-key">E</span><span class="help-desc">Analyze EPUB structure (fix page order from OPF spine)</span></div>
-        <div class="help-row"><span class="help-key">T</span><span class="help-desc">Toggle table of contents (after E)</span></div>
-        <div class="help-row"><span class="help-key">R</span><span class="help-desc">Read reflowable text (after E) — sandboxed, no external resources</span></div>
+        <div class="help-row"><span class="help-key">E</span><span class="help-desc">Re-analyze EPUB structure (runs automatically on open)</span></div>
+        <div class="help-row"><span class="help-key">T</span><span class="help-desc">Toggle table of contents</span></div>
+        <div class="help-row"><span class="help-key">R</span><span class="help-desc">Read reflowable text — sandboxed, no external resources</span></div>
         <div class="help-row"><span class="help-key">&larr; / &rarr; (reader)</span><span class="help-desc">Previous / Next document</span></div>
       </div>
       <div class="help-section">
@@ -648,8 +648,11 @@ let docType = null; // 'pdf' | 'archive'
 let pdfDoc = null;
 let archiveImages = []; // [{name, blob, img, width, height, lastModified}]
 let archiveImagesUnsorted = []; // original extracted order, for re-sorting
-// EPUB structure analysis (opt-in, triggered by the E key — see runEpubAnalysis)
+// EPUB structure analysis (EPUB を開くと自動実行。手動再実行は E キー — see runEpubAnalysis)
+// false にすると自動実行をやめ、従来どおり E キーでの明示起動だけになる (案内トーストが出る)。
+const EPUB_AUTO_ANALYZE = true;
 let epubEntries = [];      // [{name, file}] structural (text) entries: container.xml / opf / ncx / xhtml
+let epubAnalyzed = false;  // 解析済みフラグ (自動解析済みなら二重に走らせない)
 let epubPageOrder = null;  // normalized image paths in reading order (null = not analyzed)
 let epubToc = [];          // [{label, depth, page}] table of contents
 let tocClickedEl = null;   // クリックで飛んだ TOC 項目 (見開き時のハイライト維持用)
@@ -1451,10 +1454,11 @@ function applySortOrder() {
   archiveImages = arr;
 }
 
-// ---- EPUB structure analysis (opt-in: E key) ----
+// ---- EPUB structure analysis (auto on open; E key で手動再実行) ----
 // EPUB のファイル名順は読み順と一致しないことが多い。OPF の spine を辿り、各 XHTML の
 // <img> / <svg><image> を文書順に拾って正しいページ順を組み立てる。全 XHTML の読み込みと
-// パースが走る重い処理なので自動実行はせず、E キーで明示的に起動する。
+// パースが走るが実測では十分軽いため、EPUB を開いた時点で自動実行する
+// (EPUB_AUTO_ANALYZE = false で従来どおり E キーの手動起動のみに戻せる)。
 
 const XLINK_NS = 'http://www.w3.org/1999/xlink';
 const OPS_NS = 'http://www.idpf.org/2007/ops';
@@ -1743,10 +1747,21 @@ async function rebuildAfterReorder() {
   await renderThumbnails();
 }
 
-async function runEpubAnalysis(autoOpenReader = false) {
+// opts:
+//   openReader  — 解析後に本文リーダーを開く (リフロー型 EPUB 用)
+//   skipIfDone  — 自動解析 (EPUB_AUTO_ANALYZE) で既に走っていれば再解析せず、
+//                 要求された動作 (本文リーダーを開く) だけ行う。E キーからの手動起動は常に再解析する
+//   deferRender — 再描画 (rebuildAfterReorder) を呼び出し側に任せる。読み込み時の自動解析では
+//                 直後に onDocLoaded() が描画するので、ここで描くと全ページのサムネイルを二度作ることになる
+async function runEpubAnalysis(opts = {}) {
+  const { openReader = false, skipIfDone = false, deferRender = false } = opts;
   if (docType !== 'archive') { showToast('EPUB 構造解析: アーカイブが開かれていません', 3000); return; }
   if (epubEntries.length === 0) { showToast('EPUB 構造解析: 構造ファイル (container.xml / OPF) がありません', 3500); return; }
   if (epubBusy) return;
+  if (skipIfDone && epubAnalyzed) {
+    if (openReader && epubDocs.length) openEpubReader(0);
+    return;
+  }
   epubBusy = true;
   const loading = showLoading('EPUB 構造を解析中...');
   try {
@@ -1788,7 +1803,7 @@ async function runEpubAnalysis(autoOpenReader = false) {
     epubBuildDocSelect();
     renderToc();
 
-    if (epubPageOrder) await rebuildAfterReorder();
+    if (epubPageOrder && !deferRender) await rebuildAfterReorder();
 
     const tocMsg = epubToc.length ? ` / 目次 ${epubToc.length} 項目 (T)` : ' / 目次なし';
     const docMsg = epubDocs.length ? ` / 本文 ${epubDocs.length} 文書 (R)` : '';
@@ -1797,7 +1812,8 @@ async function runEpubAnalysis(autoOpenReader = false) {
     } else {
       showToast(`EPUB (リフロー型): 画像なし${tocMsg}${docMsg}`, 4000);
     }
-    if (autoOpenReader && epubDocs.length) openEpubReader(0);
+    epubAnalyzed = true;
+    if (openReader && epubDocs.length) openEpubReader(0);
   } catch (err) {
     console.error('EPUB analysis error:', err);
     showToast('EPUB 構造解析エラー: ' + err.message, 4000);
@@ -1914,6 +1930,7 @@ function updateTocActive() {
 // 新しいファイルを開いたときに EPUB 解析結果を破棄する
 function resetEpubState() {
   epubEntries = [];
+  epubAnalyzed = false;
   epubPageOrder = null;
   epubToc = [];
   epubDocs = [];
@@ -2329,7 +2346,7 @@ async function buildFilenameMap(fileOrBlob, name) {
 // ---- Image helpers ----
 const IMAGE_EXTS = /\.(jpe?g|png|webp|gif|bmp|avif|jxl|tiff?|heic|heif)$/i;
 const ARCHIVE_EXTS = /\.(cbz|zip|cbr|rar|cb7|7z|epub)$/i;
-// EPUB 構造解析 (E キー) / 本文リーダー (R キー) が読むテキスト系エントリ。展開後も保持しておく
+// EPUB 構造解析 (自動 / E キー) / 本文リーダー (R キー) が読むテキスト系エントリ。展開後も保持しておく
 // (.css は「原文CSS」表示用。フォントは意図的に対象外 — 本文リーダーは縦書き等を無視するため)
 const EPUB_STRUCT_EXTS = /\.(opf|ncx|xhtml|xht|html?|xml|svg|css)$/i;
 
@@ -3303,7 +3320,7 @@ function showArchiveChooser(innerArchives, outerName) {
 }
 
 // Load image files into archiveImagesUnsorted and display.
-// structFiles: EPUB 構造解析 (E キー) 用に取っておくテキスト系エントリ
+// structFiles: EPUB 構造解析 (自動 / E キー) 用に取っておくテキスト系エントリ
 async function loadImageEntries(imageFiles, archiveFileName, structFiles = []) {
   resetEpubState();
   epubEntries = structFiles;
@@ -3351,12 +3368,21 @@ async function loadImageEntries(imageFiles, archiveFileName, structFiles = []) {
   fileName = archiveFileName;
   currentPage = 1;
   sortSelect.style.display = '';
-  await onDocLoaded();
 
-  // 解析は重いので自動実行しない。存在だけ知らせる (再開トーストがある場合は譲る)
-  if (isEpub && epubEntries.length > 0 && !(sessionLastRead && sessionLastRead > 1)) {
-    showToast('E キーで EPUB 構造解析 (正しいページ順 + 目次)', 4000);
+  // EPUB は構造解析まで自動で走らせる (実測で十分軽いため)。描画前に済ませるので
+  // 並べ替え後のページ順で初回描画・サムネイル生成が1回で済む。
+  // EPUB_AUTO_ANALYZE = false なら従来どおり手動 (E キー) で、存在だけ知らせる
+  // (再開トーストがある場合は譲る)
+  if (isEpub && epubEntries.length > 0) {
+    if (EPUB_AUTO_ANALYZE) {
+      await runEpubAnalysis({ deferRender: true });
+      totalPages = archiveImages.length;
+    } else if (!(sessionLastRead && sessionLastRead > 1)) {
+      showToast('E キーで EPUB 構造解析 (正しいページ順 + 目次)', 4000);
+    }
   }
+
+  await onDocLoaded();
 }
 
 // ---- Reflowable (image-less) EPUB support ----
@@ -3495,7 +3521,7 @@ async function loadArchive(srcFile, handle = null) {
         }
         await loadImageEntries(innerImages, `${file.name} > ${chosen.name}`, innerStruct);
         if (innerImages.length === 1 && innerImages[0].name === REFLOW_PLACEHOLDER_NAME) {
-          await runEpubAnalysis(true);
+          await runEpubAnalysis({ openReader: true, skipIfDone: true });
         }
       } finally {
         hideLoading(innerLoading);
@@ -3512,7 +3538,7 @@ async function loadArchive(srcFile, handle = null) {
         return;
       }
       await loadImageEntries([await makeReflowPlaceholderPage(file.name)], file.name, structFiles);
-      await runEpubAnalysis(true);
+      await runEpubAnalysis({ openReader: true, skipIfDone: true });
       return;
     }
     await loadImageEntries(imageFiles, file.name, structFiles);

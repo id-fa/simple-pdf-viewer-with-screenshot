@@ -157,7 +157,7 @@ Open `http://localhost:8000/comic-viewer.html` in your browser.
 | `Z` キー | ズームトグル (300% + Pan + Map) / Toggle zoom (300% + Pan + Map) |
 | `L` キー | Last Read ページにジャンプ / Jump to last read page |
 | `M` キー | Max Read ページにジャンプ / Jump to max read page |
-| `E` キー | EPUB 構造解析 (ページ順の修正) / Analyze EPUB structure (fix page order) |
+| `E` キー | EPUB 構造解析の再実行 (読み込み時に自動実行) / Re-analyze EPUB structure (runs automatically on open) |
 | `T` キー | EPUB 目次の開閉 / Toggle EPUB table of contents |
 | `R` キー | EPUB 本文テキストを表示 / Open the EPUB text reader |
 | `O` キー | サーバーのライブラリを開く / Browse the server library |
@@ -186,8 +186,8 @@ Open `http://localhost:8000/comic-viewer.html` in your browser.
 
 ### EPUB 構造解析・目次 / EPUB Structure & TOC
 
-EPUB はファイル名順が読み順と一致しないことがあります。`E` キーで EPUB 内部の構造 (`container.xml` → `content.opf` の spine) を解析し、正しいページ順に並べ替えます。処理が重いため自動実行はせず、キー操作でのみ実行します。
-EPUB filenames often don't match reading order. Press `E` to analyze the EPUB structure (`container.xml` → OPF spine) and reorder pages correctly. This is opt-in because the analysis is expensive.
+EPUB はファイル名順が読み順と一致しないことがあります。EPUB を開くと内部の構造 (`container.xml` → `content.opf` の spine) を**自動的に解析**し、正しいページ順に並べ替えます (`E` キーで手動再解析)。自動解析を止めたい場合は `comic-viewer.html` の定数 `EPUB_AUTO_ANALYZE` を `false` にすると、従来どおり `E` キーでの明示起動のみになります。
+EPUB filenames often don't match reading order. Opening an EPUB now **analyzes its structure automatically** (`container.xml` → OPF spine) and reorders the pages; press `E` to re-run it manually. Set the `EPUB_AUTO_ANALYZE` constant in `comic-viewer.html` to `false` to go back to running it only on `E`.
 
 - spine の XHTML を辿って `<img>` を文書順に収集。spine から画像が取れない場合は manifest の `image/*` の記述順にフォールバック / Walks the spine's XHTML for `<img>` in document order; falls back to manifest `image/*` order
 - 解析後は並び順プルダウンに `Sort: EPUB` が追加され、他の並び順にいつでも戻せる / Adds a `Sort: EPUB` option so you can switch back anytime
@@ -195,9 +195,9 @@ EPUB filenames often don't match reading order. Press `E` to analyze the EPUB st
 
 ### リフロー型 EPUB の本文表示 / Reflowable EPUB Text Reader
 
-構造解析 (`E`) 後、`TOC` タブ下部の「本文を読む」または `R` キーで、EPUB 内の XHTML をそのまま読めるリーダが開きます。画像を 1 枚も持たないリフロー型 EPUB も開けます。
+構造解析後 (読み込み時に自動実行)、`TOC` タブ下部の「本文を読む」または `R` キーで、EPUB 内の XHTML をそのまま読めるリーダが開きます。画像を 1 枚も持たないリフロー型 EPUB も開けます。
 
-After structure analysis (`E`), press `R` (or use "本文を読む" at the bottom of the `TOC` tab) to open a reader that shows the EPUB's own XHTML. Image-less reflowable EPUBs can be opened too.
+After the structure analysis (automatic on open), press `R` (or use "本文を読む" at the bottom of the `TOC` tab) to open a reader that shows the EPUB's own XHTML. Image-less reflowable EPUBs can be opened too.
 
 - 文書間の移動 (‹ / › / ← / → / プルダウン)、文字サイズ変更 (A- / A+)、表示幅の切替 (幅: 標準 ⇄ 広い、次回以降も保持)、「原文CSS」の ON/OFF / Document navigation, font size, reader width (normal / wide, remembered), and an "original CSS" toggle
 - **外部リソースは完全にブロック**: `allow-scripts` なしの sandbox iframe + `default-src 'none'` の CSP + http(s) URL の除去の 3 重防御。画像・CSS はアーカイブ内から blob: URL として差し替え / **No external resources**: sandboxed iframe without `allow-scripts`, a `default-src 'none'` CSP, and stripping of http(s) URLs. In-archive images/CSS are swapped to blob: URLs

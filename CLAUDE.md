@@ -90,7 +90,11 @@ Worker 内部の `new URL('libarchive.wasm', import.meta.url)` が正しく WASM
 - 並び順変更時は `rebuildAfterReorder()` を通す。Scroll モードは `.scroll-container` が残っていると古いプレースホルダが再利用されてしまうため、明示的に破棄してから再構築する
 
 ### EPUB 構造解析 (`E` キー、comic-viewer.html のみ)
-EPUB はファイル名順が読み順と一致しないことが多いため、内部構造を辿って正しいページ順を組み立てる。**重い処理なので自動実行はせず `E` キーで明示起動**する (EPUB を開くと「E キーで EPUB 構造解析」トーストで案内)。
+EPUB はファイル名順が読み順と一致しないことが多いため、内部構造を辿って正しいページ順を組み立てる。**EPUB を開いた時点で自動実行**し、`E` キーは手動再解析に使う。
+
+- **自動実行の切り替え**: `comic-viewer.html` 先頭付近の定数 `EPUB_AUTO_ANALYZE` (既定 `true`)。`false` にすると従来どおり `E` キーでの明示起動のみになり、EPUB を開いたときは「E キーで EPUB 構造解析」トーストで案内する
+- **自動実行は `onDocLoaded()` の前**: `loadImageEntries` で `runEpubAnalysis({ deferRender: true })` を呼び、再描画は直後の `onDocLoaded()` に任せる。解析の中で `rebuildAfterReorder()` まで走らせると**全ページのサムネイルを二度生成**することになるため (アーカイブでは `renderThumbnails` が最も重い)
+- **`runEpubAnalysis(opts)` の引数はオブジェクト**: `openReader` (解析後に本文リーダーを開く) / `skipIfDone` (自動解析済みなら再解析せず要求された動作だけ行う) / `deferRender` (上記)。リフロー型 EPUB の経路は `loadImageEntries` 側で既に解析が終わっているので `{ openReader: true, skipIfDone: true }` を渡す。E キーからの手動起動は常に再解析する (`epubAnalyzed` は `resetEpubState()` でリセット)
 
 - **保持する構造ファイル**: `loadArchive` で `EPUB_STRUCT_EXTS` (`.opf/.ncx/.xhtml/.xht/.html?/.xml/.svg/.css`) にマッチしたエントリを `epubEntries` に退避 (`loadImageEntries` の第3引数)。展開時に捨てると後から解析できないため。中身はテキストなのでメモリ影響は小さい。`.css` は本文リーダーの「原文CSS」表示用 (フォントは意図的に対象外)
 - **解析フロー** (`analyzeEpub()`):
@@ -210,7 +214,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - Z キー: ズームトグル (300% + Pan + Map ↔ 元の設定に復元)
 - L キー: Last Read ページにジャンプ (しおり未有効時はエラーダイアログ)
 - M キー: Max Read ページにジャンプ (しおり未有効時はエラーダイアログ)
-- E キー: EPUB 構造解析を実行 (comic-viewer.html のみ、詳細は「EPUB 構造解析」セクション)
+- E キー: EPUB 構造解析を手動で再実行 (comic-viewer.html のみ。読み込み時に自動実行されるため通常は不要。詳細は「EPUB 構造解析」セクション)
 - T キー: EPUB 目次 (TOC) サイドバーの開閉 (comic-viewer.html のみ、構造解析後に有効)
 - R キー: EPUB 本文リーダーを開く (comic-viewer.html のみ、構造解析後に有効。リーダー表示中は ←/→ が文書送り)
 - O キー: サーバーのライブラリを開く (`library.php` 設置時のみ有効。**ファイル未読み込みでも使うので `totalPages === 0` / `!pdfDoc` ガードより前に置くこと**。詳細は「ライブラリ参照機能」)
@@ -599,7 +603,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 ## PWA / Service Worker
 
 ### `sw.js`
-- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v39`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v41`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
 - **`SHARE_CACHE`**: `share-stash-v1` — Web Share Target で受信したファイルを一時保存する専用キャッシュ (activate 時も削除対象外)
 - **`PRECACHE_URLS`**: インストール時に一括取得するリソース (HTML 2種、vendor/ 配下全ファイル、manifest、icons)。`fetch(url, { cache: 'reload' })` でブラウザキャッシュをバイパス
 - **`activate`**: `CACHE_NAME` と `SHARE_CACHE` 以外の旧キャッシュを削除し `self.clients.claim()`
