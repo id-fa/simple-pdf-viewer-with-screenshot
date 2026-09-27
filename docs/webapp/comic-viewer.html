@@ -120,6 +120,30 @@ label.check input { cursor: pointer; }
 .minimap { position: fixed; bottom: 16px; right: 16px; z-index: 250; background: rgba(0,0,0,0.85); border: 1px solid #444; border-radius: 6px; overflow: hidden; display: none; cursor: crosshair; box-shadow: 0 4px 16px rgba(0,0,0,0.6); }
 .minimap canvas { display: block; }
 .minimap .viewport-rect { position: absolute; border: 2px solid #ff4444; background: rgba(255,68,68,0.1); pointer-events: none; }
+/* Seek bar: マウスを画面下端に寄せたときだけ出る。サムネイルプレビュー付き */
+.seekbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 260; display: flex; align-items: center; gap: 12px; padding: 8px 16px 10px; background: linear-gradient(to top, rgba(10,10,22,0.95), rgba(10,10,22,0.8)); border-top: 1px solid #333; transform: translateY(100%); opacity: 0; pointer-events: none; transition: transform 0.18s ease, opacity 0.18s ease; }
+.seekbar.show { transform: translateY(0); opacity: 1; pointer-events: auto; }
+.seek-track { position: relative; flex: 1; height: 24px; margin: 0 7px; cursor: pointer; touch-action: none; }
+.seek-track::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 4px; margin-top: -2px; background: #3a3a55; border-radius: 2px; transition: height 0.12s, margin-top 0.12s; }
+.seek-fill { position: absolute; top: 50%; height: 4px; margin-top: -2px; background: #4a9eff; border-radius: 2px; pointer-events: none; transition: height 0.12s, margin-top 0.12s; }
+.seek-track:hover::before, .seekbar.dragging .seek-track::before, .seek-track:hover .seek-fill, .seekbar.dragging .seek-fill { height: 6px; margin-top: -3px; }
+.seek-marks { position: absolute; inset: 0; pointer-events: none; }
+.seek-mark { position: absolute; transform: translateX(-50%); pointer-events: none; }
+.seek-mark.chapter { top: 50%; width: 1px; height: 12px; margin-top: -6px; background: rgba(255,255,255,0.4); }
+.seek-mark.manual { top: 0; width: 7px; height: 7px; border-radius: 50%; background: #4a9eff; box-shadow: 0 0 0 1px #0a0a16; }
+.seek-mark.auto { bottom: 0; width: 7px; height: 7px; border-radius: 50%; background: #ff9f43; box-shadow: 0 0 0 1px #0a0a16; }
+.seek-hover { position: absolute; top: 4px; bottom: 4px; width: 2px; margin-left: -1px; background: rgba(255,255,255,0.75); display: none; pointer-events: none; }
+.seek-knob { position: absolute; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px rgba(74,158,255,0.5), 0 2px 6px rgba(0,0,0,0.6); pointer-events: none; transition: left 0.12s; }
+.seekbar.dragging .seek-knob { transition: none; }
+.seek-pos { font-size: 12px; color: #bbb; font-family: monospace; white-space: nowrap; min-width: 84px; text-align: right; }
+.seek-preview { position: absolute; bottom: calc(100% + 6px); left: 0; display: none; flex-direction: column; align-items: center; gap: 3px; padding: 4px 4px 3px; background: rgba(0,0,0,0.92); border: 1px solid #555; border-radius: 6px; box-shadow: 0 6px 20px rgba(0,0,0,0.7); pointer-events: none; }
+.seek-preview.show { display: flex; }
+.seek-preview canvas { display: block; border-radius: 3px; }
+.seek-preview-label { font-size: 12px; color: #e0e0e0; font-family: monospace; }
+.seek-preview-chapter { font-size: 11px; color: #9bc; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* シークバー表示中は右下/左下の浮動 UI をシークバーの上へ逃がす */
+body.seek-visible .minimap, body.seek-visible .annotation-fab { bottom: 60px; }
+body.seek-visible .toast { bottom: 60px; }
 
 /* Sidebar tabs */
 .sidebar { display: flex; flex-direction: column; }
@@ -368,6 +392,10 @@ label.check input { cursor: pointer; }
       <input type="checkbox" id="minimapCheck">
       Map
     </label>
+    <label class="check" title="シークバー: マウスを画面下端に寄せるとサムネイル付きシークバーを表示 / Seek bar: Move the mouse to the bottom edge to show a seek bar with thumbnail preview">
+      <input type="checkbox" id="seekCheck">
+      Seek
+    </label>
     <label class="check" title="フルスクリーン表示 / Toggle fullscreen mode">
       <input type="checkbox" id="fullscreenCheck">
       Full
@@ -443,6 +471,21 @@ label.check input { cursor: pointer; }
 <div class="minimap" id="minimap">
   <canvas id="minimapCanvas"></canvas>
   <div class="viewport-rect" id="minimapRect"></div>
+</div>
+
+<div class="seekbar" id="seekbar">
+  <div class="seek-preview" id="seekPreview">
+    <canvas id="seekPreviewCanvas"></canvas>
+    <div class="seek-preview-label" id="seekPreviewLabel"></div>
+    <div class="seek-preview-chapter" id="seekPreviewChapter" hidden></div>
+  </div>
+  <div class="seek-track" id="seekTrack">
+    <div class="seek-fill" id="seekFill"></div>
+    <div class="seek-marks" id="seekMarks"></div>
+    <div class="seek-hover" id="seekHover"></div>
+    <div class="seek-knob" id="seekKnob"></div>
+  </div>
+  <span class="seek-pos" id="seekPos"></span>
 </div>
 
 <button class="annotation-fab" id="annotationFab" title="Annotation Comments">💬<span class="badge" id="annotationBadge">0</span></button>
@@ -562,6 +605,7 @@ label.check input { cursor: pointer; }
         <div class="help-row"><span class="help-key">Mouse wheel</span><span class="help-desc">Previous / Next page</span></div>
         <div class="help-row"><span class="help-key">Swipe left / right</span><span class="help-desc">Next / Previous page</span></div>
         <div class="help-row"><span class="help-key">Drag (Pan mode)</span><span class="help-desc">Scroll viewport</span></div>
+        <div class="help-row"><span class="help-key">Mouse to bottom edge</span><span class="help-desc">Seek bar with thumbnail preview (Seek)</span></div>
       </div>
     </div>
   </div>
@@ -2723,6 +2767,7 @@ function updateScrollCurrentPage() {
     if (num !== currentPage) {
       currentPage = num;
       pageInput.value = currentPage;
+      updateSeekbar();
       if (thumbsContainer) {
         thumbsContainer.querySelectorAll('.thumb').forEach((t, i) => t.classList.toggle('active', i + 1 === currentPage));
         const active = thumbsContainer.querySelector('.thumb.active');
@@ -2839,6 +2884,7 @@ async function renderView(num) {
     cleanupPdfPagesExcept(new Set(pages));
 
     requestAnimationFrame(() => updateMinimap());
+    updateSeekbar();
   } finally {
     rendering = false;
   }
@@ -4184,6 +4230,245 @@ minimapEl.addEventListener('mousedown', e => {
 minimapCheck.addEventListener('change', () => {
   updateMinimap();
 });
+
+// ---- Seek bar ----
+// マウスを画面下端に寄せたときだけ出るシークバー。ホバー/ドラッグ中は生成済みサムネイル
+// (Thumbs タブの canvas) をプレビューに流用するので追加のレンダリングは発生しない。
+// ページ移動はドラッグを離したとき (またはクリック) に1回だけ行う。
+const SEEK_HOT_ZONE = 24;    // 下端からこの px 以内にマウスが来たら表示
+const SEEK_HIDE_DELAY = 300; // シークバーから離れてから隠すまでの猶予 (ms)
+const SEEK_PREVIEW_H = 200;  // プレビューの最大高さ (px)
+const seekCheck = document.getElementById('seekCheck');
+const seekbarEl = document.getElementById('seekbar');
+const seekTrack = document.getElementById('seekTrack');
+const seekFill = document.getElementById('seekFill');
+const seekMarks = document.getElementById('seekMarks');
+const seekHoverLine = document.getElementById('seekHover');
+const seekKnob = document.getElementById('seekKnob');
+const seekPos = document.getElementById('seekPos');
+const seekPreview = document.getElementById('seekPreview');
+const seekPreviewCanvas = document.getElementById('seekPreviewCanvas');
+const seekPreviewLabel = document.getElementById('seekPreviewLabel');
+const seekPreviewChapter = document.getElementById('seekPreviewChapter');
+let seekVisible = false;
+let seekDragging = false;
+let seekHideTimer = null;
+let seekPreviewKey = '';
+
+// 既定 ON。OFF にしたときだけ '0' を保存する
+seekCheck.checked = localStorage.getItem('viewerSeekBar') !== '0';
+seekCheck.addEventListener('change', () => {
+  if (seekCheck.checked) localStorage.removeItem('viewerSeekBar');
+  else { localStorage.setItem('viewerSeekBar', '0'); hideSeekbar(true); }
+});
+
+// R2L のときは右端が 1 ページ目 (Scroll モードは綴じ方向が無関係なので常に左→右)
+function seekIsRtl() { return isR2L() && !isScrollMode(); }
+
+function seekFracOfPage(p) {
+  const f = totalPages > 1 ? (p - 1) / (totalPages - 1) : 0;
+  return seekIsRtl() ? 1 - f : f;
+}
+
+function seekPageAtX(clientX) {
+  const r = seekTrack.getBoundingClientRect();
+  let f = r.width > 0 ? (clientX - r.left) / r.width : 0;
+  f = Math.min(1, Math.max(0, f));
+  if (seekIsRtl()) f = 1 - f;
+  return Math.round(f * (totalPages - 1)) + 1;
+}
+
+// EPUB 目次 (comic-viewer.html のみ。pdf-viewer.html には epubToc が無いので空)
+function seekToc() {
+  return typeof epubToc !== 'undefined' ? epubToc.filter(t => t.page) : [];
+}
+
+function renderSeekMarks() {
+  seekMarks.replaceChildren();
+  if (totalPages < 2) return;
+  const add = (p, cls) => {
+    if (!(p >= 1 && p <= totalPages)) return;
+    const m = document.createElement('div');
+    m.className = 'seek-mark ' + cls;
+    m.style.left = (seekFracOfPage(p) * 100) + '%';
+    seekMarks.appendChild(m);
+  };
+  for (const t of seekToc()) add(t.page, 'chapter');
+  if (isBookmarkEnabled() && currentFileHash) {
+    const bm = getBookmarkForFile(currentFileHash);
+    for (const p of new Set([bm.lastRead, bm.maxRead])) if (p) add(p, 'auto');
+    for (const p of bm.manual || []) add(p, 'manual');
+  }
+}
+
+// 現在位置の反映。見開きでは表示中の大きい方のページにノブを置く (最後の見開きで右端に届くように)
+function updateSeekbar() {
+  if (!seekVisible || totalPages === 0) return;
+  const shown = getSpreadPages(currentPage);
+  const lo = Math.min(...shown), hi = Math.max(...shown);
+  const f = seekFracOfPage(hi);
+  if (!seekDragging) seekKnob.style.left = (f * 100) + '%';
+  seekFill.style.left = ((seekIsRtl() ? f : 0) * 100) + '%';
+  seekFill.style.width = ((seekIsRtl() ? 1 - f : f) * 100) + '%';
+  seekPos.textContent = (lo !== hi ? `${lo}-${hi}` : `${hi}`) + ` / ${totalPages}`;
+  renderSeekMarks();
+}
+
+function showSeekbar() {
+  clearTimeout(seekHideTimer);
+  seekHideTimer = null;
+  if (seekVisible) return;
+  seekVisible = true;
+  seekbarEl.classList.add('show');
+  document.body.classList.add('seek-visible');
+  updateSeekbar();
+}
+
+function hideSeekbar(immediate) {
+  if (!seekVisible || seekDragging) return;
+  const doHide = () => {
+    seekHideTimer = null;
+    if (seekDragging) return;
+    seekVisible = false;
+    seekbarEl.classList.remove('show');
+    document.body.classList.remove('seek-visible');
+    hideSeekPreview();
+  };
+  if (immediate) { clearTimeout(seekHideTimer); doHide(); return; }
+  if (!seekHideTimer) seekHideTimer = setTimeout(doHide, SEEK_HIDE_DELAY);
+}
+
+// サムネイルは renderThumbnails が生成中の場合もあるので、無ければ null (プレースホルダ描画)
+function seekThumbCanvas(p) {
+  const div = thumbsContainer && thumbsContainer.children[p - 1];
+  const c = div && div.querySelector('canvas');
+  return c && c.width > 0 && c.height > 0 ? c : null;
+}
+
+function drawSeekPreview(pages) {
+  const srcs = pages.map(seekThumbCanvas);
+  const known = srcs.filter(Boolean);
+  const h = Math.min(SEEK_PREVIEW_H, known.length ? Math.max(...known.map(c => c.height)) : SEEK_PREVIEW_H);
+  const widths = srcs.map(c => c ? Math.max(1, Math.round(c.width * h / c.height)) : Math.round(h * 0.7));
+  const gap = pages.length > 1 ? 2 : 0;
+  const cv = seekPreviewCanvas;
+  cv.width = widths.reduce((a, b) => a + b, 0) + gap * (pages.length - 1);
+  cv.height = h;
+  const ctx = cv.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  let x = 0;
+  srcs.forEach((c, i) => {
+    if (c) {
+      ctx.drawImage(c, x, 0, widths[i], h);
+    } else {
+      ctx.fillStyle = '#222';
+      ctx.fillRect(x, 0, widths[i], h);
+      ctx.fillStyle = '#777';
+      ctx.font = '13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(pages[i]), x + widths[i] / 2, h / 2);
+    }
+    x += widths[i] + gap;
+  });
+}
+
+function showSeekPreview(clientX) {
+  if (totalPages === 0) return;
+  const page = seekPageAtX(clientX);
+  const pages = getSpreadPages(page);
+  // 未生成サムネイルが後から揃ったら描き直せるよう、有無もキーに含める
+  const key = pages.map(p => seekThumbCanvas(p) ? p : '-' + p).join(',');
+  if (key !== seekPreviewKey) {
+    seekPreviewKey = key;
+    drawSeekPreview(pages);
+    const sorted = [...pages].sort((a, b) => a - b);
+    seekPreviewLabel.textContent = (sorted.length > 1 ? `${sorted[0]}-${sorted[1]}` : `${sorted[0]}`) + ` / ${totalPages}`;
+    const hi = sorted[sorted.length - 1];
+    let chapter = null;
+    for (const t of seekToc()) if (t.page <= hi) chapter = t;
+    seekPreviewChapter.hidden = !chapter;
+    seekPreviewChapter.textContent = chapter ? chapter.label : '';
+  }
+  seekHoverLine.style.left = (seekFracOfPage(page) * 100) + '%';
+  seekHoverLine.style.display = 'block';
+  seekPreview.classList.add('show');
+  const w = seekPreview.offsetWidth;
+  const vw = document.documentElement.clientWidth;
+  seekPreview.style.left = Math.max(8, Math.min(vw - w - 8, clientX - w / 2)) + 'px';
+  return page;
+}
+
+function hideSeekPreview() {
+  seekPreview.classList.remove('show');
+  seekHoverLine.style.display = 'none';
+  seekPreviewKey = '';
+}
+
+function seekScrub(clientX) {
+  const page = showSeekPreview(clientX);
+  if (page) seekKnob.style.left = (seekFracOfPage(page) * 100) + '%';
+}
+
+function seekJump(page) {
+  if (!isScrollMode() && getSpreadPages(currentPage).includes(page)) { updateSeekbar(); return; }
+  Promise.resolve(renderView(page)).finally(() => updateSeekbar());
+}
+
+// 表示判定はマウスのみ (タッチの互換 mouse イベントで出てしまうと、直後の click が
+// シークバーに当たって意図しないジャンプになるため pointerType で弾く)
+window.addEventListener('pointermove', e => {
+  if (e.pointerType !== 'mouse' || seekDragging) return;
+  if (!seekCheck.checked || totalPages === 0) { hideSeekbar(true); return; }
+  const nearBottom = e.clientY >= document.documentElement.clientHeight - SEEK_HOT_ZONE;
+  // Pan / Minimap のドラッグやテキスト選択の最中 (ボタン押下中) には出さない
+  if (nearBottom && e.buttons === 0) showSeekbar();
+  else if (seekVisible && seekbarEl.contains(e.target)) { clearTimeout(seekHideTimer); seekHideTimer = null; }
+  else hideSeekbar();
+});
+document.documentElement.addEventListener('mouseleave', () => hideSeekbar());
+
+seekTrack.addEventListener('pointerdown', e => {
+  if (e.button !== 0 || totalPages === 0) return;
+  e.preventDefault();
+  seekDragging = true;
+  seekTrack.setPointerCapture(e.pointerId);
+  seekbarEl.classList.add('dragging');
+  seekScrub(e.clientX);
+});
+
+seekTrack.addEventListener('pointermove', e => {
+  if (seekDragging) seekScrub(e.clientX);
+  else if (e.pointerType === 'mouse') showSeekPreview(e.clientX);
+});
+
+seekTrack.addEventListener('pointerup', e => {
+  if (!seekDragging) return;
+  seekDragging = false;
+  seekbarEl.classList.remove('dragging');
+  seekJump(seekPageAtX(e.clientX));
+  // キャプチャ中にシークバーの外まで出て離した場合はそのまま隠す
+  const r = seekbarEl.getBoundingClientRect();
+  if (e.clientY < r.top || e.clientX < r.left || e.clientX > r.right) { hideSeekPreview(); hideSeekbar(); }
+});
+
+seekTrack.addEventListener('pointercancel', () => {
+  seekDragging = false;
+  seekbarEl.classList.remove('dragging');
+  hideSeekPreview();
+  updateSeekbar();
+});
+
+seekTrack.addEventListener('pointerleave', () => { if (!seekDragging) hideSeekPreview(); });
+
+// シークバー上のホイールで 1 ページ (見開き単位) ずつ送る
+seekbarEl.addEventListener('wheel', e => {
+  e.preventDefault();
+  if (totalPages === 0 || isScrollMode() || e.deltaY === 0) return;
+  const target = e.deltaY > 0 ? nextPageNum(currentPage) : prevPageNum(currentPage);
+  if (target !== null && target >= 1 && target !== currentPage) renderView(target);
+}, { passive: false });
 
 let minimapScrollRAF = 0;
 let scrollTrackRAF = 0;

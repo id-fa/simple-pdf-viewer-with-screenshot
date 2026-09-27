@@ -252,6 +252,16 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - **OFF** (デフォルト): ミニマップ非表示
 - 最大サイズ: 200×300px、ドキュメントの縦横比に合わせて自動スケーリング
 
+### シークバー (Seek チェックボックス、両ビューア共通)
+- **表示条件**: マウスが画面下端 `SEEK_HOT_ZONE` (24px) 以内に来たときだけ `.seekbar.show` を付ける。シークバーから離れて `SEEK_HIDE_DELAY` (300ms) 後に隠す。判定は `window` の `pointermove` で **`pointerType === 'mouse'` のみ**。タッチの互換 mouse イベントで出してしまうと、直後の click がシークバーに当たって意図しないジャンプになるため。ボタン押下中 (Pan / Minimap のドラッグ、テキスト選択) には出さない。下端の判定は `documentElement.clientHeight` (横スクロールバーを除いた高さ)
+- **プレビュー**: Thumbs タブの生成済み canvas (`thumbsContainer.children[p-1]`) を `drawImage` で流用するので**追加レンダリングは無い**。見開きでは `getSpreadPages()` の表示順でペアを並べる。サムネイルが未生成 (pdf-viewer は `renderThumbnails` を await しない) ならページ番号のプレースホルダを描き、揃ったら描き直す (`seekPreviewKey` にサムネイル有無を含める)。EPUB 目次があれば章名も出す (`seekToc()` は `typeof epubToc` で判定するので pdf-viewer では空)
+- **操作**: ドラッグ中はプレビューとノブだけ動かし、**ページ移動は離したとき1回だけ** (`seekJump()` → `renderView`)。シークバー上のホイールで1ページ (見開き単位) 送り
+- **方向**: `seekIsRtl()` = R2L かつ Scroll 以外。R2L では右端が 1 ページ目、塗りも右から伸びる。見開きでは表示中の大きい方のページにノブを置く (最後の見開きで端に届くように)
+- **マーカー**: 章 (EPUB 目次、灰色の縦線) / 手動しおり (青丸、上) / lastRead・maxRead (橙丸、下)。`updateSeekbar()` のたびに作り直す
+- **更新タイミング**: `renderView` 末尾と `updateScrollCurrentPage()` から `updateSeekbar()` を呼ぶ (非表示中は即 return)
+- 表示中は `body.seek-visible` でミニマップ / アノテーション FAB / トーストを上に逃がす
+- localStorage `viewerSeekBar` — `'0'` で OFF、未設定で ON (既定 ON)
+
 ### パンモード (Pan チェックボックス)
 - **ON**: ドラッグ操作が画面パン（スクロール）になる。拡大表示時に便利
   - マウスドラッグ: `window.scrollTo()` でスクロール位置を移動、カーソルが grab/grabbing に変化
@@ -485,6 +495,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - `viewerViewMode` — Single / Spread / Scroll の選択状態 (起動時に復元、変更時に保存)
 - `viewerHQ` — HQ チェックボックスの状態 (`'1'` で ON、未設定で OFF)
 - `viewerScrollGapless` — Scroll モードの Gapless チェックボックス状態 (`'1'` で ON、未設定で OFF)
+- `viewerSeekBar` — シークバーの有効/無効 (`'0'` で OFF、未設定で ON)
 - `vipsEnabled` — wasm-vips 有効化フラグ (HQ engine トグル)
 - `viewerEpubReaderWide` — EPUB 本文リーダの幅 (`'1'` で広い、未設定/`'0'` で標準)
 - `viewerLibraryView` — ライブラリの表示 (`'grid'` でサムネイル、未設定/`'list'` でリスト)
@@ -603,7 +614,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 ## PWA / Service Worker
 
 ### `sw.js`
-- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v41`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v42`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
 - **`SHARE_CACHE`**: `share-stash-v1` — Web Share Target で受信したファイルを一時保存する専用キャッシュ (activate 時も削除対象外)
 - **`PRECACHE_URLS`**: インストール時に一括取得するリソース (HTML 2種、vendor/ 配下全ファイル、manifest、icons)。`fetch(url, { cache: 'reload' })` でブラウザキャッシュをバイパス
 - **`activate`**: `CACHE_NAME` と `SHARE_CACHE` 以外の旧キャッシュを削除し `self.clients.claim()`
