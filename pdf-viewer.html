@@ -2374,8 +2374,9 @@ viewer.addEventListener('click', e => {
   if (e.target.closest('button, input, select, a, label')) return;
   if (panDragged) { panDragged = false; return; }
   if (textMode) return;
-  if (isScrollMode()) return;
-  if (panCheck.checked) {
+  // Scroll / Pan: no tap navigation, but keep center tap for UI toggle
+  // (the only way to hide the UI on keyboard-less devices)
+  if (isScrollMode() || panCheck.checked) {
     const rect = viewer.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const third = rect.width / 3;

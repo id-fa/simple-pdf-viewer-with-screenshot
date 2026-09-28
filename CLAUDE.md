@@ -457,6 +457,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - `updateScrollCurrentPage()` — ビューポート中央に最も近いページを currentPage として追跡
 - Fit スケール時は幅フィットのみ (高さ制約なし、縦スクロール前提)
 - ページ送り操作 (wheel, click zones, swipe) は無効化 → ブラウザ標準スクロール
+- **中央1/3タップの UI トグルだけは残す** (Pan モードと同じ扱い)。以前は click ハンドラ冒頭の `if (isScrollMode()) return;` で丸ごと捨てていたため、キーボードの無いスマートフォンでは Scroll モードで UI を消す手段が無かった。スクロールのドラッグではモバイルブラウザが click を発火しないので、スクロールのたびに UI が出入りすることはない
 - Home/End キーで先頭/末尾ページにジャンプ
 - サムネイルクリック・ページ番号入力でのジャンプに対応
 - `<` / `>` ボタンは disabled
@@ -614,7 +615,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 ## PWA / Service Worker
 
 ### `sw.js`
-- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v42`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v43`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
 - **`SHARE_CACHE`**: `share-stash-v1` — Web Share Target で受信したファイルを一時保存する専用キャッシュ (activate 時も削除対象外)
 - **`PRECACHE_URLS`**: インストール時に一括取得するリソース (HTML 2種、vendor/ 配下全ファイル、manifest、icons)。`fetch(url, { cache: 'reload' })` でブラウザキャッシュをバイパス
 - **`activate`**: `CACHE_NAME` と `SHARE_CACHE` 以外の旧キャッシュを削除し `self.clients.claim()`

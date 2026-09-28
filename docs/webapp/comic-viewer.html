@@ -4057,8 +4057,9 @@ viewer.addEventListener('click', e => {
   if (e.target.closest('button, input, select, a, label')) return;
   // Suppress click after a pan drag
   if (panDragged) { panDragged = false; return; }
-  if (isScrollMode()) return;
-  if (panCheck.checked) {
+  // Scroll / Pan: no tap navigation, but keep center tap for UI toggle
+  // (the only way to hide the UI on keyboard-less devices)
+  if (isScrollMode() || panCheck.checked) {
     const rect = viewer.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const third = rect.width / 3;
