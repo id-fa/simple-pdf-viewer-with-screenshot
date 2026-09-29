@@ -3,12 +3,672 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>PDF Viewer with Screenshot</title>
+  <title>使い方 - PDF / Comic Viewer with Screenshot</title>
+  <meta name="description" content="ブラウザだけで PDF・CBZ・CBR・CB7・EPUB を読み、ページを画像として保存できるビューアの使い方。インストール不要、オフライン対応、ファイルは外部に送信されません。" />
+  <meta name="color-scheme" content="dark light" />
+  <link rel="icon" href="./webapp/icons/icon-192.png" />
+  <style>
+    :root {
+      --bg: #0f172a;
+      --bg-soft: #16213a;
+      --surface: #1e293b;
+      --surface-2: #26344d;
+      --border: #334155;
+      --text: #e2e8f0;
+      --text-dim: #94a3b8;
+      --accent: #4a9eff;
+      --accent-strong: #2563eb;
+      --accent-soft: rgba(74, 158, 255, 0.12);
+      --warn: #f59e0b;
+      --warn-soft: rgba(245, 158, 11, 0.12);
+      --ok: #34d399;
+      --kbd-bg: #0b1222;
+      --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+      --radius: 10px;
+    }
+    @media (prefers-color-scheme: light) {
+      :root:not([data-theme="dark"]) {
+        --bg: #f8fafc;
+        --bg-soft: #eef2f7;
+        --surface: #ffffff;
+        --surface-2: #f1f5f9;
+        --border: #d7dee8;
+        --text: #0f172a;
+        --text-dim: #52607a;
+        --accent: #1d6fe0;
+        --accent-strong: #1d4ed8;
+        --accent-soft: rgba(29, 111, 224, 0.08);
+        --warn: #b45309;
+        --warn-soft: rgba(245, 158, 11, 0.12);
+        --ok: #059669;
+        --kbd-bg: #f1f5f9;
+        --shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 16px; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif;
+      font-size: 16px;
+      line-height: 1.8;
+      -webkit-text-size-adjust: 100%;
+    }
+    a { color: var(--accent); }
+    a:hover { text-decoration: none; }
+    img { max-width: 100%; height: auto; display: block; }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      font-size: 0.88em;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.05em 0.35em;
+      word-break: break-all;
+    }
+    pre {
+      background: var(--kbd-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      overflow-x: auto;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    pre code { background: none; border: 0; padding: 0; word-break: normal; }
+    kbd {
+      display: inline-block;
+      min-width: 1.9em;
+      text-align: center;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 0.85em;
+      line-height: 1.5;
+      padding: 0 0.45em;
+      background: var(--kbd-bg);
+      border: 1px solid var(--border);
+      border-bottom-width: 3px;
+      border-radius: 6px;
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .ui {
+      display: inline-block;
+      font-size: 0.85em;
+      line-height: 1.5;
+      padding: 0 0.55em;
+      border-radius: 5px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    /* ---------- hero ---------- */
+    .hero {
+      background:
+        radial-gradient(1200px 400px at 80% -10%, rgba(74, 158, 255, 0.22), transparent 60%),
+        linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+      color: #e2e8f0;
+      padding: 56px 16px 48px;
+      border-bottom: 1px solid #334155;
+    }
+    .hero-inner { max-width: 1080px; margin: 0 auto; display: grid; gap: 32px; grid-template-columns: 1fr; align-items: center; }
+    @media (min-width: 900px) { .hero-inner { grid-template-columns: 1fr 1.1fr; } }
+    .hero h1 .nw { display: inline-block; }
+    .hero h1 { font-size: clamp(26px, 4.4vw, 38px); line-height: 1.25; margin: 0 0 12px; letter-spacing: 0.01em; }
+    .hero .lead { font-size: 17px; color: #cbd5e1; margin: 0 0 24px; }
+    .hero .brand { display: flex; align-items: center; gap: 10px; color: #94a3b8; font-size: 14px; margin-bottom: 16px; }
+    .hero .brand img { width: 32px; height: 32px; border-radius: 7px; }
+    .cta { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
+    .btn {
+      display: inline-flex; flex-direction: column; justify-content: center;
+      padding: 12px 20px; border-radius: 10px; text-decoration: none;
+      font-weight: 700; font-size: 16px; line-height: 1.3;
+      border: 1px solid transparent;
+      transition: transform 0.12s ease, background 0.12s ease;
+    }
+    .btn small { font-weight: 400; font-size: 12px; opacity: 0.85; }
+    .btn:hover { transform: translateY(-1px); }
+    .btn-primary { background: #2563eb; color: #fff; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-secondary { background: rgba(255, 255, 255, 0.06); color: #e2e8f0; border-color: #475569; }
+    .btn-secondary:hover { background: rgba(255, 255, 255, 0.12); }
+    .badges { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; margin: 0; }
+    .badges li { font-size: 13px; color: #cbd5e1; background: rgba(255, 255, 255, 0.06); border: 1px solid #334155; border-radius: 999px; padding: 2px 12px; }
+    .hero-shot { border-radius: 12px; overflow: hidden; border: 1px solid #334155; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5); }
+
+    /* ---------- layout ---------- */
+    .layout { max-width: 1080px; margin: 0 auto; padding: 32px 16px 64px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 40px; }
+    @media (min-width: 1000px) { .layout { grid-template-columns: 220px minmax(0, 1fr); } }
+    nav.toc { display: none; }
+    @media (min-width: 1000px) {
+      nav.toc { display: block; position: sticky; top: 16px; align-self: start; max-height: calc(100vh - 32px); overflow-y: auto; font-size: 14px; }
+      nav.toc ol { list-style: none; margin: 0; padding: 0; border-left: 2px solid var(--border); }
+      nav.toc a { display: block; padding: 4px 0 4px 14px; margin-left: -2px; border-left: 2px solid transparent; color: var(--text-dim); text-decoration: none; line-height: 1.5; }
+      nav.toc a:hover { color: var(--text); }
+      nav.toc a.active { color: var(--accent); border-left-color: var(--accent); }
+      nav.toc .toc-title { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: var(--text-dim); margin: 0 0 8px; }
+    }
+    .mobile-toc { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 16px; }
+    .mobile-toc summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
+    .mobile-toc ol { margin: 0 0 10px; padding-left: 1.4em; columns: 2 12em; font-size: 15px; }
+    @media (min-width: 1000px) { .mobile-toc { display: none; } }
+
+    main section { margin-bottom: 56px; }
+    main h2 {
+      font-size: 26px; line-height: 1.35; margin: 0 0 18px; padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: baseline; gap: 12px;
+    }
+    main h2 .num { font-size: 14px; color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; }
+    main h3 { font-size: 19px; margin: 32px 0 10px; }
+    main p { margin: 0 0 14px; }
+    main ul, main ol { padding-left: 1.4em; margin: 0 0 14px; }
+    main li { margin-bottom: 4px; }
+    .dim { color: var(--text-dim); }
+
+    .cards { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin: 0 0 16px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; }
+    .card h3 { margin: 0 0 6px; font-size: 18px; }
+    .card p { margin: 0 0 10px; font-size: 15px; color: var(--text-dim); }
+    .card p:last-child { margin-bottom: 0; }
+
+    .steps { counter-reset: step; list-style: none; padding: 0; display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .steps li { counter-increment: step; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px 16px 60px; position: relative; margin: 0; }
+    .steps li::before {
+      content: counter(step); position: absolute; left: 16px; top: 16px;
+      width: 30px; height: 30px; border-radius: 50%;
+      background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent);
+      display: grid; place-items: center; font-weight: 700; font-size: 15px; line-height: 1;
+    }
+    .steps b { display: block; margin-bottom: 2px; }
+    .steps span { font-size: 15px; color: var(--text-dim); }
+
+    .table-wrap { overflow-x: auto; margin: 0 0 16px; border: 1px solid var(--border); border-radius: var(--radius); }
+    table { border-collapse: collapse; width: 100%; font-size: 15px; background: var(--surface); }
+    th, td { text-align: left; vertical-align: top; padding: 9px 14px; border-bottom: 1px solid var(--border); }
+    tr:last-child td { border-bottom: 0; }
+    th { background: var(--surface-2); font-size: 13px; letter-spacing: 0.03em; color: var(--text-dim); white-space: nowrap; }
+    @media (min-width: 700px) { td:first-child { white-space: nowrap; } }
+    @media (max-width: 699px) { th, td { padding: 8px 10px; } th { white-space: normal; } }
+    .yes { color: var(--ok); font-weight: 700; }
+    .no { color: var(--text-dim); }
+
+    .note, .tip {
+      border-radius: var(--radius); padding: 12px 16px; margin: 0 0 16px; font-size: 15px;
+      border: 1px solid var(--border); border-left-width: 4px;
+    }
+    .tip { background: var(--accent-soft); border-left-color: var(--accent); }
+    .note { background: var(--warn-soft); border-left-color: var(--warn); }
+    .tip > :last-child, .note > :last-child { margin-bottom: 0; }
+    .tip strong:first-child, .note strong:first-child { display: block; margin-bottom: 2px; }
+
+    figure { margin: 0 0 20px; }
+    figure img { border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow); }
+    figcaption { font-size: 13px; color: var(--text-dim); margin-top: 8px; }
+
+    details.faq { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0 18px; margin-bottom: 10px; }
+    details.faq summary { cursor: pointer; font-weight: 700; padding: 14px 0; list-style-position: outside; }
+    details.faq[open] summary { border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+    details.faq > div { padding-bottom: 6px; font-size: 15px; }
+
+    footer { border-top: 1px solid var(--border); padding: 28px 16px 40px; text-align: center; font-size: 14px; color: var(--text-dim); background: var(--bg-soft); }
+    footer p { margin: 4px 0; }
+  </style>
 </head>
 <body>
-  <h1><a href="./webapp/pdf-viewer.html" target="_blank">PDF Viewer with Screenshot</a></h1>
-  <h1><a href="./webapp/comic-viewer.html" target="_blank">Comic Viewer Test</a></h1>
 
+<header class="hero">
+  <div class="hero-inner">
+    <div>
+      <div class="brand"><img src="./webapp/icons/icon-192.png" alt="" width="32" height="32" /> id-fa / simple-pdf-viewer-with-screenshot</div>
+      <h1><span class="nw">ブラウザだけで読める、</span><span class="nw">保存できる</span> <span class="nw">PDF / コミックビューア</span></h1>
+      <p class="lead">PDF・CBZ・CBR・CB7・EPUB をブラウザで開いて読み、好きなページを画像として保存できます。インストール不要で、開いたファイルはどこにも送信されません。</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="./webapp/comic-viewer.html">Comic Viewer を開く<small>PDF / CBZ / CBR / CB7 / EPUB</small></a>
+        <a class="btn btn-secondary" href="./webapp/pdf-viewer.html">PDF Viewer を開く<small>PDF 専用・テキスト検索付き</small></a>
+      </div>
+      <ul class="badges">
+        <li>インストール不要</li>
+        <li>オフライン動作 (PWA)</li>
+        <li>見開き・右綴じ対応</li>
+        <li>ファイルは外部送信なし</li>
+      </ul>
+    </div>
+    <div class="hero-shot">
+      <img src="./images/spread.webp" width="1280" height="800" alt="Comic Viewer で CBZ を見開き表示し、左にサムネイル一覧を出している画面" />
+    </div>
+  </div>
+</header>
 
+<div class="layout">
+  <nav class="toc" aria-label="目次">
+    <p class="toc-title">CONTENTS</p>
+    <ol id="tocList">
+      <li><a href="#start">はじめに</a></li>
+      <li><a href="#which">どちらを使う？</a></li>
+      <li><a href="#open">ファイルを開く</a></li>
+      <li><a href="#read">ページをめくる</a></li>
+      <li><a href="#view">表示の切り替え</a></li>
+      <li><a href="#keys">ショートカット一覧</a></li>
+      <li><a href="#save">画像として保存</a></li>
+      <li><a href="#bookmark">しおり</a></li>
+      <li><a href="#filter">色調補正</a></li>
+      <li><a href="#epub">EPUB を読む</a></li>
+      <li><a href="#archive">書庫ファイルの便利機能</a></li>
+      <li><a href="#pdf">PDF だけの機能</a></li>
+      <li><a href="#install">アプリとしてインストール</a></li>
+      <li><a href="#selfhost">自分のサーバーに置く</a></li>
+      <li><a href="#faq">困ったときは</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <details class="mobile-toc">
+      <summary>目次</summary>
+      <ol>
+        <li><a href="#start">はじめに</a></li>
+        <li><a href="#which">どちらを使う？</a></li>
+        <li><a href="#open">ファイルを開く</a></li>
+        <li><a href="#read">ページをめくる</a></li>
+        <li><a href="#view">表示の切り替え</a></li>
+        <li><a href="#keys">ショートカット一覧</a></li>
+        <li><a href="#save">画像として保存</a></li>
+        <li><a href="#bookmark">しおり</a></li>
+        <li><a href="#filter">色調補正</a></li>
+        <li><a href="#epub">EPUB を読む</a></li>
+        <li><a href="#archive">書庫ファイルの便利機能</a></li>
+        <li><a href="#pdf">PDF だけの機能</a></li>
+        <li><a href="#install">アプリとしてインストール</a></li>
+        <li><a href="#selfhost">自分のサーバーに置く</a></li>
+        <li><a href="#faq">困ったときは</a></li>
+      </ol>
+    </details>
+
+    <!-- ============================================================ -->
+    <section id="start">
+      <h2><span class="num">01</span>はじめに</h2>
+      <p>使い始めるのに準備はいりません。上のボタンからビューアを開き、手元のファイルを読み込むだけです。</p>
+      <ol class="steps">
+        <li><b>ビューアを開く</b><span>漫画・書庫なら Comic Viewer、PDF だけなら PDF Viewer。</span></li>
+        <li><b>ファイルを読み込む</b><span>画面にドラッグ＆ドロップするか、<span class="ui">Open</span> ボタンで選択。</span></li>
+        <li><b>読む・保存する</b><span>ページをめくり、気に入ったページは <span class="ui">Save Page</span> で画像に。</span></li>
+      </ol>
+      <div class="tip">
+        <strong>ファイルはあなたのブラウザの中だけで処理されます</strong>
+        <p>読み込んだファイルの展開・表示・画像変換はすべてブラウザ内で行われ、サーバーには一切送信されません。このサイトにはアクセス解析 (Google Analytics) が入っていますが、記録されるのはページの閲覧だけで、ファイルの中身や名前は含まれません。</p>
+      </div>
+      <p class="dim">対応ブラウザ: Chrome / Edge / Firefox / Safari の最近のバージョン (パソコン・スマートフォン・タブレット)。</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="which">
+      <h2><span class="num">02</span>どちらを使う？</h2>
+      <p>2 つのビューアは操作方法がほぼ共通です。迷ったら <strong>Comic Viewer</strong> を選べば PDF も開けます。</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>できること</th><th>Comic Viewer</th><th>PDF Viewer</th></tr></thead>
+          <tbody>
+            <tr><td>PDF</td><td class="yes">○</td><td class="yes">○</td></tr>
+            <tr><td>CBZ / ZIP・CBR / RAR・CB7 / 7z</td><td class="yes">○</td><td class="no">—</td></tr>
+            <tr><td>EPUB (画像ベース + 本文テキスト表示)</td><td class="yes">○</td><td class="no">—</td></tr>
+            <tr><td>見開き・右綴じ・スクロール表示</td><td class="yes">○</td><td class="yes">○</td></tr>
+            <tr><td>ページを画像として保存</td><td class="yes">○</td><td class="yes">○</td></tr>
+            <tr><td>PDF のテキスト選択・全文検索</td><td class="no">—</td><td class="yes">○</td></tr>
+            <tr><td>PDF の注釈コメント一覧</td><td class="no">—</td><td class="yes">○</td></tr>
+            <tr><td>アニメーション GIF / APNG / WebP の再生</td><td class="yes">○</td><td class="no">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>書庫の中の画像は JPEG / PNG / WebP / GIF / BMP / AVIF / JXL / TIFF に対応しています (HEIC / HEIF は Safari のみ。JXL・TIFF などブラウザが表示できない形式のページは読み飛ばされます)。</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="open">
+      <h2><span class="num">03</span>ファイルを開く</h2>
+      <div class="cards">
+        <div class="card"><h3>ドラッグ＆ドロップ</h3><p>ファイルをビューアの画面に落とすだけ。パソコンでいちばん手軽な方法です。</p></div>
+        <div class="card"><h3>Open ボタン</h3><p>ヘッダー左上の <span class="ui">Open</span> (PDF Viewer は <span class="ui">Open PDF</span>) からファイルを選びます。スマートフォンはこちら。</p></div>
+        <div class="card"><h3>ダブルクリック / 共有</h3><p>アプリとして<a href="#install">インストール</a>すると、エクスプローラーからのダブルクリックや、Android の「共有」メニューからも開けます。</p></div>
+      </div>
+      <h3>ファイルを閉じる</h3>
+      <p><kbd>Esc</kbd> を 2 回続けて押すか、左上のタイトル (<span class="ui">Comic Viewer</span>) をタップすると、ファイルを閉じて最初の画面に戻ります。</p>
+      <h3>パスワード付きのファイル</h3>
+      <p>パスワード付きの PDF や ZIP / RAR / 7z は、開くときにパスワードの入力欄が表示されます。</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="read">
+      <h2><span class="num">04</span>ページをめくる</h2>
+      <p>画面を左右と中央の 3 つに分けて考えると分かりやすくなります。</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>操作</th><th>右綴じ (R2L・日本の漫画)</th><th>左綴じ (L2R・洋書)</th></tr></thead>
+          <tbody>
+            <tr><td>画面の<strong>左 1/3</strong> をクリック / <kbd>←</kbd></td><td>次のページ</td><td>前のページ</td></tr>
+            <tr><td>画面の<strong>右 1/3</strong> をクリック / <kbd>→</kbd></td><td>前のページ</td><td>次のページ</td></tr>
+            <tr><td>画面の<strong>中央 1/3</strong> をクリック</td><td colspan="2">メニュー (ヘッダー) の表示 / 非表示</td></tr>
+            <tr><td><kbd>↑</kbd> <kbd>↓</kbd> / マウスホイール</td><td colspan="2">前 / 次のページ</td></tr>
+            <tr><td>左右にスワイプ</td><td colspan="2">ページ送り (スマートフォン・タブレット)</td></tr>
+            <tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td colspan="2">最初 / 最後のページ</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>右綴じのときはヘッダーの <span class="ui">&lt;</span> <span class="ui">&gt;</span> ボタンも読む向きに合わせて反転します (<span class="ui">&lt;</span> が「次へ」)。ページ番号の欄に数字を入れて <kbd>Enter</kbd> を押すとそのページへ飛べます。</p>
+
+      <h3>シークバー</h3>
+      <figure>
+        <img src="./images/seekbar.webp" width="1280" height="800" loading="lazy" alt="画面下端にシークバーが表示され、カーソル位置のページのサムネイルがプレビューされている画面" />
+        <figcaption>マウスを画面の下端に寄せるとシークバーが出ます。なぞるとそのページのサムネイルが表示され、離したところへ移動します。</figcaption>
+      </figure>
+      <p>シークバーは <span class="ui">Seek</span> のチェックで ON / OFF できます (既定は ON)。シークバーの上でホイールを回すと 1 ページずつ送れます。しおりの位置や EPUB の章の区切りも印で表示されます。</p>
+
+      <h3>サムネイル一覧</h3>
+      <p><span class="ui">Thumbs</span> ボタンで左側に全ページの縮小画像が並びます。クリックでそのページへ移動します。</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="view">
+      <h2><span class="num">05</span>表示の切り替え</h2>
+      <p>ヘッダーのボタンやプルダウンで見え方を変えられます。表示モードや HQ などの設定は次回も引き継がれます。</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>項目</th><th>内容</th></tr></thead>
+          <tbody>
+            <tr><td><span class="ui">Single</span> / <span class="ui">Spread</span> / <span class="ui">Scroll</span></td><td>1 ページずつ / 見開き / 全ページを縦に並べた連続スクロール (Webtoon 風)</td></tr>
+            <tr><td><span class="ui">Right (R2L)</span> / <span class="ui">Left (L2R)</span></td><td>綴じ方向。日本の漫画は Right、横書きの本は Left</td></tr>
+            <tr><td><span class="ui">Cover</span></td><td>見開き時に 1 ページ目 (表紙) を単独で表示。見開きの組み合わせが 1 ページずれているときに切り替えます</td></tr>
+            <tr><td><span class="ui">Gapless</span></td><td>Scroll のときだけ表示。ページ間の隙間をなくしてつなげて表示します</td></tr>
+            <tr><td><span class="ui">Fit</span> / <span class="ui">50%</span>〜<span class="ui">300%</span></td><td>表示倍率。Fit は画面に収まる大きさ</td></tr>
+            <tr><td><span class="ui">0°</span>〜<span class="ui">270°</span></td><td>ページを回転 (保存する画像にも反映されます)</td></tr>
+            <tr><td><span class="ui">HQ</span></td><td>縮小表示を高画質にします。細かいスクリーントーンのモアレが目立つときに</td></tr>
+            <tr><td><span class="ui">Pan</span></td><td>ドラッグで画面を動かすモード。拡大して読むときに便利</td></tr>
+            <tr><td><span class="ui">Map</span></td><td>右下に全体図と現在の表示範囲を表示。クリックでその位置へ移動</td></tr>
+            <tr><td><span class="ui">Full</span></td><td>全画面表示</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="tip">
+        <strong>拡大して細部を見たいとき</strong>
+        <p><kbd>Z</kbd> キーを押すと 300% + Pan + Map の組み合わせに一発で切り替わり、もう一度押すと元の設定に戻ります。</p>
+      </div>
+      <p>読書に集中したいときは <kbd>H</kbd> キー (または画面中央のタップ) でヘッダーを隠すと、その分ページが大きく表示されます。</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="keys">
+      <h2><span class="num">06</span>ショートカット一覧</h2>
+      <p>ビューアで <kbd>?</kbd> キーを押すか、ヘッダーの <span class="ui">?</span> ボタンでいつでも一覧を表示できます。</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>キー</th><th>動作</th></tr></thead>
+          <tbody>
+            <tr><td><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></td><td>ページ送り (左右は綴じ方向で反転)</td></tr>
+            <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>最初 / 最後のページ</td></tr>
+            <tr><td><kbd>H</kbd></td><td>ヘッダーの表示 / 非表示</td></tr>
+            <tr><td><kbd>C</kbd></td><td>Cover (表紙を単独表示) の切り替え</td></tr>
+            <tr><td><kbd>B</kbd></td><td>綴じ方向 (右綴じ ⇄ 左綴じ) の切り替え</td></tr>
+            <tr><td><kbd>Z</kbd></td><td>ズーム (300% + Pan + Map) ⇄ 元に戻す</td></tr>
+            <tr><td><kbd>L</kbd></td><td>前回読み終えたページへ移動 (しおり機能が ON のとき)</td></tr>
+            <tr><td><kbd>M</kbd></td><td>いちばん先まで読んだページへ移動 (しおり機能が ON のとき)</td></tr>
+            <tr><td><kbd>T</kbd></td><td>EPUB の目次を開閉 (Comic Viewer)</td></tr>
+            <tr><td><kbd>R</kbd></td><td>EPUB の本文リーダーを開く (Comic Viewer)</td></tr>
+            <tr><td><kbd>E</kbd></td><td>EPUB の構造解析をやり直す (Comic Viewer・通常は不要)</td></tr>
+            <tr><td><kbd>O</kbd></td><td>サーバーのライブラリを開く (<a href="#selfhost">自分のサーバーに置いた場合</a>のみ)</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>メニューを再表示 / ダイアログを閉じる。2 秒以内に 2 回でファイルを閉じる</td></tr>
+            <tr><td><kbd>?</kbd></td><td>ショートカット一覧</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="save">
+      <h2><span class="num">07</span>画像として保存</h2>
+      <p>表示中のページをそのまま画像ファイルにできます。これがこのツールの名前の由来 ("with Screenshot") です。</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ボタン</th><th>保存されるもの</th></tr></thead>
+          <tbody>
+            <tr><td><span class="ui">Save Page</span></td><td>表示中のページ。見開き中は <span class="ui">Save p5</span> <span class="ui">Save p4</span> のように左右のページ別のボタンに変わります</td></tr>
+            <tr><td><span class="ui">Save 2P</span></td><td>表示中のページと次のページを 1 枚につなげた見開き画像 (Scroll では縦につなげます)</td></tr>
+            <tr><td><span class="ui">Save All</span></td><td>全ページを連番で一括保存</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>保存形式はボタン横のプルダウンで選べます。</p>
+      <ul>
+        <li><strong>WebP 95%</strong> (既定)・<strong>JPEG 95%</strong>・<strong>PNG</strong> — ファイルとしてダウンロード。ファイル名は <code>元のファイル名_ページ番号.webp</code></li>
+        <li><strong>Clipboard (Page)</strong> — ページ全体をクリップボードにコピー。チャットや画像編集ソフトにそのまま貼り付けられます</li>
+        <li><strong>Clipboard (View)</strong> — いま画面に見えている範囲だけをコピー。拡大表示と組み合わせると「コマだけ切り抜き」ができます</li>
+      </ul>
+      <p class="dim">解像度は PDF が 2 倍、書庫の画像は元の画像そのままの大きさです。回転の設定は反映されますが、色調補正 (Filter) は画面表示のみで保存画像には反映されません。</p>
+      <div class="note">
+        <strong>Save All でダウンロードが止まるとき</strong>
+        <p>ブラウザによっては「複数のファイルのダウンロード」の許可を求められます。アドレスバー付近に表示される確認で「許可」を選んでください。</p>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="bookmark">
+      <h2><span class="num">08</span>しおり</h2>
+      <p>しおり機能は<strong>最初は OFF</strong> です。サイドバーの <span class="ui">Bookmarks</span> タブを開き、<span class="ui">Bookmarks</span> のチェックを入れると使えるようになります。</p>
+      <ul>
+        <li><strong>自動しおり</strong> — 最後に開いたページと、いちばん先まで読んだページを自動で記録します。次に同じファイルを開くと「p.X から再開」の通知が出て、タップでそのページへ戻れます</li>
+        <li><strong>手動しおり</strong> — サムネイル一覧の <code>●</code> をクリックしたページに付きます。<span class="ui">Bookmarks</span> タブに一覧表示されます</li>
+        <li><strong>管理</strong> — この本のしおりを消す / 全部消す / JSON で書き出し・読み込み (別のブラウザへの引っ越しに)</li>
+      </ul>
+      <p class="dim">しおりはこのブラウザの中にだけ保存され、ファイル名とサイズから作った識別子で本を見分けます (初期設定ではファイル名そのものは保存しません)。Comic Viewer と PDF Viewer でしおりは共有されます。</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="filter">
+      <h2><span class="num">09</span>色調補正 (Filter)</h2>
+      <figure>
+        <img src="./images/filter.webp" width="1280" height="800" loading="lazy" alt="Filter ポップアップを開き、明るさとセピアを調整した画面" />
+        <figcaption>Filter ボタンで調整パネルが開きます。動かした結果はすぐ画面に反映されます。</figcaption>
+      </figure>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>スライダー</th><th>内容</th></tr></thead>
+          <tbody>
+            <tr><td>Brightness / Contrast</td><td>明るさ / コントラスト</td></tr>
+            <tr><td>Gamma</td><td>中間の明るさだけを調整。1.00 より大きいと暗い部分が見やすくなります。黒つぶれしたスキャン画像に</td></tr>
+            <tr><td>Sepia / Invert</td><td>セピア調 / 色反転 (夜間に白いページがまぶしいときなど)</td></tr>
+            <tr><td>Sharpen / Sh.Radius / Sh.Thresh</td><td>輪郭を強調するシャープネス。動かすと自動で HQ が ON になります</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>よく使う設定は <span class="ui">Save 1</span>〜<span class="ui">Save 3</span> に保存し、<span class="ui">Load 1</span>〜<span class="ui">Load 3</span> で呼び出せます。<span class="ui">Reset</span> ですべて初期値に戻ります。</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="epub">
+      <h2><span class="num">10</span>EPUB を読む <span class="dim" style="font-size:14px;font-weight:400">Comic Viewer</span></h2>
+      <p>EPUB には、ページが画像でできた<strong>固定レイアウト型</strong> (漫画・写真集など) と、文字が流し込まれる<strong>リフロー型</strong> (小説など) の 2 種類があります。Comic Viewer はどちらも開けます。</p>
+      <h3>固定レイアウト型 (画像の EPUB)</h3>
+      <ul>
+        <li>開くと自動で本の構造を解析し、<strong>正しい読み順</strong>にページを並べ替えます (並び順のプルダウンが <span class="ui">Sort: EPUB</span> になります)</li>
+        <li>目次があればサイドバーに <span class="ui">TOC</span> タブが現れます。<kbd>T</kbd> キーで開閉、項目のクリックでその章へ移動</li>
+      </ul>
+      <h3>リフロー型 (文字の EPUB)</h3>
+      <ul>
+        <li>開くと自動で<strong>本文リーダー</strong>が起動し、中の文章を読めます。あとから開くときは <kbd>R</kbd> キー、または <span class="ui">TOC</span> タブ下部の「本文を読む」</li>
+        <li>リーダーでは <kbd>←</kbd> <kbd>→</kbd> で章を移動、<span class="ui">A-</span> <span class="ui">A+</span> で文字サイズ、<span class="ui">幅: 標準 / 広い</span> で行の長さを変えられます。<span class="ui">原文CSS</span> で本来のデザインに切り替えることもできます</li>
+      </ul>
+      <div class="note">
+        <strong>本文リーダーの制限</strong>
+        <p>縦書きの本も横書きで表示されます。ページ分割はなく、章ごとに縦にスクロールして読む形です。安全のため EPUB 内のスクリプトや外部への通信はすべて無効にしています。本格的にリフロー型 EPUB を読むなら <a href="https://id-fa.github.io/bibi-extension-ImageExporter/DEMO/">BiBi</a> などの専用リーダーをおすすめします。</p>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="archive">
+      <h2><span class="num">11</span>書庫ファイルの便利機能 <span class="dim" style="font-size:14px;font-weight:400">Comic Viewer</span></h2>
+      <h3>ページの並び順</h3>
+      <p>ページがおかしな順番で並ぶときは、ヘッダーの並び順を切り替えてください。</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>並び順</th><th>並び方</th></tr></thead>
+          <tbody>
+            <tr><td>Sort: Natural (既定)</td><td>数字を数値として比較。<code>1 → 2 → 10 → 100</code></td></tr>
+            <tr><td>Sort: Lexical</td><td>文字の順。<code>1 → 10 → 100 → 2</code></td></tr>
+            <tr><td>Sort: Timestamp</td><td>ファイルの更新日時が古い順</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3>書庫の中の書庫</h3>
+      <p>ZIP の中に複数の巻 (CBZ など) がまとめて入っている場合は、どれを開くかを選ぶ画面が出ます。選んだものだけを展開するので大きな書庫でも待たされません。</p>
+      <h3>アニメーション画像</h3>
+      <p>動く GIF / APNG / WebP のページには左下に <span class="ui">▶ Play</span> が表示され、クリックで再生できます。</p>
+      <h3>文字化けしたファイル名</h3>
+      <p>Windows で作られた ZIP の日本語ファイル名 (Shift_JIS) は自動で正しく読み取ります。</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="pdf">
+      <h2><span class="num">12</span>PDF だけの機能 <span class="dim" style="font-size:14px;font-weight:400">PDF Viewer</span></h2>
+      <h3>テキストの選択と検索</h3>
+      <p>ヘッダーの <span class="ui">Text</span> にチェックを入れると、PDF の文字をマウスで選んでコピーできるようになり、検索欄が表示されます。</p>
+      <ul>
+        <li>検索欄に入力すると全ページから探し、一致した箇所を黄色で強調します</li>
+        <li><kbd>Enter</kbd> / <kbd>Shift</kbd>+<kbd>Enter</kbd> (または ▼ ▲) で次 / 前の一致箇所へ。別のページにあれば自動で移動します</li>
+        <li>Text モード中はクリックでのページ送りが止まります (文字選択を優先するため)。矢印キーでのページ送りは使えます。<kbd>Esc</kbd> で解除</li>
+      </ul>
+      <p class="dim">スキャンした画像だけの PDF には文字情報がないため、選択・検索はできません。</p>
+      <h3>注釈コメント</h3>
+      <p>PDF にコメント (注釈) が付いていると、左下に 💬 ボタンと件数が表示されます。クリックでページごとのコメント一覧が開きます。</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="install">
+      <h2><span class="num">13</span>アプリとしてインストール</h2>
+      <p>ビューアは PWA (ホーム画面に追加できる Web アプリ) に対応しています。インストールすると次のことができるようになります。</p>
+      <ul>
+        <li><strong>オフラインで使える</strong> — 一度開けば、以降はインターネットにつながっていなくても全機能が動きます</li>
+        <li><strong>ファイルのダブルクリックで開く</strong> — PDF や CBZ などをこのビューアに関連付けられます (パソコン版 Chrome / Edge)</li>
+        <li><strong>「共有」から開く</strong> — Android でファイルアプリなどの共有メニューからビューアへ送れます</li>
+        <li>独立したウィンドウで開き、ブラウザのタブに埋もれません</li>
+      </ul>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>環境</th><th>インストール方法</th></tr></thead>
+          <tbody>
+            <tr><td>Chrome / Edge (パソコン)</td><td>ビューアを開き、アドレスバー右端のインストールアイコン (モニターに矢印) をクリック</td></tr>
+            <tr><td>Android (Chrome)</td><td>メニュー (︙) →「アプリをインストール」または「ホーム画面に追加」</td></tr>
+            <tr><td>iPhone / iPad (Safari)</td><td>共有ボタン →「ホーム画面に追加」</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="dim">ホーム画面のアイコンからは Comic Viewer が起動します。アイコンを長押しすると PDF Viewer や高画質モード版を直接開くメニューが出ます (対応環境のみ)。</p>
+      <h3>さらに高画質に (wasm-vips)</h3>
+      <p>URL の末尾に <code>?vips=1</code> を付けて開くと、縮小処理のエンジンが画像処理ライブラリ libvips に切り替わります。一度付けて開けば設定は保存されます。<span class="ui">Filter</span> パネル最下部の <span class="ui">HQ engine: wasm-vips</span> でも切り替えられます。</p>
+      <div class="cta" style="margin-top:4px">
+        <a class="btn btn-secondary" style="color:var(--text);border-color:var(--border)" href="./webapp/comic-viewer.html?vips=1">Comic Viewer (wasm-vips)</a>
+        <a class="btn btn-secondary" style="color:var(--text);border-color:var(--border)" href="./webapp/pdf-viewer.html?vips=1">PDF Viewer (wasm-vips)</a>
+      </div>
+      <p class="dim">通常の HQ でも十分きれいです。メモリを多く使うので、うまく動かない場合は自動的に通常のエンジンに戻ります。</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="selfhost">
+      <h2><span class="num">14</span>自分のサーバーに置く</h2>
+      <p>このサイトを使う代わりに、ファイル一式を自分のパソコンやサーバーに置いて使うこともできます。<a href="https://github.com/id-fa/simple-pdf-viewer-with-screenshot">GitHub</a> からダウンロードし、フォルダで Web サーバーを起動してください。</p>
+      <pre><code># どれか 1 つ
+python -m http.server 8000
+php -S localhost:8000
+npx serve .</code></pre>
+      <p>ブラウザで <code>http://localhost:8000/comic-viewer.html</code> を開きます。</p>
+      <div class="note">
+        <strong>HTML ファイルを直接ダブルクリックしても動きません</strong>
+        <p><code>file://</code> で開くとブラウザの制限で部品が読み込めないため、必ず上のように Web サーバー経由で開いてください。</p>
+      </div>
+      <h3>ライブラリ機能 (PHP が動くサーバーのみ)</h3>
+      <p>PHP が動くサーバーに <code>library.php</code> を置くと、サーバー上のフォルダにある本を一覧・検索してそのまま開ける「ライブラリ」が使えます (ヘッダーの <span class="ui">Library</span> ボタンまたは <kbd>O</kbd> キー)。自宅の NAS の本棚をスマートフォンから読む、といった使い方ができます。表紙のサムネイル表示、既読ページの表示、Basic 認証にも対応しています。</p>
+      <p>このサイト (GitHub Pages) では PHP が動かないため、ライブラリ機能は使えません。設定方法は <a href="https://github.com/id-fa/simple-pdf-viewer-with-screenshot#readme">README</a> の「ライブラリ参照」をご覧ください。</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="faq">
+      <h2><span class="num">15</span>困ったときは</h2>
+
+      <details class="faq">
+        <summary>見開きの左右の組み合わせがずれている</summary>
+        <div><p><kbd>C</kbd> キー (または <span class="ui">Cover</span> のチェック) を切り替えてください。表紙を単独にするかどうかで組み合わせが 1 ページずれます。左右が逆なら <kbd>B</kbd> キーで綴じ方向を切り替えます。</p></div>
+      </details>
+
+      <details class="faq">
+        <summary>ページの順番がおかしい</summary>
+        <div><p>書庫ファイルなら、ヘッダーの並び順 (<span class="ui">Sort: Natural</span> など) を切り替えてみてください。EPUB は自動で正しい順番に並べ替えますが、うまくいかない場合は <kbd>E</kbd> キーで解析をやり直せます。</p></div>
+      </details>
+
+      <details class="faq">
+        <summary>ヘッダーが消えて操作できなくなった</summary>
+        <div><p>画面の中央をタップ (クリック) するか、<kbd>H</kbd> / <kbd>Esc</kbd> キーを押すと再表示されます。</p></div>
+      </details>
+
+      <details class="faq">
+        <summary>ファイルを閉じて別のファイルを開きたい</summary>
+        <div><p>そのまま新しいファイルをドラッグ＆ドロップするか <span class="ui">Open</span> で選べば切り替わります。最初の画面に戻りたいときは <kbd>Esc</kbd> を 2 回、または左上のタイトルをタップします。</p></div>
+      </details>
+
+      <details class="faq">
+        <summary>PDF の日本語が表示されない・文字化けする</summary>
+        <div><p>フォントが埋め込まれていない PDF では、表示に必要な文字データを初回だけ追加で読み込みます。オフラインでその PDF を初めて開いた場合は表示できないことがあるので、一度インターネットにつながった状態で開いてください (以降はオフラインでも表示されます)。</p></div>
+      </details>
+
+      <details class="faq">
+        <summary>NAS (ネットワーク上のフォルダ) のファイルが途中で読み込めなくなる</summary>
+        <div>
+          <p>ネットワークの接続が一時的に切れると「〇〇% まで読み込みました」という通知が出ます。通知をタップするか、もう一度同じファイルを開くと<strong>続きから</strong>読み込みを再開します。何度か繰り返すと最後まで読み込めます。</p>
+          <p>ドラッグ＆ドロップやファイルの関連付けで開いた場合は、自動で開き直して再試行します。</p>
+        </div>
+      </details>
+
+      <details class="faq">
+        <summary>大きなファイルを開くと時間がかかる</summary>
+        <div><p>書庫ファイルは全ページの展開とサムネイル作成が終わるまで「展開中...」と表示されます。数百 MB の書庫では数十秒かかることがあります。なお安全のため、展開後の合計が 2 GB を超える書庫や、1 万ファイルを超える書庫は開けません。</p></div>
+      </details>
+
+      <details class="faq">
+        <summary>しおりが保存されない / L・M キーでエラーになる</summary>
+        <div><p>しおり機能は初期状態で OFF です。サイドバーの <span class="ui">Bookmarks</span> タブで <span class="ui">Bookmarks</span> にチェックを入れてください。また、ブラウザのプライベートモードでは閉じるとしおりが消えます。</p></div>
+      </details>
+
+      <details class="faq">
+        <summary>ファイルの中身が外部に送られていないか心配</summary>
+        <div><p>送られていません。ファイルの読み込み・展開・表示・画像の保存はすべてブラウザ内で完結します。オフラインで使えることが、ファイルを外部に送っていない証拠でもあります。ソースコードはすべて <a href="https://github.com/id-fa/simple-pdf-viewer-with-screenshot">GitHub</a> で公開しています。</p></div>
+      </details>
+    </section>
+  </main>
+</div>
+
+<footer>
+  <p><a href="https://github.com/id-fa/simple-pdf-viewer-with-screenshot">id-fa/simple-pdf-viewer-with-screenshot</a> — Created by id-fa, built with Claude Code</p>
+  <p>PDF.js / Pica / libarchive.js / wasm-vips を使用しています。</p>
+</footer>
+
+<script>
+  // 目次のハイライト: 表示中のセクションに対応するリンクを強調する
+  (function () {
+    var links = document.querySelectorAll('#tocList a');
+    if (!links.length || !('IntersectionObserver' in window)) return;
+    var map = {};
+    links.forEach(function (a) { map[a.getAttribute('href').slice(1)] = a; });
+    var visible = {};
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { visible[e.target.id] = e.isIntersecting; });
+      var current = null;
+      document.querySelectorAll('main section').forEach(function (s) {
+        if (!current && visible[s.id]) current = s.id;
+      });
+      if (!current) return;
+      links.forEach(function (a) { a.classList.toggle('active', a === map[current]); });
+    }, { rootMargin: '0px 0px -60% 0px' });
+    document.querySelectorAll('main section').forEach(function (s) { io.observe(s); });
+  })();
+</script>
 </body>
 </html>
