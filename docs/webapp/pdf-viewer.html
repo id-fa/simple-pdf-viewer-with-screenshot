@@ -355,7 +355,7 @@ body.seek-visible .toast { bottom: 60px; }
       <input type="checkbox" id="coverCheck" checked>
       Cover
     </label>
-    <label class="check" title="高品質縮小: 縮小表示時にLanczos+シャープネス適用 / High-quality downscale with Lanczos + sharpening">
+    <label class="check" title="高品質: 縮小表示時にLanczos+シャープネス適用、高DPI画面では実ピクセルで描画 / High quality: Lanczos + sharpening when downscaled, native-resolution rendering on HiDPI screens">
       <input type="checkbox" id="hqPdfCheck">
       HQ
     </label>
@@ -646,6 +646,13 @@ let renderedPageNums = new Set(); // メインビューに描画した PDF ペ�
 // true: メモリ累積を防ぎ黒画面を回避 (推奨)。false: 解放を一切行わない (暗転皆無だが大量ページで
 // メモリ増大→黒画面の恐れ)。解放は常に「新ページ描画後」に行うため true でも暗転は発生しない。
 const FREE_PAGE_CACHE = true;
+// Scale の「100%」を 96dpi 基準にする係数 (PDF の 1pt = 1/72in → CSS の 1px = 1/96in)。
+// 1 にすると 1pt = 1px (72dpi) で、小さい文字の細い線が 1px 未満になってかすれる。
+// Chrome 内蔵ビューア / Acrobat の 100% と同じ大きさになる。Fit・サムネイル・エクスポート (2x) には掛けない。
+const PDF_CSS_UNITS = 96 / 72;
+// HQ ON のとき、メインビューの canvas を devicePixelRatio 倍のピクセル数で描く際の上限 (1枚あたり)。
+// 超える場合は倍率を下げる。高 DPR 端末 × 高倍率で canvas 確保に失敗して黒画面になるのを防ぐ。
+const MAX_CANVAS_PIXELS = 4096 * 4096;
 let currentFileHash = null;
 let sessionLastRead = null;
 let zoomStash = null;
@@ -1486,8 +1493,14 @@ function rotateCanvas(srcCanvas) {
   if (deg === 0) return srcCanvas;
   const w = srcCanvas.width, h = srcCanvas.height;
   const rc = document.createElement('canvas');
-  if (deg === 90 || deg === 270) { rc.width = h; rc.height = w; }
+  const swap = (deg === 90 || deg === 270);
+  if (swap) { rc.width = h; rc.height = w; }
   else { rc.width = w; rc.height = h; }
+  // 高 DPI 描画の canvas は CSS サイズを style に持っているので引き継ぐ
+  if (srcCanvas.style.width) {
+    rc.style.width = swap ? srcCanvas.style.height : srcCanvas.style.width;
+    rc.style.height = swap ? srcCanvas.style.width : srcCanvas.style.height;
+  }
   const ctx = rc.getContext('2d');
   ctx.translate(rc.width / 2, rc.height / 2);
   ctx.rotate(deg * Math.PI / 180);
@@ -1544,7 +1557,25 @@ function getScale(page, forSpread) {
     const divisor = forSpread ? 2 : 1;
     return Math.min((maxW / divisor) / docW, maxH / docH, 3);
   }
-  return parseFloat(val);
+  return parseFloat(val) * PDF_CSS_UNITS;
+}
+
+// メインビューの canvas を CSS サイズの何倍のピクセル数で描くか。
+// HQ ON のときだけ devicePixelRatio を掛ける (高 DPI 画面 / ブラウザズームで canvas が
+// 引き伸ばされてぼやけるのを防ぐ)。OFF は従来どおり 1 (軽量・省メモリ)。
+function getOutputScale(cssW, cssH) {
+  if (!hqPdfCheck.checked) return 1;
+  const dpr = window.devicePixelRatio || 1;
+  if (dpr <= 1) return 1;
+  return Math.max(1, Math.min(dpr, Math.sqrt(MAX_CANVAS_PIXELS / (cssW * cssH))));
+}
+
+// canvas の表示サイズ (CSS px)。高 DPI 描画では canvas.width と一致しない。
+function canvasCssSize(canvas) {
+  return {
+    width: parseFloat(canvas.style.width) || canvas.width,
+    height: parseFloat(canvas.style.height) || canvas.height,
+  };
 }
 
 // High-quality downscale using Pica (Lanczos3 + optional unsharp mask)
@@ -1598,10 +1629,25 @@ async function drawImageVips(ctx, srcCanvas, targetW, targetH, sharpenOpts) {
   }
 }
 
-async function renderPageToCanvas(pageNum, scale) {
+// forDisplay: メインビュー用の描画 (高 DPI 対応の対象)。サムネイル / エクスポートは scale を
+// 明示して呼ぶので既定で false。見開きは scale を渡しつつ true を指定する。
+async function renderPageToCanvas(pageNum, scale, forDisplay = !scale) {
   const page = await pdfDoc.getPage(pageNum);
   renderedPageNums.add(pageNum);
-  const s = scale || getScale(page, isSpread() && getSpreadPages(currentPage).length === 2);
+  const cssScale = scale || getScale(page, isSpread() && getSpreadPages(currentPage).length === 2);
+  const cssVp = page.getViewport({ scale: cssScale });
+  const os = forDisplay ? getOutputScale(cssVp.width, cssVp.height) : 1;
+  const canvas = await renderPageAtScale(page, cssScale * os);
+  if (os !== 1) {
+    // ピクセル数は os 倍、表示サイズは CSS スケールのまま
+    canvas.style.width = (canvas.width / os) + 'px';
+    canvas.style.height = (canvas.height / os) + 'px';
+  }
+  return canvas;
+}
+
+// s は canvas の実ピクセル倍率 (CSS スケール × 出力倍率)
+async function renderPageAtScale(page, s) {
   // HQ mode: render at 1x then downscale as image
   if (hqPdfCheck.checked && s < 1) {
     const fullVp = page.getViewport({ scale: 1 });
@@ -1698,8 +1744,9 @@ async function renderScrollPage(pageNum, container) {
   scrollRendered.add(pageNum);
   const rawCanvas = await renderPageToCanvas(pageNum);
   const canvas = rotateCanvas(rawCanvas);
-  container.style.width = canvas.width + 'px';
-  container.style.height = canvas.height + 'px';
+  const size = canvasCssSize(canvas);
+  container.style.width = size.width + 'px';
+  container.style.height = size.height + 'px';
   container.style.background = '';
   const label = container.querySelector('.page-label');
   container.insertBefore(canvas, label);
@@ -1776,7 +1823,7 @@ async function renderView(num) {
       for (const pn of pages) {
         const container = document.createElement('div');
         container.className = 'page-container';
-        const rawCanvas = await renderPageToCanvas(pn, scale);
+        const rawCanvas = await renderPageToCanvas(pn, scale, true);
         container.appendChild(rotateCanvas(rawCanvas));
         if (textMode) {
           const tl = await buildTextLayer(pn, scale, rawCanvas.width, rawCanvas.height);
@@ -3392,6 +3439,31 @@ rotateSelect.addEventListener('change', () => {
 hqPdfCheck.addEventListener('change', () => {
   if (pdfDoc && isScrollMode()) { renderScrollView(currentPage); }
 });
+
+// devicePixelRatio の変化 (ブラウザズーム / DPI の違うモニタへの移動) で描き直す。
+// HQ ON のときだけ canvas のピクセル数が DPR に依存するため。resolution の media query は
+// 「今の値」にしか反応しないので、変化のたびに張り直す。ズームでは resize も来るので
+// そちらでも値を見比べる (media query の change が飛ばない環境への保険)。
+let dprQuery = null;
+let dprDebounce = null;
+let lastDpr = window.devicePixelRatio || 1;
+function watchDevicePixelRatio() {
+  if (dprQuery) dprQuery.removeEventListener('change', checkDevicePixelRatio);
+  dprQuery = window.matchMedia(`(resolution: ${lastDpr}dppx)`);
+  dprQuery.addEventListener('change', checkDevicePixelRatio);
+}
+function checkDevicePixelRatio() {
+  const dpr = window.devicePixelRatio || 1;
+  if (dpr === lastDpr) return;
+  lastDpr = dpr;
+  watchDevicePixelRatio();
+  if (!hqPdfCheck.checked) return;
+  // Fit の再描画 (resize の 120ms デバウンス) の後ろに回す
+  clearTimeout(dprDebounce);
+  dprDebounce = setTimeout(rerenderForSharpen, 200);
+}
+watchDevicePixelRatio();
+window.addEventListener('resize', checkDevicePixelRatio);
 
 // ==================== Library (server-side folder browsing) ====================
 // サーバー上の指定フォルダ (library.php の 'root') を一覧・検索して直接開く機能。

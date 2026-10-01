@@ -49,6 +49,23 @@
 - `totalPages` — 総ページ数
 - `rendering` — レンダリング中フラグ (二重実行防止)
 
+### 表示倍率の基準 (`PDF_CSS_UNITS`、両ビューア共通)
+- Scale の `50%`〜`300%` は **96dpi 基準** (`PDF_CSS_UNITS = 96 / 72`)。`getScale()` が選択値に係数を掛けて返すので、100% で A4 (595×842pt) は 793×1122px になる。Chrome 内蔵ビューア / Acrobat の 100% と同じ大きさ
+- 理由: 係数無し (1pt = 1px = 72dpi) だと 10pt の文字が高さ約 10px しかなく、PDF.js はグリフをヒンティング無しのアウトラインで塗るので細い線が 1px 未満になって**かすれる** (ユーザー報告)。PDF には固有の解像度が無いので「100% = 等倍」という概念がそもそも無い
+- **掛けるのは `getScale()` の固定倍率だけ**。Fit (画面から算出)・サムネイル・エクスポート (`renderPageToCanvas(pn, 2)` の明示 2x = 144dpi) には掛けない。Spread / Scroll / テキストレイヤー (`buildTextLayer`) はすべて `getScale()` 経由なので自動的に揃う
+- comic-viewer.html は `docType === 'pdf'` のときだけ掛ける。**アーカイブ画像は 100% = 元画像の等倍**のまま
+- 副作用: 75% が実スケール 1.0 になるので HQ パス (`s < 1`) を通るのは 50% と Fit の縮小時だけ。300% (Z キーのズーム) は実スケール 4.0
+
+### 高 DPI 描画 (`getOutputScale()`、HQ ON のときのみ、両ビューア共通)
+- **HQ OFF**: canvas のピクセル数 = CSS サイズ (従来どおり)。`devicePixelRatio` > 1 の環境 (Windows の表示スケール 125%/150%、ブラウザズーム、スマートフォン) ではブラウザが canvas を引き伸ばすので文字がぼやけて薄くなる
+- **HQ ON**: メインビューの canvas (PDF / comic-viewer.html のアーカイブ画像) を **CSS サイズ × `devicePixelRatio`** のピクセル数で描き、`canvas.style.width/height` で表示サイズを CSS スケールに戻す (デバイスピクセルと 1:1)。HQ に相乗りさせているのは、ピクセル数が DPR² 倍になりメモリ管理 (黒画面対策) と衝突しうるので opt-in にするため
+- **上限**: 1枚あたり `MAX_CANVAS_PIXELS` (4096×4096)。超える場合は `getOutputScale()` が倍率を下げる (最低 1)。実測: DPR 1.5 / 300% の A4 は 1.447 倍 (3443×4872) に抑えられる
+- **対象は「メインビューの描画」だけ**: `renderPageToCanvas()` の `forDisplay` 引数で区別する。既定は `!scale` (scale 省略 = 表示用)、見開きは scale を渡しつつ `true` を明示。サムネイル / エクスポートは scale を明示して呼ぶので対象外 (ピクセル数は従来と同じ)
+- **アーカイブ画像は元画像の等倍が上限** (comic-viewer.html): PDF はベクターなので何倍でも描けるが、画像は等倍を超えて描いても情報が増えない。`os = cssScale < 1 ? Math.min(os, 1 / cssScale) : 1` で実倍率を 1 までに抑えるので、効くのは縮小表示 (Fit / 50% / 75%) だけで、100% 以上は従来どおりブラウザの拡大に任せる。canvas のピクセル数が 100% 表示時を超えないのでメモリの上振れも無い。実測 (DPR 1.5、1600×2400 の画像): 50% → 1200×1800 (1.5 倍)、75% → 1600×2400 (等倍で頭打ち、1.33 倍)、Fit → 661×991 (1.5 倍)、100% 以上は変化なし。Pica / vips の縮小と Sharpen はこの実ピクセル数に対して掛かる
+- **実ピクセル倍率 = CSS スケール × 出力倍率** を `renderPageAtScale()` (comic は `renderPdfPageAtScale()`) に渡す。HQ パスの `s < 1` 判定もこの実倍率で行う (例: DPR 1.5 の 50% は実倍率 1.0 なので直接描画)
+- **`canvas.width` を表示サイズとして使ってはいけない**: 表示サイズが要るときは `canvasCssSize(canvas)` (`renderScrollPage` のコンテナサイズ等)。`rotateCanvas()` は `style.width/height` を引き継ぐ (90°/270° は入れ替え)。ミニマップ / `captureVisibleArea()` は `getBoundingClientRect()` 基準なので変更不要 (Clipboard (View) の出力は CSS ピクセル解像度のまま)。テキストレイヤーは CSS スケールの viewport で組むので影響なし
+- **DPR の変化で描き直す** (`checkDevicePixelRatio()`): `matchMedia('(resolution: Ndppx)')` の change と `window.resize` の両方から現在値を見比べ、変わっていたら 200ms 後に `rerenderForSharpen()`。resolution の media query は「今の値」にしか反応しないので変化のたびに張り直す。resize 側は保険 (Chrome DevTools の DPR エミュレーションでは media query の change が飛ばなかった)
+
 ### 画像エクスポート
 - エクスポート用: 固定 2x スケール (`exportPageCanvas()`)
 - ファイル名: `{PDFファイル名}_{ページ番号}.{ext}` (ゼロパディング)
@@ -311,9 +328,10 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - **PDF** (両ビューア共通): HQ チェックボックスで切替可能
   - OFF (デフォルト): PDF.js が直接ターゲットスケールでレンダリング (軽量)
   - ON: PDF.js で 1x レンダリング → Pica/vips で縮小 + Sharpen 適用 (高品質・重い)
-  - `s < 1` (Fit, 50%, 75% 等の縮小表示) の場合のみ HQ パスを通る
+  - `s < 1` (Fit, 50% 等の縮小表示) の場合のみ HQ パスを通る。`s` は `PDF_CSS_UNITS` を掛けた後の実スケールなので 75% (= 1.0) は通らない
   - サムネイルにも適用される
   - HQ チェック時に Sharpen が 0 なら自動的にデフォルト値 (80) を設定
+  - ON のときはメインビューを `devicePixelRatio` 倍のピクセル数で描く (詳細は「高 DPI 描画」)。この場合 `s` は DPR を掛けた実倍率
 
 ### wasm-vips オプション (localStorage `vipsEnabled`、両ビューア共通)
 - **有効化方法 (3通り)**:
@@ -642,7 +660,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 ## PWA / Service Worker
 
 ### `sw.js`
-- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v45`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v48`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
 - **`SHARE_CACHE`**: `share-stash-v1` — Web Share Target で受信したファイルを一時保存する専用キャッシュ (activate 時も削除対象外)
 - **`PRECACHE_URLS`**: インストール時に一括取得するリソース (HTML 2種、vendor/ 配下全ファイル、manifest、icons)。`fetch(url, { cache: 'reload' })` でブラウザキャッシュをバイパス
 - **`activate`**: `CACHE_NAME` と `SHARE_CACHE` 以外の旧キャッシュを削除し `self.clients.claim()`

@@ -386,7 +386,7 @@ body.seek-visible .toast { bottom: 60px; }
       <input type="checkbox" id="coverCheck" checked>
       Cover
     </label>
-    <label class="check" title="高品質縮小: 縮小表示時にLanczos+シャープネス適用 / High-quality downscale with Lanczos + sharpening">
+    <label class="check" title="高品質: PDF の縮小表示時にLanczos+シャープネス適用、高DPI画面では実ピクセルで描画 (PDF / 画像) / High quality: Lanczos + sharpening for downscaled PDF, native-resolution rendering on HiDPI screens (PDF / images)">
       <input type="checkbox" id="hqPdfCheck">
       HQ
     </label>
@@ -731,6 +731,14 @@ let renderedPageNums = new Set(); // メインビューに描画した PDF ペ�
 // true: メモリ累積を防ぎ黒画面を回避 (推奨)。false: 解放を一切行わない (暗転皆無だが大量ページで
 // メモリ増大→黒画面の恐れ)。解放は常に「新ページ描画後」に行うため true でも暗転は発生しない。
 const FREE_PAGE_CACHE = true;
+// Scale の「100%」を 96dpi 基準にする係数 (PDF の 1pt = 1/72in → CSS の 1px = 1/96in)。
+// 1 にすると 1pt = 1px (72dpi) で、小さい文字の細い線が 1px 未満になってかすれる。
+// Chrome 内蔵ビューア / Acrobat の 100% と同じ大きさになる。Fit・サムネイル・エクスポート (2x) には掛けない。
+// アーカイブ画像は 100% = 元画像の等倍のままにするので PDF のときだけ掛ける。
+const PDF_CSS_UNITS = 96 / 72;
+// HQ ON のとき、メインビューの canvas を devicePixelRatio 倍のピクセル数で描く際の上限 (1枚あたり)。
+// 超える場合は倍率を下げる。高 DPR 端末 × 高倍率で canvas 確保に失敗して黒画面になるのを防ぐ。
+const MAX_CANVAS_PIXELS = 4096 * 4096;
 let currentFileHash = null;
 let sessionLastRead = null;
 let zoomStash = null;
@@ -2771,8 +2779,14 @@ function rotateCanvas(srcCanvas) {
   if (deg === 0) return srcCanvas;
   const w = srcCanvas.width, h = srcCanvas.height;
   const rc = document.createElement('canvas');
-  if (deg === 90 || deg === 270) { rc.width = h; rc.height = w; }
+  const swap = (deg === 90 || deg === 270);
+  if (swap) { rc.width = h; rc.height = w; }
   else { rc.width = w; rc.height = h; }
+  // 高 DPI 描画の canvas は CSS サイズを style に持っているので引き継ぐ
+  if (srcCanvas.style.width) {
+    rc.style.width = swap ? srcCanvas.style.height : srcCanvas.style.width;
+    rc.style.height = swap ? srcCanvas.style.width : srcCanvas.style.height;
+  }
   const ctx = rc.getContext('2d');
   ctx.translate(rc.width / 2, rc.height / 2);
   ctx.rotate(deg * Math.PI / 180);
@@ -2823,7 +2837,25 @@ function getScale(dims, forSpread) {
     const divisor = forSpread ? 2 : 1;
     return Math.min((maxW / divisor) / docW, maxH / docH, 3);
   }
-  return parseFloat(val);
+  return parseFloat(val) * (docType === 'pdf' ? PDF_CSS_UNITS : 1);
+}
+
+// メインビューの canvas を CSS サイズの何倍のピクセル数で描くか (PDF / アーカイブ画像共通)。
+// HQ ON のときだけ devicePixelRatio を掛ける (高 DPI 画面 / ブラウザズームで canvas が
+// 引き伸ばされてぼやけるのを防ぐ)。OFF は従来どおり 1 (軽量・省メモリ)。
+function getOutputScale(cssW, cssH) {
+  if (!hqPdfCheck.checked) return 1;
+  const dpr = window.devicePixelRatio || 1;
+  if (dpr <= 1) return 1;
+  return Math.max(1, Math.min(dpr, Math.sqrt(MAX_CANVAS_PIXELS / (cssW * cssH))));
+}
+
+// canvas の表示サイズ (CSS px)。高 DPI 描画では canvas.width と一致しない。
+function canvasCssSize(canvas) {
+  return {
+    width: parseFloat(canvas.style.width) || canvas.width,
+    height: parseFloat(canvas.style.height) || canvas.height,
+  };
 }
 
 // High-quality downscale using Pica (Lanczos3 + optional unsharp mask)
@@ -2877,50 +2909,73 @@ async function drawImageVips(ctx, srcCanvas, targetW, targetH, sharpenOpts) {
   }
 }
 
-async function renderPageToCanvas(pageNum, scale, useVips = true) {
+// forDisplay: メインビュー用の描画 (高 DPI 対応の対象)。サムネイル / エクスポートは scale を
+// 明示して呼ぶので既定で false。見開きは scale を渡しつつ true を指定する。
+async function renderPageToCanvas(pageNum, scale, useVips = true, forDisplay = !scale) {
   if (docType === 'pdf') {
     const page = await pdfDoc.getPage(pageNum);
     renderedPageNums.add(pageNum);
     const dims = { width: page.getViewport({ scale: 1 }).width, height: page.getViewport({ scale: 1 }).height };
-    const s = scale || getScale(dims, isSpread() && getSpreadPages(currentPage).length === 2);
-    // HQ mode: render at 1x (or higher) then downscale as image
-    if (hqPdfCheck.checked && s < 1) {
-      const fullVp = page.getViewport({ scale: 1 });
-      const fullCanvas = document.createElement('canvas');
-      fullCanvas.width = fullVp.width;
-      fullCanvas.height = fullVp.height;
-      // 画面には出さず pica/vips が getImageData で読み戻すだけの中間 canvas。
-      // willReadFrequently で CPU バッキングにし、GPU メモリ予算から外す。
-      const fullCtx = fullCanvas.getContext('2d', { willReadFrequently: true });
-      await page.render({ canvasContext: fullCtx, viewport: fullVp }).promise;
-      const targetW = Math.round(dims.width * s);
-      const targetH = Math.round(dims.height * s);
-      const canvas = document.createElement('canvas');
-      canvas.width = targetW;
-      canvas.height = targetH;
-      const ctx = canvas.getContext('2d');
-      await drawImageHighQuality(ctx, fullCanvas, targetW, targetH, getSharpenOpts(), useVips);
-      fullCanvas.width = fullCanvas.height = 0; // 中間 canvas を即時解放
-      return canvas;
+    const cssScale = scale || getScale(dims, isSpread() && getSpreadPages(currentPage).length === 2);
+    const os = forDisplay ? getOutputScale(dims.width * cssScale, dims.height * cssScale) : 1;
+    const canvas = await renderPdfPageAtScale(page, dims, cssScale * os, useVips);
+    if (os !== 1) {
+      // ピクセル数は os 倍、表示サイズは CSS スケールのまま
+      canvas.style.width = (canvas.width / os) + 'px';
+      canvas.style.height = (canvas.height / os) + 'px';
     }
-    const viewport = page.getViewport({ scale: s });
-    const canvas = document.createElement('canvas');
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    const ctx = canvas.getContext('2d');
-    await page.render({ canvasContext: ctx, viewport }).promise;
     return canvas;
   } else {
     const entry = archiveImages[pageNum - 1];
     const dims = { width: entry.width, height: entry.height };
-    const s = scale || getScale(dims, isSpread() && getSpreadPages(currentPage).length === 2);
+    const cssScale = scale || getScale(dims, isSpread() && getSpreadPages(currentPage).length === 2);
+    let os = forDisplay ? getOutputScale(dims.width * cssScale, dims.height * cssScale) : 1;
+    // 画像は元の解像度が上限。等倍を超えて描いても情報は増えないので実倍率は 1 まで
+    // (100% 以上の表示は従来どおりブラウザの拡大に任せる)。
+    os = cssScale < 1 ? Math.min(os, 1 / cssScale) : 1;
+    const s = cssScale * os;
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(dims.width * s);
     canvas.height = Math.round(dims.height * s);
     const ctx = canvas.getContext('2d');
     await drawImageHighQuality(ctx, entry.img, canvas.width, canvas.height, getSharpenOpts(), useVips);
+    if (os !== 1) {
+      canvas.style.width = (canvas.width / os) + 'px';
+      canvas.style.height = (canvas.height / os) + 'px';
+    }
     return canvas;
   }
+}
+
+// s は canvas の実ピクセル倍率 (CSS スケール × 出力倍率)
+async function renderPdfPageAtScale(page, dims, s, useVips) {
+  // HQ mode: render at 1x (or higher) then downscale as image
+  if (hqPdfCheck.checked && s < 1) {
+    const fullVp = page.getViewport({ scale: 1 });
+    const fullCanvas = document.createElement('canvas');
+    fullCanvas.width = fullVp.width;
+    fullCanvas.height = fullVp.height;
+    // 画面には出さず pica/vips が getImageData で読み戻すだけの中間 canvas。
+    // willReadFrequently で CPU バッキングにし、GPU メモリ予算から外す。
+    const fullCtx = fullCanvas.getContext('2d', { willReadFrequently: true });
+    await page.render({ canvasContext: fullCtx, viewport: fullVp }).promise;
+    const targetW = Math.round(dims.width * s);
+    const targetH = Math.round(dims.height * s);
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d');
+    await drawImageHighQuality(ctx, fullCanvas, targetW, targetH, getSharpenOpts(), useVips);
+    fullCanvas.width = fullCanvas.height = 0; // 中間 canvas を即時解放
+    return canvas;
+  }
+  const viewport = page.getViewport({ scale: s });
+  const canvas = document.createElement('canvas');
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  const ctx = canvas.getContext('2d');
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  return canvas;
 }
 
 function addGifBadge(container, pageNum) {
@@ -3000,8 +3055,9 @@ async function renderScrollPage(pageNum, container) {
   scrollRendered.add(pageNum);
   const rawCanvas = await renderPageToCanvas(pageNum);
   const canvas = rotateCanvas(rawCanvas);
-  container.style.width = canvas.width + 'px';
-  container.style.height = canvas.height + 'px';
+  const size = canvasCssSize(canvas);
+  container.style.width = size.width + 'px';
+  container.style.height = size.height + 'px';
   container.style.background = '';
   addGifBadge(container, pageNum);
   const label = container.querySelector('.page-label');
@@ -3076,7 +3132,7 @@ async function renderView(num) {
       for (const pn of pages) {
         const container = document.createElement('div');
         container.className = 'page-container';
-        const rawCanvas = await renderPageToCanvas(pn, scale);
+        const rawCanvas = await renderPageToCanvas(pn, scale, true, true);
         container.appendChild(rotateCanvas(rawCanvas));
         addGifBadge(container, pn);
         const label = document.createElement('div');
@@ -4963,6 +5019,31 @@ rotateSelect.addEventListener('change', () => {
 hqPdfCheck.addEventListener('change', () => {
   if (totalPages > 0 && isScrollMode()) { renderScrollView(currentPage); }
 });
+
+// devicePixelRatio の変化 (ブラウザズーム / DPI の違うモニタへの移動) で描き直す。
+// HQ ON のときだけ canvas のピクセル数が DPR に依存するため。resolution の media query は
+// 「今の値」にしか反応しないので、変化のたびに張り直す。ズームでは resize も来るので
+// そちらでも値を見比べる (media query の change が飛ばない環境への保険)。
+let dprQuery = null;
+let dprDebounce = null;
+let lastDpr = window.devicePixelRatio || 1;
+function watchDevicePixelRatio() {
+  if (dprQuery) dprQuery.removeEventListener('change', checkDevicePixelRatio);
+  dprQuery = window.matchMedia(`(resolution: ${lastDpr}dppx)`);
+  dprQuery.addEventListener('change', checkDevicePixelRatio);
+}
+function checkDevicePixelRatio() {
+  const dpr = window.devicePixelRatio || 1;
+  if (dpr === lastDpr) return;
+  lastDpr = dpr;
+  watchDevicePixelRatio();
+  if (!hqPdfCheck.checked) return;
+  // Fit の再描画 (resize の 120ms デバウンス) の後ろに回す
+  clearTimeout(dprDebounce);
+  dprDebounce = setTimeout(rerenderForSharpen, 200);
+}
+watchDevicePixelRatio();
+window.addEventListener('resize', checkDevicePixelRatio);
 
 // ==================== Library (server-side folder browsing) ====================
 // サーバー上の指定フォルダ (library.php の 'root') を一覧・検索して直接開く機能。
