@@ -214,7 +214,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - Z キー: ズームトグル (300% + Pan + Map ↔ 元の設定に復元)
 - L キー: Last Read ページにジャンプ (しおり未有効時はエラーダイアログ)
 - M キー: Max Read ページにジャンプ (しおり未有効時はエラーダイアログ)
-- I キー: PDF の文書情報プロパティ (メタデータ) モーダルをトグル (詳細は「文書情報プロパティ表示」セクション)
+- I キー: 文書情報プロパティ (メタデータ) モーダルをトグル。PDF は両ビューア、EPUB は comic-viewer.html のみ (詳細は「文書情報プロパティ表示」セクション)
 - E キー: EPUB 構造解析を手動で再実行 (comic-viewer.html のみ。読み込み時に自動実行されるため通常は不要。詳細は「EPUB 構造解析」セクション)
 - T キー: EPUB 目次 (TOC) サイドバーの開閉 (comic-viewer.html のみ、構造解析後に有効)
 - R キー: EPUB 本文リーダーを開く (comic-viewer.html のみ、構造解析後に有効。リーダー表示中は ←/→ が文書送り)
@@ -449,17 +449,31 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - セキュリティ: `textContent` 経由でエスケープし HTML/JS は動作しない
 - comic-viewer.html ではアーカイブ読み込み時にFABを非表示にリセット
 
-### 文書情報プロパティ表示 (`I` キー、PDF、両ビューア共通)
+### 文書情報プロパティ表示 (`I` キー、PDF は両ビューア共通 / EPUB は comic-viewer.html のみ)
 - `I` キーで `#docInfoOverlay` をトグル (Escape・背景クリック・× でも閉じる)。**モーダルの枠は `annotation-modal*` のクラスを流用**し、行のスタイル (`.docinfo-row/key/val`) だけ追加している。入口はキーボードのみ (ボタンは無い)
 - `showDocInfo()` は**開くたびに取得する** (読み込み時には何もしない): `pdfDoc.getMetadata()` / `getDownloadInfo()` / `getPage(currentPage)` を並列に待つ。PDF.js 側が `getMetadata` をキャッシュするので2回目以降は即時。取得中に別ファイルが開かれた場合に備えて `doc !== pdfDoc` なら捨てる
-- 表示は3セクション:
+- **comic-viewer.html は構成が違う**: `showDocInfo()` は振り分けだけを行い、中身は `buildPdfDocInfo()` / `buildEpubDocInfo()` が HTML 文字列を返す。行・セクションの組み立ては `docInfoRow()` / `docInfoSection()` に切り出してある (pdf-viewer.html は `showDocInfo()` 内のローカル関数のまま)。PDF 部分の表示内容は両ビューアで同じなので、**項目を足すときは両方に当てること**
+- PDF の表示は3セクション:
   1. **文書情報** (Info 辞書) — Title / Author / Subject / Keywords / Creator / Producer / CreationDate / ModDate。この8項目は**未設定でも「—」で行を出す** (設定されていないこと自体が情報)。`Trapped` と、PDF.js が `info.Custom` にまとめて返す標準外キーは値があるときだけ
   2. **ファイル** — ファイル名 / サイズ (`getDownloadInfo().length`。`getDocument` に渡した `data` は worker へ transfer されて detached になるので `byteLength` は使えない) / ページ数 / **現在ページ**のサイズ (pt + mm、`getViewport({scale:1})` なのでビューアの Rotate 設定には影響されない) / PDF バージョン / 言語 / 暗号化 / Linearized / フォーム (AcroForm・XFA) / 電子署名
   3. **XMP メタデータ** — `metadata.getAll()` をキー順に全部 (配列は `, ` で結合)。XMP が無ければセクションごと出さない
 - `formatPdfDate()` は `D:YYYYMMDDHHmmSS+HH'mm'` を `YYYY-MM-DD HH:mm:ss +09:00` に整形する。**記録されているタイムゾーンのまま**表示し、ローカル時刻へは変換しない。年より後ろは省略可能なので各要素は optional。コメント用の `formatAnnotationDate()` (秒・TZ を落とす) とは別物
 - セキュリティ: コメントと同じく値はすべて `escapeText()` を通す (Title 等に HTML を仕込まれても動かない)
 - `loadPDF` (comic-viewer.html は `loadArchive` でも) の中で `closeDocInfo()` を呼び、前のファイルの情報を出したままにしない
-- comic-viewer.html でアーカイブを開いているときは「文書情報は PDF のみ対応」トーストを出すだけ
+- comic-viewer.html で EPUB 以外のアーカイブ (cbz 等) を開いているときは「文書情報は PDF / EPUB のみ対応」トーストを出すだけ
+
+#### EPUB の文書情報 (`buildEpubDocInfo()`、comic-viewer.html のみ)
+- **EPUB の書誌情報は EXIF のような埋め込みタグではなく、OPF (パッケージ文書、多くは `content.opf`) の `<metadata>`** に Dublin Core (`dc:title` 等) と `<meta>` で書かれている。exiftool が EPUB に対して出すのも同じ OPF の XML (出力に `Manifest Item Href` / `Spine Itemref Idref` が並ぶことから分かる)
+- **構造解析 (`E`) の結果には依存しない**。`epubEntries` から毎回 OPF を読み直す (テキスト1ファイルなので軽い)。OPF の特定は `epubLoadOpf()` (container.xml → rootfile、無ければ `*.opf`) に切り出してあり、`analyzeEpub()` と共用している
+- **EPUB かどうかの判定は「OPF が読めるか」**。`epubEntries` は `.xml` も拾うので ComicInfo.xml 入りの cbz でも空にならない。`epubLoadOpf()` が投げたら空文字を返し、呼び出し側が「PDF / EPUB のみ対応」トーストを出す
+- 表示は3セクション:
+  1. **書誌情報** — `EPUB_DC_FIELDS` の順 (title / creator / contributor / publisher / language / identifier / date / description / subject / rights / source / type / format / relation / coverage)。title・creator・publisher・language・identifier・date は未設定でも「—」で出す。同じ要素が複数あれば改行区切り (subject だけ `, ` 区切り)。date の直後に `dcterms:modified` を「更新日」として出す
+  2. **ファイル** — ファイル名 / サイズ (`archiveFileSize`、`loadImageEntries` の第4引数で受ける。二重アーカイブでは内側のサイズ) / EPUB バージョン (`package@version`) / 画像ページ数 (リフロー型のプレースホルダ1枚のときは「なし」) / 本文文書数・目次項目数 (構造解析済みのときだけ) / レイアウト (`rendition:layout`) / ページ進行方向 (`spine@page-progression-direction`) / OPF のパス
+  3. **その他のメタデータ** — dc 要素に入らない `<meta>` を記述順に全部 (`calibre:series`、`cover`、`rendition:*` 等)
+- **修飾情報は値の後ろに `[role: aut, file-as: ...]` の形で付ける**。EPUB2 は dc 要素の属性 (`opf:role` / `opf:file-as` / `opf:scheme` / `opf:event`、`EPUB_QUAL_ATTRS`)、EPUB3 は `<meta refines="#id" property="...">` と書き方が違うので両方を拾って同じ形にまとめる。`refines` 付きの meta は「その他」には出さない
+- **要素名は名前空間ではなくローカル名で判定する** (`localName` を `:` で分割した末尾)。名前空間宣言が抜けた OPF は XML パースに失敗して `epubParse()` が HTML パーサにフォールバックし、そのときタグ名が `dc:title` のまま残るため。HTML パーサでは `<meta>` が空要素になり中身が直後のテキストノードに出るので、`content` 属性も `textContent` も空なら `nextSibling` を見る
+- `description` は HTML 断片が入っていることが多いので、`DOMParser` (text/html) でテキストだけ取り出す (`</p>` / `<br>` は改行にする)。**DOMParser の文書は不活性**で、スクリプトは動かず画像の取得も起きない (外部 URL の `<img>` を仕込んで通信が出ないことを確認済み)。最終的な出力は他の値と同じく `escapeText()` を通る
+- **本文リーダーの上に出す**: リフロー型 EPUB は開くと同時に本文リーダー (z-index 520) が出るので、`#docInfoOverlay` だけ z-index を 530 にし、keydown の `isEpubReaderOpen()` 分岐の中でも `I` を受け付ける。Escape は文書情報 → 本文リーダーの順に閉じる (文書情報の Escape 判定が先にある)
 
 ### 連続スクロールモード (Scroll、両ビューア共通)
 - viewMode セレクトに **Scroll** オプションを追加
@@ -628,7 +642,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 ## PWA / Service Worker
 
 ### `sw.js`
-- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v44`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v45`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
 - **`SHARE_CACHE`**: `share-stash-v1` — Web Share Target で受信したファイルを一時保存する専用キャッシュ (activate 時も削除対象外)
 - **`PRECACHE_URLS`**: インストール時に一括取得するリソース (HTML 2種、vendor/ 配下全ファイル、manifest、icons)。`fetch(url, { cache: 'reload' })` でブラウザキャッシュをバイパス
 - **`activate`**: `CACHE_NAME` と `SHARE_CACHE` 以外の旧キャッシュを削除し `self.clients.claim()`

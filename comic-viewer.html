@@ -231,6 +231,7 @@ body.seek-visible .toast { bottom: 60px; }
 .annotation-item-type { background: #333; padding: 1px 5px; border-radius: 3px; font-size: 10px; }
 .annotation-item-content { white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
 /* Document properties (I キー)。モーダルの枠は annotation-modal を流用 */
+#docInfoOverlay { z-index: 530; } /* EPUB 本文リーダー (520) の上に出す */
 .docinfo-row { display: flex; gap: 10px; padding: 4px 0; font-size: 12px; line-height: 1.5; }
 .docinfo-key { flex: 0 0 150px; color: #888; }
 .docinfo-val { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; user-select: text; }
@@ -597,7 +598,7 @@ body.seek-visible .toast { bottom: 60px; }
         <div class="help-row"><span class="help-key">Z</span><span class="help-desc">Toggle zoom (300% + Pan + Map)</span></div>
         <div class="help-row"><span class="help-key">L</span><span class="help-desc">Jump to Last Read page</span></div>
         <div class="help-row"><span class="help-key">M</span><span class="help-desc">Jump to Max Read page</span></div>
-        <div class="help-row"><span class="help-key">I</span><span class="help-desc">Show PDF document properties (metadata, PDF only)</span></div>
+        <div class="help-row"><span class="help-key">I</span><span class="help-desc">Show document properties (PDF / EPUB metadata)</span></div>
         <div class="help-row"><span class="help-key">Escape</span><span class="help-desc">Show UI / Close modals (2x within 2s: close file)</span></div>
         <div class="help-row"><span class="help-key">?</span><span class="help-desc">Show this help</span></div>
       </div>
@@ -723,6 +724,7 @@ let epubImgByPath = new Map(); // 正規化パス → Blob 画像 (アーカイ�
 let currentPage = 1;
 let totalPages = 0;
 let fileName = '';
+let archiveFileSize = 0; // 開いているアーカイブのバイト数 (文書情報表示用)
 let rendering = false;
 let renderedPageNums = new Set(); // メインビューに描画した PDF ページ番号 (cleanup 対象の追跡)
 // ページめくり時のメモリ解放 (PDF.js キャッシュ + 旧 canvas backing store) の有効/無効。
@@ -864,9 +866,22 @@ annotationOverlay.addEventListener('click', e => {
   if (e.target === annotationOverlay) annotationOverlay.classList.remove('open');
 });
 
-// ---- Document properties (I キー、PDF のみ) ----
+// ---- Document properties (I キー、PDF / EPUB) ----
 const docInfoOverlay = document.getElementById('docInfoOverlay');
 const docInfoBody = document.getElementById('docInfoBody');
+
+// always=true の項目は未設定でも「—」で行を出す (設定されていないこと自体が情報なので)
+function docInfoRow(label, value, always = true) {
+  const v = value == null ? '' : String(value).trim();
+  if (!v && !always) return '';
+  return `<div class="docinfo-row"><span class="docinfo-key">${escapeText(label)}</span>`
+    + `<span class="docinfo-val${v ? '' : ' empty'}">${v ? escapeText(v) : '—'}</span></div>`;
+}
+
+function docInfoSection(title, rows) {
+  return rows
+    ? `<div class="annotation-page-group"><div class="annotation-page-label">${escapeText(title)}</div>${rows}</div>` : '';
+}
 
 // PDF date format: D:YYYYMMDDHHmmSS+HH'mm' (年より後ろは省略可能)。
 // 記録されているタイムゾーンのまま表示する (ローカル時刻には変換しない)
@@ -886,32 +901,32 @@ function closeDocInfo() {
 }
 
 async function showDocInfo() {
-  if (docType !== 'pdf' || !pdfDoc) {
-    showToast('文書情報は PDF のみ対応 / Document properties: PDF only', 3000);
-    return;
-  }
+  // 取得中に別のファイルが開かれたら捨てる (epubEntries は読み込みのたびに別の配列になる)
   const doc = pdfDoc;
-  const pageNum = currentPage;
-  let meta, dl, page;
+  const entries = epubEntries;
+  let html = '';
   try {
-    [meta, dl, page] = await Promise.all([doc.getMetadata(), doc.getDownloadInfo(), doc.getPage(pageNum)]);
+    if (docType === 'pdf' && pdfDoc) html = await buildPdfDocInfo(doc, currentPage);
+    else if (docType === 'archive' && epubEntries.length) html = await buildEpubDocInfo();
   } catch (err) {
     console.error('Document info error:', err);
     showToast('文書情報を取得できませんでした', 3000);
     return;
   }
-  if (doc !== pdfDoc) return; // 取得中に別のファイルが開かれた
+  if (doc !== pdfDoc || entries !== epubEntries) return;
+  if (!html) {
+    showToast('文書情報は PDF / EPUB のみ対応 / Document properties: PDF / EPUB only', 3000);
+    return;
+  }
+  docInfoBody.innerHTML = html;
+  docInfoBody.scrollTop = 0;
+  docInfoOverlay.classList.add('open');
+}
 
+async function buildPdfDocInfo(doc, pageNum) {
+  const [meta, dl, page] = await Promise.all([doc.getMetadata(), doc.getDownloadInfo(), doc.getPage(pageNum)]);
   const info = meta.info || {};
-  // always=true の項目は未設定でも「—」で行を出す (設定されていないこと自体が情報なので)
-  const row = (label, value, always = true) => {
-    const v = value == null ? '' : String(value).trim();
-    if (!v && !always) return '';
-    return `<div class="docinfo-row"><span class="docinfo-key">${escapeText(label)}</span>`
-      + `<span class="docinfo-val${v ? '' : ' empty'}">${v ? escapeText(v) : '—'}</span></div>`;
-  };
-  const section = (title, rows) => rows
-    ? `<div class="annotation-page-group"><div class="annotation-page-label">${escapeText(title)}</div>${rows}</div>` : '';
+  const row = docInfoRow;
   const yesNo = b => b ? 'あり / Yes' : 'なし / No';
 
   // 文書情報辞書 (Info dictionary)
@@ -953,11 +968,130 @@ async function showDocInfo() {
     xmp += row(k, Array.isArray(v) ? v.join(', ') : v, false);
   }
 
-  docInfoBody.innerHTML = section('文書情報 / Description', desc)
-    + section('ファイル / File', file)
-    + section('XMP メタデータ / XMP metadata', xmp);
-  docInfoBody.scrollTop = 0;
-  docInfoOverlay.classList.add('open');
+  return docInfoSection('文書情報 / Description', desc)
+    + docInfoSection('ファイル / File', file)
+    + docInfoSection('XMP メタデータ / XMP metadata', xmp);
+}
+
+// EPUB の書誌情報。EXIF のような埋め込みタグではなく、OPF (パッケージ文書) の <metadata> に
+// Dublin Core (dc:title 等) と <meta> で書かれている。exiftool が EPUB に対して表示するのも同じもの。
+// [要素名, ラベル, 未設定でも行を出すか]
+const EPUB_DC_FIELDS = [
+  ['title', 'タイトル / Title', true],
+  ['creator', '著者 / Creator', true],
+  ['contributor', '協力者 / Contributor', false],
+  ['publisher', '出版社 / Publisher', true],
+  ['language', '言語 / Language', true],
+  ['identifier', '識別子 / Identifier', true],
+  ['date', '日付 / Date', true],
+  ['description', '説明 / Description', false],
+  ['subject', '主題 / Subject', false],
+  ['rights', '権利 / Rights', false],
+  ['source', '出典 / Source', false],
+  ['type', '種類 / Type', false],
+  ['format', '形式 / Format', false],
+  ['relation', '関連 / Relation', false],
+  ['coverage', '範囲 / Coverage', false],
+];
+// EPUB2 が dc 要素に直接付ける修飾属性 (opf:role 等)。EPUB3 では <meta refines="#id"> に移った
+const EPUB_QUAL_ATTRS = ['role', 'file-as', 'scheme', 'event'];
+
+// 戻り値が空文字なら「EPUB ではない」(OPF が無い。ComicInfo.xml 入りの cbz 等)
+async function buildEpubDocInfo() {
+  let pkg;
+  try { pkg = await epubLoadOpf(); } catch (_) { return ''; }
+  const { opf, opfPath, byPath } = pkg;
+  const row = docInfoRow;
+  // XML として壊れていて HTML パーサで拾い直した場合、タグ名は 'dc:title' のままになる
+  const localOf = el => el.localName.toLowerCase().split(':').pop();
+  const textOf = el => (el.textContent || '').replace(/\s+/g, ' ').trim();
+
+  const dc = new Map();      // 要素名 → [{value, id, quals:[[k, v]]}]
+  const refines = new Map(); // id → [[property, value]] (EPUB3 の <meta refines="#id">)
+  const metas = [];          // [[name, value]] それ以外の <meta>
+  const metaEl = opf.querySelector('metadata');
+  for (const el of metaEl ? metaEl.querySelectorAll('*') : []) {
+    const name = localOf(el);
+    if (name === 'meta') {
+      const prop = el.getAttribute('property');
+      const key = prop || el.getAttribute('name') || '';
+      // HTML パーサ経由だと <meta> は空要素扱いになり、中身は直後のテキストノードに出る
+      let val = el.getAttribute('content') || textOf(el);
+      if (!val && el.nextSibling && el.nextSibling.nodeType === 3) val = el.nextSibling.nodeValue.trim();
+      if (!key || !val) continue;
+      const ref = el.getAttribute('refines');
+      if (ref) {
+        const id = ref.replace(/^#/, '');
+        if (!refines.has(id)) refines.set(id, []);
+        refines.get(id).push([key, val]);
+      } else {
+        metas.push([key, val]);
+      }
+      continue;
+    }
+    // dc-metadata / x-metadata (OEB 1.x のラッパー) や link は対象外
+    if (!EPUB_DC_FIELDS.some(f => f[0] === name) || el.children.length) continue;
+    const value = textOf(el);
+    if (!value) continue;
+    const quals = [];
+    for (const a of el.attributes) {
+      const an = a.localName.toLowerCase().split(':').pop();
+      if (EPUB_QUAL_ATTRS.includes(an) && a.value) quals.push([an, a.value]);
+    }
+    if (!dc.has(name)) dc.set(name, []);
+    dc.get(name).push({ value, id: el.getAttribute('id') || '', quals });
+  }
+
+  // description は HTML 断片が入っていることが多いのでテキストだけ取り出す
+  // (DOMParser の文書は不活性なのでスクリプトは動かず、画像等の取得も起きない)
+  const plain = s => {
+    if (!/<[a-z!\/]/i.test(s)) return s;
+    const html = s.replace(/<\/(p|div|li|h\d)>|<br\s*\/?>/gi, '$&\n');
+    return (new DOMParser().parseFromString(html, 'text/html').body.textContent || '')
+      .replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim();
+  };
+  const fmt = (name, it) => {
+    const quals = it.quals.concat(refines.get(it.id) || []);
+    const v = name === 'description' ? plain(it.value) : it.value;
+    return quals.length ? `${v}  [${quals.map(([k, q]) => `${k}: ${q}`).join(', ')}]` : v;
+  };
+
+  let desc = '';
+  for (const [name, label, always] of EPUB_DC_FIELDS) {
+    const items = (dc.get(name) || []).map(it => fmt(name, it));
+    desc += row(label, items.join(name === 'subject' ? ', ' : '\n'), always);
+    if (name === 'date') {
+      const mod = metas.filter(m => m[0] === 'dcterms:modified').map(m => m[1]);
+      desc += row('更新日 / Modified', mod.join('\n'), false);
+    }
+  }
+
+  const pkgEl = opf.querySelector('package');
+  const spineEl = opf.querySelector('spine');
+  const layout = (metas.find(m => m[0] === 'rendition:layout') || [])[1];
+  const dir = spineEl ? spineEl.getAttribute('page-progression-direction') : '';
+  const isReflow = archiveImages.length === 1 && archiveImages[0].name === REFLOW_PLACEHOLDER_NAME;
+  let file = '';
+  file += row('ファイル名 / File name', fileName);
+  file += row('サイズ / File size', archiveFileSize ? `${libFmtSize(archiveFileSize)} (${archiveFileSize.toLocaleString()} bytes)` : '', false);
+  file += row('EPUB バージョン / Version', pkgEl ? pkgEl.getAttribute('version') : '');
+  file += row('画像ページ / Image pages', isReflow ? 'なし (リフロー型) / None (reflowable)' : totalPages);
+  file += row('本文 / Text documents', epubDocs.length || '', false);
+  file += row('目次 / TOC entries', epubToc.length || '', false);
+  file += row('レイアウト / Layout', layout === 'pre-paginated' ? '固定レイアウト / pre-paginated'
+    : layout === 'reflowable' ? 'リフロー / reflowable' : layout, false);
+  file += row('ページ進行方向 / Direction', dir === 'rtl' ? '右から左 / rtl' : dir === 'ltr' ? '左から右 / ltr' : dir, false);
+  file += row('OPF', byPath.get(opfPath).name);
+
+  // dc 要素に入らないもの (calibre:series、cover、rendition:* 等)。記述順のまま出す
+  let other = '';
+  for (const [k, v] of metas) {
+    if (k !== 'dcterms:modified') other += row(k, v, false);
+  }
+
+  return docInfoSection('書誌情報 / Metadata (OPF)', desc)
+    + docInfoSection('ファイル / File', file)
+    + docInfoSection('その他のメタデータ / Other metadata', other);
 }
 
 document.getElementById('docInfoClose').addEventListener('click', closeDocInfo);
@@ -1747,12 +1881,12 @@ async function epubParseNcx(byPath, ncxPath) {
   return out;
 }
 
-// container.xml → OPF → spine → XHTML と辿って読み順と目次を組み立てる
-async function analyzeEpub() {
+// container.xml から OPF (パッケージ文書) を特定してパースする。
+// 構造解析 (analyzeEpub) と文書情報表示 (buildEpubDocInfo) の両方が使う
+async function epubLoadOpf() {
   const byPath = new Map();
   for (const e of epubEntries) byPath.set(epubNormPath(e.name), e);
 
-  // --- OPF を特定 ---
   let opfPath = '';
   const containerEntry = byPath.get('meta-inf/container.xml');
   if (containerEntry) {
@@ -1765,8 +1899,13 @@ async function analyzeEpub() {
     if (!cand) throw new Error('OPF が見つかりません (EPUB ではない可能性があります)');
     opfPath = epubNormPath(cand.name);
   }
-  const opfDir = epubDirOf(opfPath);
   const opf = epubParse(await epubReadText(byPath.get(opfPath)), 'application/xml');
+  return { byPath, opfPath, opfDir: epubDirOf(opfPath), opf };
+}
+
+// container.xml → OPF → spine → XHTML と辿って読み順と目次を組み立てる
+async function analyzeEpub() {
+  const { byPath, opfDir, opf } = await epubLoadOpf();
 
   // --- manifest ---
   const manifestEl = opf.querySelector('manifest');
@@ -3485,9 +3624,11 @@ function showArchiveChooser(innerArchives, outerName) {
 
 // Load image files into archiveImagesUnsorted and display.
 // structFiles: EPUB 構造解析 (自動 / E キー) 用に取っておくテキスト系エントリ
-async function loadImageEntries(imageFiles, archiveFileName, structFiles = []) {
+// fileSize: 開いたアーカイブ自体のバイト数 (文書情報表示用。二重アーカイブでは内側のサイズ)
+async function loadImageEntries(imageFiles, archiveFileName, structFiles = [], fileSize = 0) {
   resetEpubState();
   epubEntries = structFiles;
+  archiveFileSize = fileSize;
   archiveImagesUnsorted = [];
   try {
     for (let i = 0; i < imageFiles.length; i++) {
@@ -3684,7 +3825,7 @@ async function loadArchive(srcFile, handle = null) {
           }
           innerImages.push(await makeReflowPlaceholderPage(chosen.name));
         }
-        await loadImageEntries(innerImages, `${file.name} > ${chosen.name}`, innerStruct);
+        await loadImageEntries(innerImages, `${file.name} > ${chosen.name}`, innerStruct, chosen.file.size);
         if (innerImages.length === 1 && innerImages[0].name === REFLOW_PLACEHOLDER_NAME) {
           await runEpubAnalysis({ openReader: true, skipIfDone: true });
         }
@@ -3702,11 +3843,11 @@ async function loadArchive(srcFile, handle = null) {
         showToast('画像ファイルが見つかりません', 3000);
         return;
       }
-      await loadImageEntries([await makeReflowPlaceholderPage(file.name)], file.name, structFiles);
+      await loadImageEntries([await makeReflowPlaceholderPage(file.name)], file.name, structFiles, file.size);
       await runEpubAnalysis({ openReader: true, skipIfDone: true });
       return;
     }
-    await loadImageEntries(imageFiles, file.name, structFiles);
+    await loadImageEntries(imageFiles, file.name, structFiles, file.size);
   } catch (err) {
     console.error('Archive load error:', err);
     if (err instanceof FileReadError) {
@@ -3911,6 +4052,12 @@ document.addEventListener('keydown', e => {
     if (e.key === 'Escape') { e.preventDefault(); closeEpubReader(); }
     else if (e.key === 'ArrowLeft') { e.preventDefault(); epubGoDoc(-1); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); epubGoDoc(1); }
+    // リフロー型 EPUB は開くと同時に本文リーダーが出るので、ここからも文書情報を開けるようにする
+    else if ((e.key === 'i' || e.key === 'I') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      if (docInfoOverlay.classList.contains('open')) closeDocInfo();
+      else showDocInfo();
+    }
     return;
   }
   // Library はファイル未読み込みでも使うので totalPages のガードより前に置く
