@@ -214,6 +214,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - Z キー: ズームトグル (300% + Pan + Map ↔ 元の設定に復元)
 - L キー: Last Read ページにジャンプ (しおり未有効時はエラーダイアログ)
 - M キー: Max Read ページにジャンプ (しおり未有効時はエラーダイアログ)
+- I キー: PDF の文書情報プロパティ (メタデータ) モーダルをトグル (詳細は「文書情報プロパティ表示」セクション)
 - E キー: EPUB 構造解析を手動で再実行 (comic-viewer.html のみ。読み込み時に自動実行されるため通常は不要。詳細は「EPUB 構造解析」セクション)
 - T キー: EPUB 目次 (TOC) サイドバーの開閉 (comic-viewer.html のみ、構造解析後に有効)
 - R キー: EPUB 本文リーダーを開く (comic-viewer.html のみ、構造解析後に有効。リーダー表示中は ←/→ が文書送り)
@@ -448,6 +449,18 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - セキュリティ: `textContent` 経由でエスケープし HTML/JS は動作しない
 - comic-viewer.html ではアーカイブ読み込み時にFABを非表示にリセット
 
+### 文書情報プロパティ表示 (`I` キー、PDF、両ビューア共通)
+- `I` キーで `#docInfoOverlay` をトグル (Escape・背景クリック・× でも閉じる)。**モーダルの枠は `annotation-modal*` のクラスを流用**し、行のスタイル (`.docinfo-row/key/val`) だけ追加している。入口はキーボードのみ (ボタンは無い)
+- `showDocInfo()` は**開くたびに取得する** (読み込み時には何もしない): `pdfDoc.getMetadata()` / `getDownloadInfo()` / `getPage(currentPage)` を並列に待つ。PDF.js 側が `getMetadata` をキャッシュするので2回目以降は即時。取得中に別ファイルが開かれた場合に備えて `doc !== pdfDoc` なら捨てる
+- 表示は3セクション:
+  1. **文書情報** (Info 辞書) — Title / Author / Subject / Keywords / Creator / Producer / CreationDate / ModDate。この8項目は**未設定でも「—」で行を出す** (設定されていないこと自体が情報)。`Trapped` と、PDF.js が `info.Custom` にまとめて返す標準外キーは値があるときだけ
+  2. **ファイル** — ファイル名 / サイズ (`getDownloadInfo().length`。`getDocument` に渡した `data` は worker へ transfer されて detached になるので `byteLength` は使えない) / ページ数 / **現在ページ**のサイズ (pt + mm、`getViewport({scale:1})` なのでビューアの Rotate 設定には影響されない) / PDF バージョン / 言語 / 暗号化 / Linearized / フォーム (AcroForm・XFA) / 電子署名
+  3. **XMP メタデータ** — `metadata.getAll()` をキー順に全部 (配列は `, ` で結合)。XMP が無ければセクションごと出さない
+- `formatPdfDate()` は `D:YYYYMMDDHHmmSS+HH'mm'` を `YYYY-MM-DD HH:mm:ss +09:00` に整形する。**記録されているタイムゾーンのまま**表示し、ローカル時刻へは変換しない。年より後ろは省略可能なので各要素は optional。コメント用の `formatAnnotationDate()` (秒・TZ を落とす) とは別物
+- セキュリティ: コメントと同じく値はすべて `escapeText()` を通す (Title 等に HTML を仕込まれても動かない)
+- `loadPDF` (comic-viewer.html は `loadArchive` でも) の中で `closeDocInfo()` を呼び、前のファイルの情報を出したままにしない
+- comic-viewer.html でアーカイブを開いているときは「文書情報は PDF のみ対応」トーストを出すだけ
+
 ### 連続スクロールモード (Scroll、両ビューア共通)
 - viewMode セレクトに **Scroll** オプションを追加
 - 全ページを縦に並べて連続スクロール表示 (Webtoon形式)
@@ -615,7 +628,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 ## PWA / Service Worker
 
 ### `sw.js`
-- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v43`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v44`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
 - **`SHARE_CACHE`**: `share-stash-v1` — Web Share Target で受信したファイルを一時保存する専用キャッシュ (activate 時も削除対象外)
 - **`PRECACHE_URLS`**: インストール時に一括取得するリソース (HTML 2種、vendor/ 配下全ファイル、manifest、icons)。`fetch(url, { cache: 'reload' })` でブラウザキャッシュをバイパス
 - **`activate`**: `CACHE_NAME` と `SHARE_CACHE` 以外の旧キャッシュを削除し `self.clients.claim()`

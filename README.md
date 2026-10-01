@@ -157,6 +157,7 @@ Open `http://localhost:8000/comic-viewer.html` in your browser.
 | `Z` キー | ズームトグル (300% + Pan + Map) / Toggle zoom (300% + Pan + Map) |
 | `L` キー | Last Read ページにジャンプ / Jump to last read page |
 | `M` キー | Max Read ページにジャンプ / Jump to max read page |
+| `I` キー | PDF の文書情報プロパティを表示 / Show PDF document properties |
 | `E` キー | EPUB 構造解析の再実行 (読み込み時に自動実行) / Re-analyze EPUB structure (runs automatically on open) |
 | `T` キー | EPUB 目次の開閉 / Toggle EPUB table of contents |
 | `R` キー | EPUB 本文テキストを表示 / Open the EPUB text reader |
@@ -251,6 +252,12 @@ Append `?vips=1` to the URL to enable [wasm-vips](https://www.npmjs.com/package/
 PDFにアノテーションコメントがある場合、左下にフローティングボタン (💬) が表示されます。クリックでモーダル表示。
 
 When a PDF contains annotation comments, a floating button (💬) appears. Click to view in a modal grouped by page.
+
+### 文書情報プロパティ (PDF) / Document Properties
+
+`I` キーで PDF の文書情報 (タイトル・作成者・サブタイトル・キーワード・作成アプリ・PDF 変換・作成日・更新日・カスタム項目)、ファイル情報 (サイズ・ページ数・現在ページのサイズ・PDF バージョン・暗号化など)、XMP メタデータをモーダル表示します。もう一度 `I` または `Escape` で閉じます。
+
+Press `I` to show the PDF's document information (title, author, subject, keywords, creator, producer, dates, custom entries), file details (size, page count, current page size, PDF version, encryption, …) and XMP metadata in a modal. Press `I` again or `Escape` to close.
 
 ### ライブラリ参照 (サーバー設置時のみ) / Server Library (self-hosted only)
 
