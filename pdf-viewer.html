@@ -249,7 +249,7 @@ body.seek-visible .toast { bottom: 60px; }
 /* ---- Library (server-side folder browsing) ---- */
 .lib-overlay { position: fixed; inset: 0; z-index: 540; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; }
 .lib-overlay.open { display: flex; }
-.lib-modal { background: #1e1e2e; border: 1px solid #333; border-radius: 10px; width: 94%; max-width: 900px; height: 86vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.6); }
+.lib-modal { position: relative; background: #1e1e2e; border: 1px solid #333; border-radius: 10px; width: 94%; max-width: 900px; height: 86vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.6); }
 .lib-modal-header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #333; flex-shrink: 0; }
 .lib-modal-header h2 { font-size: 15px; font-weight: 600; flex-shrink: 0; }
 .lib-status { font-size: 11px; color: #888; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -280,12 +280,21 @@ body.seek-visible .toast { bottom: 60px; }
 .lib-dir .lib-name { color: #ffd479; }
 .lib-sub { font-size: 10px; color: #666; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lib-meta { flex-shrink: 0; font-size: 11px; color: #777; font-variant-numeric: tabular-nums; }
+/* 省略なしリスト: 長いファイル名を折り返して全文を出す (行の高さは可変) */
+.lib-list.full .lib-row { align-items: flex-start; }
+.lib-list.full .lib-name, .lib-list.full .lib-sub { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; word-break: break-all; }
+.lib-list.full .lib-icon, .lib-list.full .lib-meta, .lib-list.full .lib-badge { margin-top: 2px; }
 .lib-badge { flex-shrink: 0; font-size: 10px; padding: 1px 5px; border-radius: 8px; background: #b45309; color: #fff; }
 .lib-empty { padding: 24px 14px; text-align: center; color: #666; font-size: 13px; }
 .lib-warn { padding: 6px 14px; font-size: 11px; color: #f0a; background: #2a1a2a; border-bottom: 1px solid #3a2a3a; }
 .lib-progress { flex-shrink: 0; padding: 8px 14px; border-top: 1px solid #333; font-size: 12px; color: #aaa; }
 .lib-progress .track { height: 4px; background: #0f3460; border-radius: 2px; overflow: hidden; margin-top: 4px; }
 .lib-progress .fill { height: 100%; width: 0; background: #4a9eff; transition: width 0.1s linear; }
+/* 表示方法 / 並び順の切替で一覧を描き直している間のインジケータ (件数が多いときだけ出す) */
+.lib-rendering { position: absolute; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center; gap: 10px; border-radius: 10px; background: rgba(20,20,32,0.6); color: #ccc; font-size: 13px; }
+.lib-rendering[hidden] { display: none; }
+.lib-rendering .spin { width: 22px; height: 22px; border: 3px solid #0f3460; border-top-color: #4a9eff; border-radius: 50%; animation: lib-spin 0.8s linear infinite; }
+@keyframes lib-spin { to { transform: rotate(360deg); } }
 
 /* サムネイル (グリッド) 表示 */
 .lib-list.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 12px; padding: 12px 14px; align-content: start; }
@@ -505,7 +514,11 @@ body.seek-visible .toast { bottom: 60px; }
         <option value="size">サイズ順</option>
       </select>
       <button id="libSortDir" title="昇順 / 降順を切替 / Toggle ascending / descending">▲ 昇順</button>
-      <button id="libViewToggle" title="リスト / サムネイル表示を切替 / Toggle list and thumbnail view">☰ リスト</button>
+      <select id="libViewSel" title="表示方法 / View mode">
+        <option value="list">☰ リスト</option>
+        <option value="full">☰ リスト (省略なし)</option>
+        <option value="grid">▦ サムネイル</option>
+      </select>
       <button id="libReload" title="一覧を再取得 / Reload the file list">⟳</button>
     </div>
     <div class="lib-warn" id="libWarn" hidden></div>
@@ -515,6 +528,7 @@ body.seek-visible .toast { bottom: 60px; }
       <span id="libProgressText"></span>
       <div class="track"><div class="fill" id="libProgressFill"></div></div>
     </div>
+    <div class="lib-rendering" id="libRendering" hidden><span class="spin"></span><span>一覧を描画中...</span></div>
   </div>
 </div>
 
@@ -3489,7 +3503,8 @@ const libSortDirBtn = document.getElementById('libSortDir');
 const libProgressEl = document.getElementById('libProgress');
 const libProgressFill = document.getElementById('libProgressFill');
 const libProgressText = document.getElementById('libProgressText');
-const libViewToggle = document.getElementById('libViewToggle');
+const libViewSel = document.getElementById('libViewSel');
+const libRenderingEl = document.getElementById('libRendering');
 const libPreviewEl = document.getElementById('libPreview');
 const libPreviewImg = document.getElementById('libPreviewImg');
 const libPreviewCap = document.getElementById('libPreviewCap');
@@ -3502,7 +3517,8 @@ let libSortKey = 'name';
 let libSortAsc = true;
 let libReadMap = new Map();    // path -> しおり (既読バッジ用)
 let libBusy = false;
-let libView = (localStorage.getItem('viewerLibraryView') === 'grid') ? 'grid' : 'list';
+const LIB_VIEWS = ['list', 'full', 'grid'];   // list = 省略あり / full = 省略なし / grid = サムネイル
+let libView = LIB_VIEWS.includes(localStorage.getItem('viewerLibraryView')) ? localStorage.getItem('viewerLibraryView') : 'list';
 
 function libIsOpen() { return libOverlay.classList.contains('open'); }
 
@@ -3785,7 +3801,7 @@ function libRenderCrumbs() {
     const b = document.createElement('button');
     b.className = 'lib-crumb' + (current ? ' current' : '');
     b.textContent = label;
-    if (!current) b.addEventListener('click', () => { libCwd = path; libSearchEl.value = ''; libRender(); });
+    if (!current) b.addEventListener('click', () => { libCwd = path; libSearchEl.value = ''; libRefresh({ scrollTop: 0 }); });
     return b;
   };
   libCrumbsEl.appendChild(mk(libTree ? libTree.root : 'Library', '', parts.length === 0));
@@ -3819,7 +3835,7 @@ function libRender() {
     : `全 ${libTree.entries.length} 件 · このフォルダ ${sorted.length} 件`;
 
   libHidePreview();
-  libListEl.className = 'lib-list' + (libView === 'grid' ? ' grid' : '');
+  libListEl.className = 'lib-list' + (libView === 'list' ? '' : ' ' + libView);
   libListEl.innerHTML = '';
   if (dirs.length === 0 && sorted.length === 0) {
     libListEl.innerHTML = '<div class="lib-empty">該当するファイルがありません</div>';
@@ -3829,8 +3845,7 @@ function libRender() {
   const enterDir = (name) => {
     libCwd = libCwd === '' ? name : libCwd + '/' + name;
     libSearchEl.value = '';
-    libRender();
-    libListEl.scrollTop = 0;
+    libRefresh({ scrollTop: 0 });
   };
   const readBadge = (e) => {
     const bm = libReadMap.get(e.path);
@@ -3965,6 +3980,33 @@ function libRender() {
   libListEl.appendChild(frag);
 }
 
+// ---- 再描画 (ローディング表示付き) ----
+// libRender() は同期で、件数が多いと DOM 構築とレイアウトでメインスレッドを数百ms〜塞ぐ。
+// 表示方法や並び順の切替で「押したのに何も起きない」ように見えないよう、描画対象が
+// LIB_RENDERING_MIN_ITEMS 件以上のときはインジケータを出してから描く。hidden を外した
+// だけでは同期処理の間ペイントされないので、描画の前後で一度ブラウザに制御を返す。
+const LIB_RENDERING_MIN_ITEMS = 300;
+const libNextPaint = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+let libRefreshSeq = 0;
+async function libRefresh(opts = {}) {
+  if (!libTree) return;
+  const seq = ++libRefreshSeq;
+  const { dirs, files } = libCollect();
+  const heavy = dirs.length + files.length >= LIB_RENDERING_MIN_ITEMS;
+  if (heavy) {
+    libRenderingEl.hidden = false;
+    await libNextPaint();
+    if (seq !== libRefreshSeq) return;   // 待っている間に次の再描画が始まった (そちらに任せる)
+  }
+  try {
+    libRender();
+    if (opts.scrollTop !== undefined) libListEl.scrollTop = opts.scrollTop;
+    if (heavy) await libNextPaint();     // 新しい一覧のレイアウト / ペイントが終わるまで出しておく
+  } finally {
+    if (seq === libRefreshSeq) libRenderingEl.hidden = true;
+  }
+}
+
 // ---- 転送 ----
 function libSetProgress(text, pct) {
   libProgressEl.hidden = false;
@@ -4054,7 +4096,7 @@ async function openLibrary() {
   libProgressEl.hidden = true;
   try {
     await libLoadTree(false);
-    libRender();
+    await libRefresh();
     libSearchEl.focus();
   } catch (err) {
     console.error('[library]', err);
@@ -4070,19 +4112,15 @@ async function openLibrary() {
 function closeLibrary() {
   libOverlay.classList.remove('open');
   libProgressEl.hidden = true;
+  libRenderingEl.hidden = true;
   libHidePreview();
 }
 
-function libUpdateViewToggle() {
-  libViewToggle.textContent = (libView === 'grid') ? '▦ サムネイル' : '☰ リスト';
-}
-libUpdateViewToggle();
-libViewToggle.addEventListener('click', () => {
-  libView = (libView === 'grid') ? 'list' : 'grid';
+libViewSel.value = libView;
+libViewSel.addEventListener('change', () => {
+  libView = LIB_VIEWS.includes(libViewSel.value) ? libViewSel.value : 'list';
   try { localStorage.setItem('viewerLibraryView', libView); } catch {}
-  libUpdateViewToggle();
-  libRender();
-  libListEl.scrollTop = 0;
+  libRefresh({ scrollTop: 0 });
 });
 
 // スクロール中にプレビューが取り残されないようにする
@@ -4098,15 +4136,15 @@ libOverlay.addEventListener('click', (e) => { if (e.target === libOverlay) close
 let libSearchTimer = null;
 libSearchEl.addEventListener('input', () => {
   clearTimeout(libSearchTimer);
-  libSearchTimer = setTimeout(() => { libRender(); libListEl.scrollTop = 0; }, 120);
+  libSearchTimer = setTimeout(() => libRefresh({ scrollTop: 0 }), 120);
 });
-libDeepEl.addEventListener('change', libRender);
+libDeepEl.addEventListener('change', () => libRefresh());
 libSortEl.addEventListener('change', () => {
   libSortKey = libSortEl.value;
   // 日時とサイズは「新しい順 / 大きい順」が自然なので既定を降順にする
   libSortAsc = (libSortKey === 'name');
   libUpdateSortDirBtn();
-  libRender();
+  libRefresh();
 });
 function libUpdateSortDirBtn() {
   libSortDirBtn.textContent = libSortAsc ? '▲ 昇順' : '▼ 降順';
@@ -4114,14 +4152,13 @@ function libUpdateSortDirBtn() {
 libSortDirBtn.addEventListener('click', () => {
   libSortAsc = !libSortAsc;
   libUpdateSortDirBtn();
-  libRender();
+  libRefresh();
 });
 document.getElementById('libReload').addEventListener('click', async () => {
   const keepScroll = libListEl.scrollTop;   // 再描画で 0 に戻るので位置も戻す
   try {
     await libLoadTree(true);
-    libRender();
-    libListEl.scrollTop = keepScroll;
+    await libRefresh({ scrollTop: keepScroll });
   } catch (err) { showToast(err.message, 4000); }
 });
 

@@ -544,7 +544,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - `viewerSeekBar` — シークバーの有効/無効 (`'0'` で OFF、未設定で ON)
 - `vipsEnabled` — wasm-vips 有効化フラグ (HQ engine トグル)
 - `viewerEpubReaderWide` — EPUB 本文リーダの幅 (`'1'` で広い、未設定/`'0'` で標準)
-- `viewerLibraryView` — ライブラリの表示 (`'grid'` でサムネイル、未設定/`'list'` でリスト)
+- `viewerLibraryView` — ライブラリの表示 (`'list'` = リスト (省略あり、未設定時の既定) / `'full'` = リスト (省略なし) / `'grid'` = サムネイル)
 - `libraryAvailable` / `libraryUnavailableAt` — ライブラリ機能の利用可否キャッシュ (詳細は「ライブラリ参照機能」)
 - `viewerFilterPresets` — Filter プリセット 3 スロット
 - ブックマーク系キー (ファイルハッシュ → bookmark オブジェクト)
@@ -634,7 +634,8 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - `libDownload()` は転送中断時に **Range で受信済みの続きから再開**する (`LIB_BACKOFF`)。Range を投げたのに 200 が返る (サーバーが部分取得非対応) 場合はバッファを捨てて最初からやり直す
 - **既読バッジ**: しおりのハッシュが `ファイル名|サイズ` なので、`tree` の `size` から一覧描画前に既読状態を引ける (`libComputeReadState`)。ローカルで開いた同じファイルのしおりとそのまま共有される
 - **更新ボタン (⟳) は現在のフォルダ・絞り込み・スクロール位置をすべて保持する**。`libLoadTree(true)` が無条件に `libCwd = ''` していた頃は「絞り込みは残っているのにルートに戻る」という中途半端な状態になっていた。新しい `tree` にそのフォルダが1件も無いときだけルートに戻す (フォルダごと消えた場合)
-- **表示切替** (`libView`、localStorage `viewerLibraryView`): リスト ⇄ サムネイル (グリッド)。`libRender()` が `libView` で分岐して行 / タイルを作る。グリッドの `<img>` は `loading="lazy"` なので画面外のタイルは取りに行かない
+- **表示切替** (`libView`、`#libViewSel` のプルダウン、localStorage `viewerLibraryView`): `list` (リスト、長い名前は `…` で省略) / `full` (リスト (省略なし)、`.lib-list.full` で `.lib-name` を折り返して全文表示。行の高さは可変) / `grid` (サムネイル)。`libRender()` が `libView` で分岐して行 / タイルを作る (`list` と `full` は同じ行で CSS だけ違う)。グリッドの `<img>` は `loading="lazy"` なので画面外のタイルは取りに行かない
+- **再描画は `libRefresh()` 経由** (`libRender()` を直接呼ぶのは `libRefresh` の中だけ): 表示切替 / 並び順 / 絞り込み / フォルダ移動 / 更新はすべてここを通る。`libRender()` は同期で、1500 件で 200〜300ms メインスレッドを塞ぐ (実測、リスト ⇄ グリッド) ので、描画対象が `LIB_RENDERING_MIN_ITEMS` (300) 件以上のときは `#libRendering` (「一覧を描画中...」のスピナー、モーダル全体を覆う) を出してから描く。**`hidden` を外しただけでは同期処理の間ペイントされない**ので、`libNextPaint()` (rAF 2回) で描画の前に一度ブラウザに制御を返し、描画後ももう一度待ってから隠す (新しい一覧のレイアウトまでインジケータで覆うため)。`libRefreshSeq` で連打を潰し、待っている間に次の再描画が始まった古い方は何もせず戻る。`scrollTop` オプションで描画後のスクロール位置を指定する (更新ボタンは元の位置、それ以外は 0)
 - **表紙プレビュー** (`libAttachPreview()`): `cover: true` の項目にだけ仕込む。マウスは `mouseenter` から 320ms 遅らせて出す (一覧を横切っただけで出ないように)、`mousemove` で追従。タッチは 450ms のロングタップで画面中央に大きく出す
   - ロングタップ後に指を離すと `click` が飛んでファイルが開いてしまうので、`libSuppressClick` を立てて `libRender()` 内の `openEntry()` が握り潰す。`touchstart` のたびに false に戻す
   - `touchmove` が 12px を超えたらスクロール操作とみなしてロングタップを取り消す
@@ -660,7 +661,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 ## PWA / Service Worker
 
 ### `sw.js`
-- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v48`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v49`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
 - **`SHARE_CACHE`**: `share-stash-v1` — Web Share Target で受信したファイルを一時保存する専用キャッシュ (activate 時も削除対象外)
 - **`PRECACHE_URLS`**: インストール時に一括取得するリソース (HTML 2種、vendor/ 配下全ファイル、manifest、icons)。`fetch(url, { cache: 'reload' })` でブラウザキャッシュをバイパス
 - **`activate`**: `CACHE_NAME` と `SHARE_CACHE` 以外の旧キャッシュを削除し `self.clients.claim()`
