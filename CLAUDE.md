@@ -281,13 +281,16 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 
 ### シークバー (Seek チェックボックス、両ビューア共通)
 - **表示条件**: マウスが画面下端 `SEEK_HOT_ZONE` (24px) 以内に来たときだけ `.seekbar.show` を付ける。シークバーから離れて `SEEK_HIDE_DELAY` (300ms) 後に隠す。判定は `window` の `pointermove` で **`pointerType === 'mouse'` のみ**。タッチの互換 mouse イベントで出してしまうと、直後の click がシークバーに当たって意図しないジャンプになるため。ボタン押下中 (Pan / Minimap のドラッグ、テキスト選択) には出さない。下端の判定は `documentElement.clientHeight` (横スクロールバーを除いた高さ)
+- **タッチ端末では固定表示** (`seekPinned`): マウスが無いと「下端に寄せる」操作ができないので、Seek チェックを**タッチ (`pointerType` が `touch` / `pen`) で ON にしたとき、またはホバー非対応端末 (`matchMedia('(hover: hover)')` が偽) では常に**、シークバーを出しっぱなしにする。OFF にするまで `hideSeekbar()` は no-op。どのポインタでチェックを操作したかは `<label>` の `pointerdown` で `seekLastPointerType` に記録する (`change` イベントには pointerType が無いため)。文書未読み込みで ON にした場合は `updateSeekbar()` (初回 `renderView` 末尾) が `seekPinned` を見て出す
+- **ホバー非対応端末ではチェックの初期値を OFF にする** (localStorage の値に関わらず)。マウス環境では「下端ホバーを有効にする」設定だが、タッチ環境では「今表示する」トグルなので、既定 ON のままだと起動直後から常に画面下を占有してしまうため。永続化 (`viewerSeekBar`) の読み書き自体は従来どおり
+- タッチではドラッグ中だけプレビューを出し、`pointerup` で `pointerType !== 'mouse'` なら `hideSeekPreview()` する (タッチは離した時点でホバーが無くなるので `pointerleave` に頼らない)。`@media (hover: none)` でトラック高さを 24px → 36px にして指で掴みやすくする。スワイプ / タップゾーンのハンドラは `viewer` 要素に付いているのでシークバー上の操作とは干渉しない
 - **プレビュー**: Thumbs タブの生成済み canvas (`thumbsContainer.children[p-1]`) を `drawImage` で流用するので**追加レンダリングは無い**。見開きでは `getSpreadPages()` の表示順でペアを並べる。サムネイルが未生成 (pdf-viewer は `renderThumbnails` を await しない) ならページ番号のプレースホルダを描き、揃ったら描き直す (`seekPreviewKey` にサムネイル有無を含める)。EPUB 目次があれば章名も出す (`seekToc()` は `typeof epubToc` で判定するので pdf-viewer では空)
 - **操作**: ドラッグ中はプレビューとノブだけ動かし、**ページ移動は離したとき1回だけ** (`seekJump()` → `renderView`)。シークバー上のホイールで1ページ (見開き単位) 送り
 - **方向**: `seekIsRtl()` = R2L かつ Scroll 以外。R2L では右端が 1 ページ目、塗りも右から伸びる。見開きでは表示中の大きい方のページにノブを置く (最後の見開きで端に届くように)
 - **マーカー**: 章 (EPUB 目次、灰色の縦線) / 手動しおり (青丸、上) / lastRead・maxRead (橙丸、下)。`updateSeekbar()` のたびに作り直す
 - **更新タイミング**: `renderView` 末尾と `updateScrollCurrentPage()` から `updateSeekbar()` を呼ぶ (非表示中は即 return)
 - 表示中は `body.seek-visible` でミニマップ / アノテーション FAB / トーストを上に逃がす
-- localStorage `viewerSeekBar` — `'0'` で OFF、未設定で ON (既定 ON)
+- localStorage `viewerSeekBar` — `'0'` で OFF、未設定で ON (既定 ON。ホバー非対応端末では無視して OFF 始まり)
 
 ### パンモード (Pan チェックボックス)
 - **ON**: ドラッグ操作が画面パン（スクロール）になる。拡大表示時に便利
@@ -447,6 +450,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - ブラウザ側の操作 (Escキー等) でフルスクリーンが解除された場合、`fullscreenchange` イベントでチェック状態を同期
 - Fit スケール時はフルスクリーン切替後に `renderView()` を再実行してサイズ調整
 - WebKit プレフィックス (`webkitRequestFullscreen` / `webkitExitFullscreen`) にも対応
+- **iPhone では Full チェックボックスを隠す**: iPhone の Safari は Fullscreen API を持たない (`document.fullscreenEnabled` / `webkitFullscreenEnabled` がどちらも偽。iPad は対応)。`requestFullscreen` を呼んでも何も起きずチェックだけ付くので、起動時に API の有無を見てラベルごと `hidden` にする
 - 両ビューア (pdf-viewer.html, comic-viewer.html) に実装
 
 ### テキストモード (Text チェックボックス、pdf-viewer.html のみ)
@@ -670,7 +674,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 ## PWA / Service Worker
 
 ### `sw.js`
-- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v50`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v51`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
 - **`SHARE_CACHE`**: `share-stash-v1` — Web Share Target で受信したファイルを一時保存する専用キャッシュ (activate 時も削除対象外)
 - **`PRECACHE_URLS`**: インストール時に一括取得するリソース (HTML 2種、vendor/ 配下全ファイル、manifest、icons)。`fetch(url, { cache: 'reload' })` でブラウザキャッシュをバイパス
 - **`activate`**: `CACHE_NAME` と `SHARE_CACHE` 以外の旧キャッシュを削除し `self.clients.claim()`

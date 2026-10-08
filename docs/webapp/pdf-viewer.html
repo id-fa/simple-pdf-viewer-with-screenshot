@@ -79,6 +79,7 @@ button.spread:hover:not(:disabled) { background: #6b2d8b; }
 select { padding: 5px 8px; border: 1px solid #333; border-radius: 6px; background: #2d2d44; color: #e0e0e0; font-size: 13px; }
 label.check { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer; user-select: none; }
 label.check input { cursor: pointer; }
+label.check[hidden] { display: none; } /* display 指定があると hidden 属性だけでは隠れない */
 
 /* Navigation */
 .nav { display: flex; align-items: center; gap: 6px; }
@@ -148,6 +149,8 @@ label.check input { cursor: pointer; }
 /* シークバー表示中は右下/左下の浮動 UI をシークバーの上へ逃がす */
 body.seek-visible .minimap, body.seek-visible .annotation-fab { bottom: 60px; }
 body.seek-visible .toast { bottom: 60px; }
+/* ホバーの無い端末 (スマートフォン等) では指で掴めるようトラックを高くする */
+@media (hover: none) { .seek-track { height: 36px; } }
 
 /* Sidebar tabs */
 .sidebar { display: flex; flex-direction: column; }
@@ -380,7 +383,7 @@ body.seek-visible .toast { bottom: 60px; }
       <input type="checkbox" id="minimapCheck">
       Map
     </label>
-    <label class="check" title="シークバー: マウスを画面下端に寄せるとサムネイル付きシークバーを表示 / Seek bar: Move the mouse to the bottom edge to show a seek bar with thumbnail preview">
+    <label class="check" title="シークバー: マウスを画面下端に寄せるとサムネイル付きシークバーを表示 (タッチ端末ではこのチェックで表示/非表示) / Seek bar: Move the mouse to the bottom edge to show a seek bar with thumbnail preview (on touch devices, this checkbox shows/hides it)">
       <input type="checkbox" id="seekCheck">
       Seek
     </label>
@@ -581,6 +584,7 @@ body.seek-visible .toast { bottom: 60px; }
         <div class="help-row"><span class="help-key">Swipe left / right</span><span class="help-desc">Next / Previous page</span></div>
         <div class="help-row"><span class="help-key">Drag (Pan mode)</span><span class="help-desc">Scroll viewport</span></div>
         <div class="help-row"><span class="help-key">Mouse to bottom edge</span><span class="help-desc">Seek bar with thumbnail preview (Seek)</span></div>
+        <div class="help-row"><span class="help-key">Tap Seek (touch)</span><span class="help-desc">Pin / unpin the seek bar</span></div>
       </div>
       <div class="help-section">
         <h3>Text Mode (PDF)</h3>
@@ -2880,12 +2884,31 @@ let seekVisible = false;
 let seekDragging = false;
 let seekHideTimer = null;
 let seekPreviewKey = '';
+// タッチ端末向けの固定表示。マウスが無いと「下端に寄せる」操作ができないので、Seek チェックを
+// タッチで ON にしたとき (またはホバー非対応端末では常に) シークバーを出しっぱなしにする。
+// OFF にするまで hideSeekbar() は効かない
+let seekPinned = false;
+let seekLastPointerType = '';
+const seekHoverCapable = () => window.matchMedia('(hover: hover)').matches;
 
-// 既定 ON。OFF にしたときだけ '0' を保存する
-seekCheck.checked = localStorage.getItem('viewerSeekBar') !== '0';
+// 既定 ON。OFF にしたときだけ '0' を保存する。
+// ホバー非対応端末ではチェックが「今表示する」の意味になるので、保存値に関わらず OFF から始める
+seekCheck.checked = seekHoverCapable() && localStorage.getItem('viewerSeekBar') !== '0';
+seekCheck.closest('label').addEventListener('pointerdown', e => { seekLastPointerType = e.pointerType; });
 seekCheck.addEventListener('change', () => {
-  if (seekCheck.checked) localStorage.removeItem('viewerSeekBar');
-  else { localStorage.setItem('viewerSeekBar', '0'); hideSeekbar(true); }
+  const fromTouch = seekLastPointerType === 'touch' || seekLastPointerType === 'pen' || !seekHoverCapable();
+  seekLastPointerType = '';
+  if (seekCheck.checked) {
+    localStorage.removeItem('viewerSeekBar');
+    if (fromTouch) {
+      seekPinned = true;
+      if (totalPages > 0) showSeekbar();
+    }
+  } else {
+    localStorage.setItem('viewerSeekBar', '0');
+    seekPinned = false;
+    hideSeekbar(true);
+  }
 });
 
 // R2L のときは右端が 1 ページ目 (Scroll モードは綴じ方向が無関係なので常に左→右)
@@ -2929,7 +2952,12 @@ function renderSeekMarks() {
 
 // 現在位置の反映。見開きでは表示中の大きい方のページにノブを置く (最後の見開きで右端に届くように)
 function updateSeekbar() {
-  if (!seekVisible || totalPages === 0) return;
+  if (totalPages === 0) return;
+  if (!seekVisible) {
+    // 固定表示が要求されたが文書が無かった場合、最初の描画時にここから出す
+    if (seekPinned) showSeekbar();
+    return;
+  }
   const shown = getSpreadPages(currentPage);
   const lo = Math.min(...shown), hi = Math.max(...shown);
   const f = seekFracOfPage(hi);
@@ -2951,7 +2979,7 @@ function showSeekbar() {
 }
 
 function hideSeekbar(immediate) {
-  if (!seekVisible || seekDragging) return;
+  if (!seekVisible || seekDragging || seekPinned) return;
   const doHide = () => {
     seekHideTimer = null;
     if (seekDragging) return;
@@ -3074,6 +3102,8 @@ seekTrack.addEventListener('pointerup', e => {
   seekDragging = false;
   seekbarEl.classList.remove('dragging');
   seekJump(seekPageAtX(e.clientX));
+  // タッチ/ペンは離した時点でホバーが無くなるのでプレビューも消す
+  if (e.pointerType !== 'mouse') hideSeekPreview();
   // キャプチャ中にシークバーの外まで出て離した場合はそのまま隠す
   const r = seekbarEl.getBoundingClientRect();
   if (e.clientY < r.top || e.clientX < r.left || e.clientX > r.right) { hideSeekPreview(); hideSeekbar(); }
@@ -3318,6 +3348,9 @@ document.getElementById('searchNext').addEventListener('click', () => navigateMa
 
 // ---- Fullscreen ----
 const fullscreenCheck = document.getElementById('fullscreenCheck');
+// iPhone の Safari は Fullscreen API を持たない (iPad は対応)。requestFullscreen を呼んでも
+// 何も起きずチェックだけ付くので、API が無い環境では Full のチェックボックスごと隠す
+if (!(document.fullscreenEnabled || document.webkitFullscreenEnabled)) fullscreenCheck.closest('label').hidden = true;
 
 fullscreenCheck.addEventListener('change', () => {
   if (fullscreenCheck.checked) {
