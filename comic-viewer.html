@@ -49,6 +49,8 @@ if ('launchQueue' in window) {
 /* 縦スクロールバー領域を常時確保。出現/消失でページ幅が変動するとヘッダー(.controls)が
    折り返してヘッダー高さが振動し、Spread+Fit で renderView の無限再描画ループになるのを防ぐ。 */
 html { scrollbar-gutter: stable; }
+/* Fit の計算 (fitChrome) が参照する寸法。CSS と JS で二重管理しないため custom property にしてある */
+:root { --page-label-overhang: 24px; --spread-gap: 2px; --spread-label-block: 32px; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; min-height: 100vh; }
 
 /* Header */
@@ -85,10 +87,12 @@ label.check input { cursor: pointer; }
 /* Viewer */
 .viewer { display: flex; flex-direction: column; padding: 16px; gap: 8px; transition: padding-top 0.3s; }
 .ui-hidden .viewer { padding-top: 4px; }
-.spread-container { display: flex; align-items: flex-start; gap: 2px; margin-left: auto; margin-right: auto; }
+.spread-container { display: flex; align-items: flex-start; gap: var(--spread-gap); margin-left: auto; margin-right: auto; }
 .page-container { position: relative; background: #111; box-shadow: 0 4px 20px rgba(0,0,0,0.5); margin-left: auto; margin-right: auto; }
 .page-container canvas { display: block; image-rendering: auto; }
-.page-label { position: absolute; bottom: -24px; left: 50%; transform: translateX(-50%); font-size: 12px; color: #888; white-space: nowrap; }
+.page-label { position: absolute; bottom: calc(-1 * var(--page-label-overhang)); left: 50%; transform: translateX(-50%); font-size: 12px; color: #888; white-space: nowrap; }
+/* 見開きの総合ラベル (2-3 / 100)。margin-top + height = --spread-label-block に揃えること */
+.spread-label { text-align: center; font-size: 12px; color: #888; margin-top: 16px; height: 16px; line-height: 16px; }
 
 /* Thumbnails */
 .sidebar { position: fixed; left: 0; top: 49px; bottom: 0; width: 160px; background: #111; border-right: 1px solid #333; overflow: hidden; padding: 0; z-index: 50; transform: translateX(-100%); transition: transform 0.2s; }
@@ -740,6 +744,15 @@ let totalPages = 0;
 let fileName = '';
 let archiveFileSize = 0; // 開いているアーカイブのバイト数 (文書情報表示用)
 let rendering = false;
+let lastViewKey = ''; // 直前に renderView で表示したページの組 (ページ切替の検出用)
+let pendingRender = null; // 描画中に要求された renderView のページ番号 (最後の1つだけ保持)
+// renderView / renderScrollView の finally から呼ぶ。描画中に溜まった要求を1回だけ実行する
+function drainPendingRender() {
+  if (pendingRender === null) return;
+  const n = pendingRender;
+  pendingRender = null;
+  renderView(n);
+}
 let renderedPageNums = new Set(); // メインビューに描画した PDF ページ番号 (cleanup 対象の追跡)
 // ページめくり時のメモリ解放 (PDF.js キャッシュ + 旧 canvas backing store) の有効/無効。
 // true: メモリ累積を防ぎ黒画面を回避 (推奨)。false: 解放を一切行わない (暗転皆無だが大量ページで
@@ -2833,6 +2846,32 @@ function cleanupPdfPagesExcept(keepSet) {
   }
 }
 
+// Fit で使える領域から差し引く「ページ以外の寸法」(両ビューア共通)。
+// - viewport は window.innerWidth/Height ではなく documentElement.clientWidth/Height。innerWidth は
+//   `scrollbar-gutter: stable` で常時確保している縦スクロールバー幅 (Windows で約 17px) を含むので、
+//   幅ぴったりの Fit で横スクロールが出てしまう
+// - 縦は .viewer の padding に加えて、ページの下にはみ出す page-label (--page-label-overhang) と
+//   見開きの総合ラベル (--spread-label-block) の分も引く。以前は定数 24 しか引いていなかったため
+//   単ページで 16px、見開きで 58px 必ず縦スクロールの余地が残り、ホイール操作で上端が見切れていた
+function fitChrome(forSpread) {
+  const vs = getComputedStyle(viewer);
+  const rs = getComputedStyle(document.documentElement);
+  const px = v => parseFloat(v) || 0;
+  const padTop = px(vs.paddingTop), padBottom = px(vs.paddingBottom);
+  const overhang = px(rs.getPropertyValue('--page-label-overhang'));
+  const spreadBlock = px(rs.getPropertyValue('--spread-label-block'));
+  const vertical = forSpread
+    ? padTop + px(vs.rowGap) + spreadBlock + padBottom
+    : padTop + Math.max(padBottom, overhang);
+  return {
+    viewportW: document.documentElement.clientWidth,
+    viewportH: document.documentElement.clientHeight,
+    horizontal: px(vs.paddingLeft) + px(vs.paddingRight),
+    vertical,
+    spreadGap: px(rs.getPropertyValue('--spread-gap')),
+  };
+}
+
 function getScale(dims, forSpread) {
   const val = scaleSelect.value;
   if (val === 'fit') {
@@ -2842,14 +2881,17 @@ function getScale(dims, forSpread) {
     const docH = isRotated ? dims.width : dims.height;
     const sidebarOpen = sidebar.classList.contains('open') && !isUIHidden();
     const sidebarW = sidebarOpen ? 170 : 0;
-    const maxW = window.innerWidth - sidebarW - 32;
+    const chrome = fitChrome(forSpread);
+    const maxW = chrome.viewportW - sidebarW - chrome.horizontal;
     if (isScrollMode()) {
       return Math.min(maxW / docW, 3);
     }
-    const headerH = isUIHidden() ? 0 : header.offsetHeight;
-    const maxH = window.innerHeight - headerH - 24;
-    const divisor = forSpread ? 2 : 1;
-    return Math.min((maxW / divisor) / docW, maxH / docH, 3);
+    // offsetHeight は整数に丸められる。高 DPI でヘッダー高さが端数 (例: 117.33px) のとき切り捨てだと
+    // その端数分だけはみ出して 1px の縦スクロールが残るので、切り上げた値を使う
+    const headerH = isUIHidden() ? 0 : Math.ceil(header.getBoundingClientRect().height);
+    const maxH = chrome.viewportH - headerH - chrome.vertical;
+    const pageW = forSpread ? (maxW - chrome.spreadGap) / 2 : maxW;
+    return Math.min(pageW / docW, maxH / docH, 3);
   }
   return parseFloat(val) * (docType === 'pdf' ? PDF_CSS_UNITS : 1);
 }
@@ -3062,6 +3104,7 @@ async function renderScrollView(jumpTo) {
     }
   } finally {
     rendering = false;
+    drainPendingRender();
   }
 }
 
@@ -3106,7 +3149,11 @@ function updateScrollCurrentPage() {
 }
 
 async function renderView(num) {
-  if (totalPages === 0 || rendering) return;
+  if (totalPages === 0) return;
+  // 描画中に来た要求は捨てずに最後の1つを保持し、今の描画が終わってから実行する。
+  // 捨てると、ヘッダーの ResizeObserver がトランジション途中の高さで始めた描画の裏で
+  // toggleUI / resize の本命の再描画が消え、ページが古いレイアウト基準のまま残る (Fit なのにスクロール余地が出る)
+  if (rendering) { pendingRender = num; return; }
   if (isScrollMode()) {
     const needsRebuild = !viewer.querySelector('.scroll-container');
     if (needsRebuild) {
@@ -3157,7 +3204,7 @@ async function renderView(num) {
       }
       const sortedPages = [...pages].sort((a, b) => a - b);
       const overallLabel = document.createElement('div');
-      overallLabel.style.cssText = 'text-align:center; font-size:12px; color:#888; margin-top:28px;';
+      overallLabel.className = 'spread-label';
       overallLabel.textContent = `${sortedPages[0]}-${sortedPages[1]} / ${totalPages}`;
       newNodes.push(spreadWrap, overallLabel);
     } else {
@@ -3176,6 +3223,12 @@ async function renderView(num) {
     // 新ノードが揃ってから一括差し替え (暗転なし) → 旧 canvas を解放
     viewer.replaceChildren(...newNodes);
     releaseCanvasList(oldCanvases);
+
+    // ページが切り替わったときは上端から表示する (Fit 以外の倍率で前ページのスクロール位置を引き継がない)。
+    // 同じページの再描画 (リサイズ / HQ 切替 / Z ズーム等) ではスクロール位置を維持する
+    const viewKey = pages.join(',');
+    if (viewKey !== lastViewKey) window.scrollTo(window.scrollX, 0);
+    lastViewKey = viewKey;
 
     // Update save buttons for spread/single
     if (pages.length === 2) {
@@ -3213,6 +3266,7 @@ async function renderView(num) {
     updateSeekbar();
   } finally {
     rendering = false;
+    drainPendingRender();
   }
 }
 
@@ -3474,6 +3528,8 @@ async function loadPDF(data, name) {
   // Reset scroll-mode DOM/state from any previous document (see pdf-viewer.html for rationale)
   if (scrollObserver) { scrollObserver.disconnect(); scrollObserver = null; }
   scrollRendered.clear();
+  lastViewKey = '';
+  pendingRender = null;
   renderedPageNums.clear();
   releaseCanvases(viewer);
   viewer.innerHTML = '';
@@ -3733,6 +3789,8 @@ async function loadImageEntries(imageFiles, archiveFileName, structFiles = [], f
   // Reset scroll-mode DOM/state from any previous document (see pdf-viewer.html for rationale)
   if (scrollObserver) { scrollObserver.disconnect(); scrollObserver = null; }
   scrollRendered.clear();
+  lastViewKey = '';
+  pendingRender = null;
   renderedPageNums.clear();
   releaseCanvases(viewer);
   viewer.innerHTML = '';
@@ -4311,10 +4369,13 @@ saveAllBtn.addEventListener('click', saveAll);
 
 // ---- Mouse wheel navigation ----
 viewer.addEventListener('wheel', e => {
-  if (totalPages === 0 || rendering) return;
+  if (totalPages === 0) return;
   if (panCheck.checked) return;
   if (isScrollMode()) return;
+  // ページ送りモードではブラウザ標準のスクロールを常に抑止する。描画中 (rendering) を先に return すると、
+  // ホイールを速く回したときの余分な wheel が標準スクロールに落ちてページ上端が見切れる (ユーザー報告)
   e.preventDefault();
+  if (rendering) return;
   if (e.deltaY > 0) {
     const p = nextPageNum(currentPage);
     if (p !== null) renderView(p);
