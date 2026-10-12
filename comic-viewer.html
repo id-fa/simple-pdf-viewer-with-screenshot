@@ -320,8 +320,17 @@ body.seek-visible .toast { bottom: 60px; }
 .lib-meta { flex-shrink: 0; font-size: 11px; color: #777; font-variant-numeric: tabular-nums; }
 /* 省略なしリスト: 長いファイル名を折り返して全文を出す (行の高さは可変) */
 .lib-list.full .lib-row { align-items: flex-start; }
-.lib-list.full .lib-name, .lib-list.full .lib-sub { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; word-break: break-all; }
+.lib-list.full .lib-name, .lib-list.full .lib-sub,
+.lib-list.thumbs .lib-name, .lib-list.thumbs .lib-sub { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; word-break: break-all; }
 .lib-list.full .lib-icon, .lib-list.full .lib-meta, .lib-list.full .lib-badge { margin-top: 2px; }
+/* サムネイル＋リスト (省略なし): アイコンの代わりに小さな表紙を置き、名前は折り返して全文を出す */
+.lib-list.thumbs .lib-row { padding: 5px 14px; }
+.lib-row-thumb { flex-shrink: 0; width: 44px; height: 64px; background: #16213e; border: 1px solid #0f3460; border-radius: 3px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.lib-row-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.lib-row-thumb .ph { font-size: 9px; color: #5a6a8a; letter-spacing: 0.04em; text-transform: uppercase; }
+.lib-row:hover .lib-row-thumb { border-color: #4a9eff; }
+.lib-dir .lib-row-thumb { background: #1c1c2c; border-color: #33334a; }
+.lib-dir .lib-row-thumb .ph { font-size: 22px; color: #ffd479; }
 .lib-badge { flex-shrink: 0; font-size: 10px; padding: 1px 5px; border-radius: 8px; background: #b45309; color: #fff; }
 .lib-empty { padding: 24px 14px; text-align: center; color: #666; font-size: 13px; }
 .lib-warn { padding: 6px 14px; font-size: 11px; color: #f0a; background: #2a1a2a; border-bottom: 1px solid #3a2a3a; }
@@ -577,6 +586,7 @@ body.seek-visible .toast { bottom: 60px; }
       <select id="libViewSel" title="表示方法 / View mode">
         <option value="list">☰ リスト</option>
         <option value="full">☰ リスト (省略なし)</option>
+        <option value="thumbs">☰ サムネイル＋リスト (省略なし)</option>
         <option value="grid">▦ サムネイル</option>
       </select>
       <button id="libReload" title="一覧を再取得 / Reload the file list">⟳</button>
@@ -5191,7 +5201,7 @@ let libSortKey = 'name';
 let libSortAsc = true;
 let libReadMap = new Map();    // path -> しおり (既読バッジ用)
 let libBusy = false;
-const LIB_VIEWS = ['list', 'full', 'grid'];   // list = 省略あり / full = 省略なし / grid = サムネイル
+const LIB_VIEWS = ['list', 'full', 'thumbs', 'grid'];   // list = 省略あり / full = 省略なし / thumbs = サムネイル＋省略なし / grid = サムネイル
 let libView = LIB_VIEWS.includes(localStorage.getItem('viewerLibraryView')) ? localStorage.getItem('viewerLibraryView') : 'list';
 
 function libIsOpen() { return libOverlay.classList.contains('open'); }
@@ -5358,6 +5368,7 @@ function libSortFiles(files, deep) {
 // 表紙は「事前に用意されたサイドカー画像」だけを使う (自動生成はしない)。
 // tree が cover: true を返した項目にだけプレビューを付ける。
 const LIB_COVER_TILE_W = 320;      // サムネイル表示のタイル用
+const LIB_COVER_ROW_W = 160;       // サムネイル＋リストの行用 (表示 44px、高 DPI でも足りる幅)
 const LIB_COVER_PREVIEW_W = 480;   // ホバー / ロングタップのプレビュー用
 const LIB_HOVER_DELAY = 320;       // ホバーしてから出るまで (誤爆防止)
 const LIB_LONGPRESS_MS = 450;
@@ -5536,6 +5547,29 @@ function libRender() {
     libOpenEntry(e);
   };
 
+  // 表紙 (無ければ拡張子のプレースホルダ) を枠 el の中に入れる。グリッドのタイルと
+  // サムネイル＋リストの行で共用。表紙が消えている等で読めなければプレースホルダに落とす
+  const fillThumb = (el, e, base, w) => {
+    const placeholder = () => {
+      const ph = document.createElement('span');
+      ph.className = 'ph';
+      ph.textContent = (base.split('.').pop() || '').toUpperCase();
+      el.appendChild(ph);
+    };
+    if (!e.cover) { placeholder(); return; }
+    const img = document.createElement('img');
+    img.loading = 'lazy';       // 画面外のタイル / 行は取りに行かない
+    img.decoding = 'async';
+    img.alt = '';
+    img.src = libCoverUrl(e.path, w);
+    img.addEventListener('error', () => {
+      delete e.cover;
+      img.remove();
+      placeholder();
+    });
+    el.appendChild(img);
+  };
+
   const frag = document.createDocumentFragment();
 
   if (libView === 'grid') {
@@ -5562,28 +5596,7 @@ function libRender() {
 
       const thumb = document.createElement('div');
       thumb.className = 'lib-thumb';
-      if (e.cover) {
-        const img = document.createElement('img');
-        img.loading = 'lazy';       // 画面外のタイルは取りに行かない
-        img.decoding = 'async';
-        img.alt = '';
-        img.src = libCoverUrl(e.path, LIB_COVER_TILE_W);
-        // 表紙が消えている等で読めなければプレースホルダに落とす
-        img.addEventListener('error', () => {
-          delete e.cover;
-          img.remove();
-          const ph = document.createElement('span');
-          ph.className = 'ph';
-          ph.textContent = (base.split('.').pop() || '').toUpperCase();
-          thumb.appendChild(ph);
-        });
-        thumb.appendChild(img);
-      } else {
-        const ph = document.createElement('span');
-        ph.className = 'ph';
-        ph.textContent = (base.split('.').pop() || '').toUpperCase();
-        thumb.appendChild(ph);
-      }
+      fillThumb(thumb, e, base, LIB_COVER_TILE_W);
       const badge = readBadge(e);
       if (badge) thumb.appendChild(badge);
       tile.appendChild(thumb);
@@ -5606,10 +5619,13 @@ function libRender() {
     return;
   }
 
+  const thumbRows = libView === 'thumbs';
   for (const d of dirs) {
     const row = document.createElement('div');
     row.className = 'lib-row lib-dir';
-    row.innerHTML = '<span class="lib-icon">📁</span>';
+    row.innerHTML = thumbRows
+      ? '<span class="lib-row-thumb"><span class="ph">📁</span></span>'
+      : '<span class="lib-icon">📁</span>';
     const name = document.createElement('span');
     name.className = 'lib-name';
     name.textContent = d.name;
@@ -5625,8 +5641,15 @@ function libRender() {
     const base = e.path.split('/').pop();
     const row = document.createElement('div');
     row.className = 'lib-row';
-    // 表紙がある項目はアイコンを変えて、ホバー / ロングタップで見られることを示す
-    row.innerHTML = `<span class="lib-icon ${e.cover ? 'cover' : 'plain'}">${e.cover ? '🖼' : '📄'}</span>`;
+    if (thumbRows) {
+      const thumb = document.createElement('span');
+      thumb.className = 'lib-row-thumb';
+      fillThumb(thumb, e, base, LIB_COVER_ROW_W);
+      row.appendChild(thumb);
+    } else {
+      // 表紙がある項目はアイコンを変えて、ホバー / ロングタップで見られることを示す
+      row.innerHTML = `<span class="lib-icon ${e.cover ? 'cover' : 'plain'}">${e.cover ? '🖼' : '📄'}</span>`;
+    }
     const nameWrap = document.createElement('span');
     nameWrap.className = 'lib-name';
     nameWrap.textContent = base;
