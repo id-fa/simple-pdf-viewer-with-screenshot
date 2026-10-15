@@ -59,7 +59,8 @@
 ### Fit の寸法計算 (`fitChrome()`、両ビューア共通)
 - **Fit は「スクロール余地ゼロ」が仕様**。以前は `window.innerWidth - 32` / `window.innerHeight - headerH - 24` の定数引きだったため、単ページで 16px、見開きで 58px 必ず縦スクロールの余地が残り、ホイールを速く回したときに標準スクロールへ落ちて上端が見切れていた (ユーザー報告)
 - **viewport は `documentElement.clientWidth/Height`** を使う。`innerWidth` は `scrollbar-gutter: stable` で常時確保している縦スクロールバー幅 (Windows で 15〜17px) を含むので、幅ぴったりの Fit で横スクロールが出る
-- **縦に引く量は `fitChrome(forSpread)` が実レイアウトから算出する**: `.viewer` の padding (getComputedStyle。UI 非表示時は 4px) + ページ下にはみ出す `.page-label` (CSS 変数 `--page-label-overhang` = 24px) 、見開きではさらに `.viewer` の gap + 総合ラベル `.spread-label` (`--spread-label-block` = margin 16 + height 16)。見開きの横はページ間の `--spread-gap` も引く。**寸法は CSS 側の custom property (`:root`) を唯一のソースにし、JS 側に定数を持たない**。`.spread-label` の margin/height を変えたら `--spread-label-block` も合わせること
+- **縦に引く量は `fitChrome(forSpread)` が実レイアウトから算出する**: `.viewer` の padding (getComputedStyle。UI 非表示時は 4px) + ページ下にはみ出す `.page-label` (CSS 変数 `--page-label-overhang` = 24px) 、Spread モードではさらに `.viewer` の gap + 総合ラベル `.spread-label` (`--spread-label-block` = margin 16 + height 16)。見開きの横はページ間の `--spread-gap` も引く。
+- **Spread モードの単独ページ (Cover ON の 1 ページ目 / 余った最終ページ) も見開きと同じ 2 段ラベル** (ページ上の `.page-label` に `1`、下の `.spread-label` に `1 / 100`) で描く。単ページ表示と同じ 1 段ラベル (`1 / 100`) にしていた頃は、総合ラベル分の 32px だけ Fit のページ高さが変わり、見開き ⇄ 単独の遷移でガタついた (ユーザー報告)。これに合わせて `fitChrome()` の縦の差し引きは **`forSpread` (2 ページ横並びか) ではなく `isSpread()` (Spread モードか) で決める**。`forSpread` は横幅の折半にだけ効く。**寸法は CSS 側の custom property (`:root`) を唯一のソースにし、JS 側に定数を持たない**。`.spread-label` の margin/height を変えたら `--spread-label-block` も合わせること
 - **ヘッダー高さは `Math.ceil(header.getBoundingClientRect().height)`**。`offsetHeight` は整数に丸めるので、高 DPI (DPR 1.5 でヘッダーが 117.33px 等) では切り捨てた端数分だけはみ出して 1px のスクロールが残る
 - **`renderView` は描画中の要求を捨てずに最後の 1 つを保持する** (`pendingRender` / `drainPendingRender()`)。以前は `rendering` ガードで黙って捨てていたため、ヘッダーの ResizeObserver がトランジション途中の高さで始めた描画の裏で `toggleUI` (320ms 後) / `resize` (120ms デバウンス) の本命の再描画が消え、古いレイアウト基準のページが残ることがあった。`renderScrollView` の finally からも drain する (Scroll 分岐は `renderView` の finally を通らないため)。wheel ハンドラ側は従来どおり描画中のイベントを捨てる (連続ページ送りの暴走を防ぐ) ので、ホイール連打がキューに溜まることはない
 - **ページが切り替わったら縦スクロールを 0 に戻す** (`lastViewKey` で表示ページの組を比較)。Fit 以外の倍率で前ページのスクロール位置を引き継がないため。同じページの再描画 (リサイズ / HQ 切替 / Z ズーム) では位置を維持する
@@ -674,7 +675,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 ## PWA / Service Worker
 
 ### `sw.js`
-- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v51`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v53`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
 - **`SHARE_CACHE`**: `share-stash-v1` — Web Share Target で受信したファイルを一時保存する専用キャッシュ (activate 時も削除対象外)
 - **`PRECACHE_URLS`**: インストール時に一括取得するリソース (HTML 2種、vendor/ 配下全ファイル、manifest、icons)。`fetch(url, { cache: 'reload' })` でブラウザキャッシュをバイパス
 - **`activate`**: `CACHE_NAME` と `SHARE_CACHE` 以外の旧キャッシュを削除し `self.clients.claim()`

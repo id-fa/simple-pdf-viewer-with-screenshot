@@ -1586,6 +1586,10 @@ function isScrollMode() { return viewMode.value === 'scroll'; }
 // - 縦は .viewer の padding に加えて、ページの下にはみ出す page-label (--page-label-overhang) と
 //   見開きの総合ラベル (--spread-label-block) の分も引く。以前は定数 24 しか引いていなかったため
 //   単ページで 16px、見開きで 58px 必ず縦スクロールの余地が残り、ホイール操作で上端が見切れていた
+// - 総合ラベルの有無は「Spread モードかどうか」(isSpread()) で決め、forSpread (2 ページ横並びかどうか)
+//   とは切り離す。Spread モードでは表紙 (Cover ON の 1 ページ目) や余った最終ページの単独表示でも
+//   同じ総合ラベルを出すので、縦に引く量を揃えないと見開き ⇄ 単独の遷移で Fit のページ高さが
+//   32px 変わってガタつく
 function fitChrome(forSpread) {
   const vs = getComputedStyle(viewer);
   const rs = getComputedStyle(document.documentElement);
@@ -1593,7 +1597,7 @@ function fitChrome(forSpread) {
   const padTop = px(vs.paddingTop), padBottom = px(vs.paddingBottom);
   const overhang = px(rs.getPropertyValue('--page-label-overhang'));
   const spreadBlock = px(rs.getPropertyValue('--spread-label-block'));
-  const vertical = forSpread
+  const vertical = isSpread()
     ? padTop + px(vs.rowGap) + spreadBlock + padBottom
     : padTop + Math.max(padBottom, overhang);
   return {
@@ -1930,9 +1934,20 @@ async function renderView(num) {
       }
       const label = document.createElement('div');
       label.className = 'page-label';
-      label.textContent = `${pages[0]} / ${totalPages}`;
-      container.appendChild(label);
-      newNodes.push(container);
+      if (isSpread()) {
+        // Spread モードの単独ページ (表紙 / 余った最終ページ) も見開きと同じ 2 段構成のラベルにして
+        // 表示エリアの高さを揃える (fitChrome() の縦の差し引きもこれに合わせて isSpread() で決める)
+        label.textContent = `${pages[0]}`;
+        container.appendChild(label);
+        const overallLabel = document.createElement('div');
+        overallLabel.className = 'spread-label';
+        overallLabel.textContent = `${pages[0]} / ${totalPages}`;
+        newNodes.push(container, overallLabel);
+      } else {
+        label.textContent = `${pages[0]} / ${totalPages}`;
+        container.appendChild(label);
+        newNodes.push(container);
+      }
     }
 
     // 新ノードが揃ってから一括差し替え (暗転なし) → 旧 canvas を解放
