@@ -36,16 +36,16 @@ jobs:
           dotnet publish src/LibraryServer.Host/LibraryServer.Host.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o publish/LibraryServer --nologo
           Copy-Item README.md publish/LibraryServer/README.md
           Copy-Item ../LICENSE publish/LibraryServer/LICENSE
-          Compress-Archive -Path publish/LibraryServer/* -DestinationPath publish/LibraryServer-win-x64.zip
+          Compress-Archive -Path publish/LibraryServer/* -DestinationPath publish/Comic-Viewer-F-win-x64.zip
 
       - uses: actions/upload-artifact@v4
         with:
-          name: LibraryServer-win-x64
-          path: windows/publish/LibraryServer-win-x64.zip
+          name: Comic-Viewer-F-win-x64
+          path: windows/publish/Comic-Viewer-F-win-x64.zip
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/win-v')
         uses: softprops/action-gh-release@v2
         with:
-          files: windows/publish/LibraryServer-win-x64.zip
+          files: windows/publish/Comic-Viewer-F-win-x64.zip
           generate_release_notes: true
