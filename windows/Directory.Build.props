@@ -4,7 +4,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
     <Authors>id-fa</Authors>
     <Product>Library Server for Comic / PDF Viewer</Product>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
