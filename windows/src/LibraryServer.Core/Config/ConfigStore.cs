@@ -15,7 +15,7 @@ namespace LibraryServer.Core.Config;
 public sealed class ConfigStore
 {
     public const string FileName = "library.config.json";
-    public const string AppFolderName = "LibraryServer";
+    public const string AppFolderName = "Comic-Viewer-F";
 
     public string Path { get; }
 
