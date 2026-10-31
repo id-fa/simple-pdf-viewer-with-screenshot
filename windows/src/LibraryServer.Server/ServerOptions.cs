@@ -38,7 +38,7 @@ public sealed class ServerOptions
           LibraryServer.Host covers [options]        表紙画像を生成 (covers --help で詳細)
 
         オプション:
-          --config=PATH   library.config.json の場所 (既定: exe の隣 → %LocalAppData%\LibraryServer → %ProgramData%\LibraryServer)
+          --config=PATH   library.config.json の場所 (既定: exe の隣 → %LocalAppData%\Comic-Viewer-F → %ProgramData%\Comic-Viewer-F)
           --port=N        待ち受けポート (設定より優先)
           --bind=MODE     lan (全インターフェース) / localhost
           --root=DIR      公開フォルダ (設定より優先)

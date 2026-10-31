@@ -4,7 +4,7 @@ namespace LibraryServer.App;
 
 /// <summary>
 /// トレイアプリにはコンソールが無いので、起動・終了・ウィンドウ・WebView2 の要所だけを
-/// %LocalAppData%\LibraryServer\app.log に追記する (1MB を超えたら作り直す)。
+/// %LocalAppData%\Comic-Viewer-F\app.log に追記する (1MB を超えたら作り直す)。
 /// </summary>
 internal static class AppLog
 {

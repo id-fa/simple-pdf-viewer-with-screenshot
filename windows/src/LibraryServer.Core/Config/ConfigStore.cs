@@ -8,8 +8,8 @@ namespace LibraryServer.Core.Config;
 /// 探索順:
 ///   1. 明示されたパス (--config)
 ///   2. exe と同じフォルダ (ポータブル運用)
-///   3. %LocalAppData%\LibraryServer (トレイアプリの既定)
-///   4. %ProgramData%\LibraryServer (サービス運用)
+///   3. %LocalAppData%\Comic-Viewer-F (トレイアプリの既定)
+///   4. %ProgramData%\Comic-Viewer-F (サービス運用)
 /// 見つからなければ 3 (サービスモードでは 4) に新規作成する。
 /// </summary>
 public sealed class ConfigStore

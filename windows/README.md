@@ -36,7 +36,7 @@ Apache or ImageMagick. Phones on the same Wi-Fi use the existing PWA unchanged.
    そのままホーム画面に追加 (PWA) できる
 5. 必要なら「Windows 起動時に開始」をオンにする (トレイメニュー / 設定画面)
 
-設定ファイルは `%LocalAppData%\LibraryServer\library.config.json` に保存されます
+設定ファイルは `%LocalAppData%\Comic-Viewer-F\library.config.json` に保存されます
 (exe と同じフォルダに `library.config.json` を置けばポータブル運用)。
 
 ## トレイメニュー
@@ -99,11 +99,11 @@ LibraryServer.Host.exe --headless --root=D:\Books --port=8321
 LibraryServer.Host.exe --headless --config=C:\path\to\library.config.json
 ```
 
-Windows サービスとして登録する例 (管理者のコマンドプロンプト。設定は `%ProgramData%\LibraryServer\library.config.json` に置く):
+Windows サービスとして登録する例 (管理者のコマンドプロンプト。設定は `%ProgramData%\Comic-Viewer-F\library.config.json` に置く):
 
 ```bat
-mkdir "%ProgramData%\LibraryServer"
-copy "%LocalAppData%\LibraryServer\library.config.json" "%ProgramData%\LibraryServer\"
+mkdir "%ProgramData%\Comic-Viewer-F"
+copy "%LocalAppData%\Comic-Viewer-F\library.config.json" "%ProgramData%\Comic-Viewer-F\"
 sc create LibraryServer binPath= "\"C:\Apps\LibraryServer\LibraryServer.Host.exe\" --service" start= auto DisplayName= "Library Server (Comic Viewer)"
 sc start LibraryServer
 ```
