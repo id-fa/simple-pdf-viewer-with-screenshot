@@ -11,6 +11,11 @@ A Windows replacement for `library.php`: a single tray-resident executable that 
 library API (fully compatible with `library.php`), generates cover images automatically, and needs no PHP,
 Apache or ImageMagick. Phones on the same Wi-Fi use the existing PWA unchanged.
 
+- 配布サイト / Project page: <https://github.com/id-fa/simple-pdf-viewer-with-screenshot>
+- ダウンロード / Download: [Releases](https://github.com/id-fa/simple-pdf-viewer-with-screenshot/releases) の `LibraryServer-win-x64.zip`
+  (`LibraryServer.exe` / `LibraryServer.Host.exe` / `README.md` / `LICENSE` 入り)
+- ビューア本体 (GitHub Pages 版) / Hosted viewer: <https://id-fa.github.io/simple-pdf-viewer-with-screenshot/webapp/comic-viewer.html>
+
 ## 構成 / What's inside
 
 | ファイル | 用途 |
@@ -24,7 +29,7 @@ Apache or ImageMagick. Phones on the same Wi-Fi use the existing PWA unchanged.
 
 ## はじめかた / Getting started
 
-1. `LibraryServer.exe` を任意のフォルダに置いて起動する
+1. [Releases](https://github.com/id-fa/simple-pdf-viewer-with-screenshot/releases) から `LibraryServer-win-x64.zip` を取得して展開し、`LibraryServer.exe` を任意のフォルダに置いて起動する
 2. 初回は設定画面が開くので「公開フォルダ」(本の入ったフォルダ) を選んで **保存**
 3. Windows ファイアウォールのダイアログが出たら「プライベート ネットワーク」で許可する
 4. 「状態」タブに出ている URL をブラウザで開く。スマートフォンは LAN の URL (QR コードあり) を開き、
