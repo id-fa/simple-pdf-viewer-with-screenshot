@@ -4,3 +4,11 @@ library.config.php
 # Python (tools/generate_coverimages.py)
 __pycache__/
 *.pyc
+
+# Windows アプリ (windows/)
+windows/**/bin/
+windows/**/obj/
+windows/.samplelib/
+windows/.vs/
+
+windows/publish/

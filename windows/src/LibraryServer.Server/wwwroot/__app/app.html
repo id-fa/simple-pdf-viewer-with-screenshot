@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Comic Viewer — Library Server</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin:0; height:100%; background:#0f172a; color:#e2e8f0; font: 13px system-ui, -apple-system, "Segoe UI", "Yu Gothic UI", sans-serif; overflow:hidden; }
+  .bar { height:36px; display:flex; align-items:stretch; gap:2px; padding:0 6px; background:#0f172a; border-bottom:1px solid #334155; -webkit-app-region: no-drag; }
+  .bar button { background:transparent; border:0; border-bottom:2px solid transparent; color:#94a3b8; padding:0 14px; font:inherit; cursor:pointer; }
+  .bar button.active { color:#fff; border-bottom-color:#3b82f6; }
+  .bar .sp { flex:1; }
+  .bar a { color:#94a3b8; align-self:center; padding:0 10px; text-decoration:none; font-size:12px; }
+  .bar a:hover { color:#fff; }
+  .frames { position:absolute; top:36px; left:0; right:0; bottom:0; }
+  .frames iframe { position:absolute; inset:0; width:100%; height:100%; border:0; background:#1e293b; visibility:hidden; }
+  .frames iframe.active { visibility:visible; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <button data-tab="comic" class="active">コミック</button>
+  <button data-tab="pdf">PDF</button>
+  <button data-tab="admin">設定</button>
+  <span class="sp"></span>
+  <a id="openBrowser" href="../comic-viewer.html" target="_blank" rel="noopener" title="既定のブラウザで開く">ブラウザで開く ↗</a>
+</div>
+<div class="frames" id="frames"></div>
+<script>
+(() => {
+  'use strict';
+  // トレイアプリの WebView2 用のシェル。3 つの画面を iframe で切り替える。
+  // display:none にすると Fit 計算が崩れるので visibility で隠し、サイズは常に保つ。
+  const url = new URL(location.href);
+  const token = url.searchParams.get('token') || '';
+  // ?v=<クエリ> はコミックビューアに渡すクエリ (?lib=... / ?open=...)。トレイアプリのファイル関連付けで使う
+  let viewerQuery = url.searchParams.get('v') || '';
+  if (token || viewerQuery) { history.replaceState(null, '', url.pathname + url.hash); }
+  const src = {
+    comic: '../comic-viewer.html',
+    pdf: '../pdf-viewer.html',
+    admin: './admin.html' + (token ? '?token=' + encodeURIComponent(token) : ''),
+  };
+  const frames = {};
+  const box = document.getElementById('frames');
+  function show(name) {
+    if (!frames[name]) {
+      const f = document.createElement('iframe');
+      let s = src[name];
+      if (name === 'comic' && viewerQuery) { s += (viewerQuery.startsWith('?') ? '' : '?') + viewerQuery; viewerQuery = ''; }
+      if (name === 'admin' && location.hash) s += location.hash;
+      f.src = s;
+      f.allow = 'fullscreen; clipboard-write; clipboard-read';
+      f.setAttribute('allowfullscreen', '');
+      box.appendChild(f);
+      frames[name] = f;
+    }
+    Object.entries(frames).forEach(([k, f]) => f.classList.toggle('active', k === name));
+    document.querySelectorAll('.bar button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+    document.getElementById('openBrowser').href = name === 'pdf' ? '../pdf-viewer.html' : name === 'admin' ? src.admin : '../comic-viewer.html';
+    try { frames[name].contentWindow.focus(); } catch (e) {}
+  }
+  document.querySelectorAll('.bar button').forEach((b) => b.addEventListener('click', () => show(b.dataset.tab)));
+  // トレイアプリから window.__showTab('admin') で切り替えられるようにしておく
+  window.__showTab = show;
+  // ファイル関連付け: コミックビューアを指定クエリで読み直す (開いているファイルは閉じる)
+  window.__openInViewer = (query) => {
+    viewerQuery = '';
+    if (frames.comic) { frames.comic.src = src.comic + (query.startsWith('?') ? '' : '?') + query; }
+    else { viewerQuery = query; }
+    show('comic');
+  };
+  const initial = (location.hash || '').replace(/^#/, '').split('/')[0];
+  show(src[initial] ? initial : 'comic');
+})();
+</script>
+</body>
+</html>

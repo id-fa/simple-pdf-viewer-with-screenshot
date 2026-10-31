@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>LibraryServer.Server</RootNamespace>
+    <GenerateEmbeddedFilesManifest>true</GenerateEmbeddedFilesManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- Web SDK ではないので ASP.NET Core の暗黙 using を自前で足す -->
+  <ItemGroup>
+    <Using Include="Microsoft.AspNetCore.Builder" />
+    <Using Include="Microsoft.AspNetCore.Hosting" />
+    <Using Include="Microsoft.AspNetCore.Http" />
+    <Using Include="Microsoft.AspNetCore.Routing" />
+    <Using Include="Microsoft.Extensions.DependencyInjection" />
+    <Using Include="Microsoft.Extensions.DependencyInjection.Extensions" />
+    <Using Include="Microsoft.Extensions.Hosting" />
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LibraryServer.Core\LibraryServer.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.FileProviders.Embedded" Version="8.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
+    <PackageReference Include="QRCoder" Version="1.8.1" />
+  </ItemGroup>
+
+  <!--
+    ビューア一式をリポジトリのルートからそのまま埋め込む (二重管理しない)。
+    ManifestEmbeddedFileProvider は Link メタデータのパスで公開するので、
+    "wwwroot/comic-viewer.html" 等が HTTP の "/comic-viewer.html" になる。
+    exe の隣に wwwroot/ フォルダがあればそちらが優先される (開発時のホットリロード用)。
+    wwwroot/ 直下 (admin.html / app.html) はこのプロジェクト固有の管理画面。
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="$(RepoRoot)comic-viewer.html;$(RepoRoot)pdf-viewer.html;$(RepoRoot)sw.js;$(RepoRoot)manifest.webmanifest"
+                      Link="wwwroot\%(Filename)%(Extension)" />
+    <EmbeddedResource Include="$(RepoRoot)vendor\**\*" Link="wwwroot\vendor\%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="$(RepoRoot)icons\*.png" Link="wwwroot\icons\%(Filename)%(Extension)" />
+    <EmbeddedResource Include="$(RepoRoot)screenshots\*.png" Link="wwwroot\screenshots\%(Filename)%(Extension)" />
+    <EmbeddedResource Include="wwwroot\**\*" />
+  </ItemGroup>
+
+</Project>

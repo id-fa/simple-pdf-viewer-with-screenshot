@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>LibraryServer.Host</RootNamespace>
+    <AssemblyName>LibraryServer.Host</AssemblyName>
+    <Description>Comic / PDF Viewer のライブラリサーバー (ヘッドレス / Windows サービス / 表紙生成 CLI)</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\LibraryServer.Server\LibraryServer.Server.csproj" />
+  </ItemGroup>
+
+</Project>

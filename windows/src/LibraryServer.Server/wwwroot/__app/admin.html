@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Library Server 設定</title>
+<style>
+  :root { color-scheme: dark; --bg:#1e293b; --panel:#0f172a; --line:#334155; --text:#e2e8f0; --muted:#94a3b8; --accent:#3b82f6; --ok:#22c55e; --warn:#f59e0b; --ng:#ef4444; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Sans", "Yu Gothic UI", sans-serif; }
+  header { display:flex; align-items:center; gap:16px; padding:10px 16px; background:var(--panel); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0; }
+  header .state { font-size:12px; color:var(--muted); }
+  nav { display:flex; gap:4px; margin-left:auto; }
+  nav button { background:transparent; color:var(--muted); border:1px solid transparent; padding:6px 12px; border-radius:6px; cursor:pointer; font:inherit; }
+  nav button.active { color:var(--text); border-color:var(--line); background:var(--bg); }
+  main { max-width: 960px; margin: 0 auto; padding: 16px; }
+  section.tab { display:none; }
+  section.tab.active { display:block; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:14px; }
+  .card h2 { font-size:14px; margin:0 0 10px; color:var(--muted); font-weight:600; letter-spacing:.02em; }
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; }
+  @media (max-width:720px) { .grid { grid-template-columns:1fr; } }
+  label.f { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--muted); }
+  label.f input[type=text], label.f input[type=number], label.f input[type=password], label.f select { background:var(--bg); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:7px 9px; font:inherit; font-size:13px; }
+  label.c { display:flex; align-items:center; gap:8px; font-size:13px; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  button.btn { background:var(--accent); color:#fff; border:0; border-radius:6px; padding:7px 14px; font:inherit; cursor:pointer; }
+  button.btn.sec { background:var(--line); }
+  button.btn.danger { background:#7f1d1d; }
+  button.btn:disabled { opacity:.5; cursor:default; }
+  .muted { color:var(--muted); font-size:12px; }
+  .muted code { font-family: Consolas, "Cascadia Mono", monospace; font-size:11px; background:var(--bg); padding:1px 4px; border-radius:4px; }
+  .mono { font-family: Consolas, "Cascadia Mono", monospace; font-size:12px; }
+  .urls li { margin:4px 0; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .urls a { color:#93c5fd; }
+  .qr { display:inline-block; background:#fff; padding:6px; border-radius:6px; vertical-align:middle; }
+  .qr img { width:140px; height:140px; display:block; image-rendering:pixelated; }
+  .msg { padding:8px 12px; border-radius:6px; margin:8px 0; display:none; }
+  .msg.show { display:block; }
+  .msg.ok { background:#14532d; } .msg.ng { background:#7f1d1d; } .msg.warn { background:#78350f; }
+  progress { width:100%; height:10px; }
+  .events { max-height: 360px; overflow:auto; font-size:12px; }
+  .events div { padding:2px 0; border-bottom:1px solid #1f2937; white-space:pre-wrap; word-break:break-all; }
+  .events .Failed { color:#fca5a5; } .events .Made, .events .Remade { color:#86efac; } .events .DryRun { color:#fde68a; }
+  .log { max-height: 70vh; overflow:auto; font-size:12px; white-space:pre-wrap; word-break:break-all; }
+  .log .warn { color:#fde68a; } .log .err, .log .crit { color:#fca5a5; } .log .dbg { color:var(--muted); }
+  .kv { display:grid; grid-template-columns: 160px 1fr; gap:4px 12px; font-size:13px; }
+  .kv dt { color:var(--muted); } .kv dd { margin:0; word-break:break-all; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:11px; background:var(--line); }
+  .pill.ok { background:#14532d; } .pill.ng { background:#7f1d1d; } .pill.warn { background:#78350f; }
+  details summary { cursor:pointer; color:var(--muted); font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Library Server</h1>
+  <span class="state" id="hdrState">接続中...</span>
+  <nav>
+    <button data-tab="status" class="active">状態</button>
+    <button data-tab="settings">設定</button>
+    <button data-tab="covers">表紙</button>
+    <button data-tab="log">ログ</button>
+  </nav>
+</header>
+<main>
+  <div class="msg" id="tokenMsg"></div>
+
+  <!-- ================= 状態 ================= -->
+  <section class="tab active" id="tab-status">
+    <div class="card">
+      <h2>アクセス URL</h2>
+      <ul class="urls" id="urls"></ul>
+      <p class="muted">スマートフォン / タブレットからは同じ Wi-Fi に繋いで LAN の URL を開いてください (QR コードで読み取れます)。<br>
+        Windows ファイアウォールの確認ダイアログが出たら「プライベート ネットワーク」で許可してください。</p>
+    </div>
+    <div class="card">
+      <h2>ライブラリ</h2>
+      <dl class="kv" id="libInfo"></dl>
+      <div class="row" style="margin-top:10px">
+        <button class="btn sec" id="btnRebuild">索引を再構築</button>
+        <span class="muted" id="rebuildMsg"></span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>サーバー</h2>
+      <dl class="kv" id="srvInfo"></dl>
+    </div>
+  </section>
+
+  <!-- ================= 設定 ================= -->
+  <section class="tab" id="tab-settings">
+    <form id="cfgForm" onsubmit="return false">
+      <div class="card">
+        <h2>公開フォルダ</h2>
+        <div class="row">
+          <label class="f" style="flex:1 1 360px">root (本の入ったフォルダの絶対パス)
+            <input type="text" name="root" placeholder="D:\Books" autocomplete="off" spellcheck="false">
+          </label>
+          <button class="btn sec" id="btnPick" type="button" hidden>参照...</button>
+        </div>
+        <div class="grid" style="margin-top:10px">
+          <label class="f">表示名 (空なら root のフォルダ名)<input type="text" name="label"></label>
+          <label class="f">配信する拡張子 (カンマ区切り)<input type="text" name="exts"></label>
+          <label class="f">一覧の最大件数<input type="number" name="maxEntries" min="1" max="100000"></label>
+          <label class="f">再帰の最大深さ<input type="number" name="maxDepth" min="0" max="64"></label>
+        </div>
+        <label class="c" style="margin-top:8px"><input type="checkbox" name="followSymlinks">シンボリックリンク / ジャンクションを辿る</label>
+      </div>
+
+      <div class="card">
+        <h2>ネットワーク</h2>
+        <div class="grid">
+          <label class="f">ポート<input type="number" name="port" min="1" max="65535"></label>
+          <label class="f">待ち受け
+            <select name="bind">
+              <option value="lan">LAN に公開 (スマホ / 他の PC から使う)</option>
+              <option value="localhost">この PC だけ (localhost)</option>
+            </select>
+          </label>
+        </div>
+        <label class="c" style="margin-top:8px"><input type="checkbox" name="coi">COOP / COEP ヘッダーを付ける (wasm-vips 用)</label>
+        <p class="muted">
+          ビューアの高品質縮小エンジンを wasm-vips (Filter ポップアップの「HQ engine: wasm-vips」/ <code>?vips=1</code>) に切り替える場合にだけ必要です。
+          wasm-vips はマルチスレッド WebAssembly で動き、そのために使う SharedArrayBuffer をブラウザは「クロスオリジン分離」されたページ
+          (<code>Cross-Origin-Opener-Policy: same-origin</code> と <code>Cross-Origin-Embedder-Policy: require-corp</code> が付いたページ) にしか許可しません。<br>
+          PWA では Service Worker (<code>sw.js</code>) がキャッシュから返すレスポンスにこのヘッダーを付けますが、Service Worker は HTTPS か localhost でしか登録されないため、
+          LAN の <code>http://192.168.…</code> で開くスマートフォン等では効きません。このチェックを入れるとサーバー側で全レスポンスに付けるので、その環境でも wasm-vips が使えます。<br>
+          副作用: COEP を付けたページは、CORS / CORP の無い他サイトの画像やスクリプトを読み込めなくなります。このサーバーが配信するものはすべて同一オリジンなので通常は問題ありませんが、
+          既定のエンジン (Pica) で十分ならオフのままで構いません。
+        </p>
+        <p class="muted">ポートと待ち受けの変更はサーバーの再起動で反映されます。</p>
+      </div>
+
+      <div class="card">
+        <h2>Basic 認証</h2>
+        <div class="grid">
+          <label class="f">ユーザー名 (空なら認証なし)<input type="text" name="authUser" autocomplete="off"></label>
+          <label class="f">パスワード<input type="password" name="authPass" autocomplete="new-password" placeholder=""></label>
+          <label class="f">Realm<input type="text" name="authRealm" placeholder="Library"></label>
+        </div>
+        <p class="muted">パスワードは bcrypt ハッシュで保存されます (PHP 版 library.php の password_hash と互換)。LAN の外に公開するなら HTTPS のリバースプロキシ (Cloudflare Tunnel、Caddy、nginx 等) を前に置いてください。Basic 認証は資格情報を毎回 base64 で送るだけなので、平文の HTTP では丸見えになります。</p>
+      </div>
+
+      <div class="card">
+        <h2>表紙画像</h2>
+        <label class="c"><input type="checkbox" name="coversAuto">自動生成する (起動時に不足分、以後はファイルの追加・更新を検知して生成)</label>
+        <div class="grid" style="margin-top:10px">
+          <label class="f">形式
+            <select name="coversFormat"><option value="webp">WebP</option><option value="jpeg">JPEG</option><option value="png">PNG</option></select>
+          </label>
+          <label class="f">品質 (WebP / JPEG)<input type="number" name="coversQuality" min="1" max="100"></label>
+          <label class="f">最大幅 (超える画像だけ縮小、0 で無制限)<input type="number" name="coversMaxWidth" min="0"></label>
+          <label class="f">最大高さ<input type="number" name="coversMaxHeight" min="0"></label>
+          <label class="f">書庫内のファイル名順
+            <select name="coversSort"><option value="lexical">lexical (バイト列順)</option><option value="natural">natural (数字を数値として)</option></select>
+          </label>
+          <label class="f">EPUB の表紙
+            <select name="coversEpubCover"><option value="spine">読み順の 1 枚目</option><option value="metadata">OPF の cover-image を優先</option></select>
+          </label>
+          <label class="f">PDF の解像度 (dpi)<input type="number" name="coversPdfDpi" min="36" max="600"></label>
+          <label class="f">サイドカーの接尾辞<input type="text" name="coverSuffix"></label>
+          <label class="f">表紙として認識する拡張子<input type="text" name="coverExts"></label>
+        </div>
+        <label class="c" style="margin-top:8px"><input type="checkbox" name="coversMatchMtime">表紙の更新日時を元ファイルに揃える</label>
+        <label class="c"><input type="checkbox" name="coversPassthrough">縮小不要なら再エンコードせず原本を置く</label>
+      </div>
+
+      <div class="card" id="appCard" hidden>
+        <h2>アプリ</h2>
+        <label class="c"><input type="checkbox" name="autoStart">Windows にサインインしたとき自動で起動する (トレイに常駐)</label>
+      </div>
+
+      <div class="row">
+        <button class="btn" id="btnSave" type="button">保存</button>
+        <button class="btn sec" id="btnReload" type="button">読み直す</button>
+        <button class="btn" id="btnRestart" type="button" hidden>再起動して反映</button>
+        <span class="muted" id="cfgPath"></span>
+      </div>
+      <div class="msg" id="saveMsg"></div>
+    </form>
+  </section>
+
+  <!-- ================= 表紙 ================= -->
+  <section class="tab" id="tab-covers">
+    <div class="card">
+      <h2>表紙の生成</h2>
+      <div class="row">
+        <button class="btn" id="covStale">不足分 / 古いものを生成</button>
+        <button class="btn sec" id="covForce">すべて作り直す</button>
+        <button class="btn sec" id="covDry">ドライラン (何が作られるか確認)</button>
+        <button class="btn danger" id="covCancel" disabled>中断</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <label class="f" style="flex:1 1 260px">絞り込み (相対パスに含む文字列)<input type="text" id="covFilter" placeholder="例: SeriesA"></label>
+      </div>
+      <div style="margin-top:12px">
+        <progress id="covProg" value="0" max="1"></progress>
+        <div class="row muted" id="covStat">待機中</div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>結果 (スキップは表示しません)</h2>
+      <div class="events" id="covEvents"></div>
+    </div>
+  </section>
+
+  <!-- ================= ログ ================= -->
+  <section class="tab" id="tab-log">
+    <div class="card">
+      <div class="row" style="margin-bottom:8px"><button class="btn sec" id="btnLogReload">更新</button><span class="muted">直近 500 行 (メモリ上。ファイルには書きません)</span></div>
+      <div class="log" id="logBox"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  'use strict';
+  // ---- トークン: ?token= で受け取り sessionStorage に保存、URL からは消す (アドレスバーに残さない)
+  const url = new URL(location.href);
+  let token = url.searchParams.get('token');
+  if (token) {
+    try { sessionStorage.setItem('libAdminToken', token); } catch (e) {}
+    url.searchParams.delete('token');
+    history.replaceState(null, '', url.pathname + url.search + url.hash);
+  } else {
+    try { token = sessionStorage.getItem('libAdminToken'); } catch (e) {}
+  }
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmtTime = (iso) => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleString(); };
+  const showMsg = (el, kind, text) => { el.className = 'msg show ' + kind; el.textContent = text; };
+  const hideMsg = (el) => { el.className = 'msg'; };
+
+  async function api(path, opts = {}) {
+    const headers = Object.assign({ 'X-Admin-Token': token || '' }, opts.headers || {});
+    if (opts.body && typeof opts.body !== 'string') { opts.body = JSON.stringify(opts.body); headers['Content-Type'] = 'application/json'; }
+    const res = await fetch('../__admin' + path, Object.assign({}, opts, { headers, cache: 'no-store' }));
+    let data = null;
+    try { data = await res.json(); } catch (e) {}
+    if (!res.ok) throw new Error((data && data.error) || (res.status + ' ' + res.statusText));
+    return data;
+  }
+
+  // ---- タブ
+  $$('nav button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+  function showTab(name) {
+    $$('nav button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+    $$('section.tab').forEach((s) => s.classList.toggle('active', s.id === 'tab-' + name));
+    history.replaceState(null, '', '#' + name);
+    if (name === 'log') loadLog();
+    if (name === 'settings') loadConfig();
+  }
+  if (location.hash && $('#tab-' + location.hash.slice(1))) showTab(location.hash.slice(1));
+
+  if (!token) {
+    showMsg($('#tokenMsg'), 'warn', 'トークンがありません。サーバーのログに出ている「設定画面」の URL (…/admin.html?token=…) から開いてください。トレイアプリなら「設定」メニューから開けます。');
+  }
+
+  // ---- 状態
+  let status = null;
+  async function loadStatus() {
+    try {
+      status = await api('/status');
+    } catch (e) {
+      $('#hdrState').textContent = '接続できません: ' + e.message;
+      return;
+    }
+    const s = status;
+    $('#hdrState').textContent = (s.configured ? (s.rootExists ? '稼働中' : 'root フォルダが見つかりません') : 'root 未設定') + ' · v' + s.version;
+    $('#urls').innerHTML = s.urls.map((u, i) => {
+      const v = u + 'comic-viewer.html';
+      const lan = i > 0;
+      return `<li><a href="${esc(v)}" target="_blank" rel="noopener">${esc(v)}</a>` +
+        (lan ? `<details><summary>QR</summary><span class="qr"><img alt="QR" src="../__admin/qr.png?url=${encodeURIComponent(v)}&token=${encodeURIComponent(token || '')}"></span></details>` : '<span class="pill">この PC</span>') +
+        `</li>`;
+    }).join('');
+    const idx = s.index;
+    $('#libInfo').innerHTML =
+      kv('root', s.configured ? esc(s.root) + (s.rootExists ? '' : ' <span class="pill ng">見つかりません</span>') : '<span class="pill warn">未設定 — 「設定」タブで選んでください</span>') +
+      kv('表示名', esc(s.label)) +
+      kv('ファイル数', idx ? `${idx.count} 件 (表紙あり ${idx.covers} 件)${idx.truncated ? ' <span class="pill warn">上限で打ち切り</span>' : ''}` : '(索引はまだありません)') +
+      kv('索引の更新', idx ? esc(fmtTime(idx.generated)) + ` <span class="muted">(${idx.buildMs} ms)</span>` : '') +
+      (idx && idx.warnings.length ? kv('警告', idx.warnings.map(esc).join('<br>')) : '') +
+      kv('表紙の自動生成', coversLine(s.covers));
+    $('#srvInfo').innerHTML =
+      kv('起動', esc(fmtTime(s.startedAt))) +
+      kv('待ち受け', `${esc(s.bind === 'lan' ? 'LAN' : 'localhost')} : ${s.port}` + (s.restartRequired ? ' <span class="pill warn">設定が変更されています — 再起動で反映</span>' : '')) +
+      kv('設定ファイル', `<span class="mono">${esc(s.configPath)}</span>` + (s.configExists ? '' : ' <span class="pill">未作成 (保存すると作られます)</span>')) +
+      kv('データフォルダ', `<span class="mono">${esc(s.dataDir)}</span>`) +
+      kv('実行形態', s.app.isApp ? 'トレイアプリ' : 'ヘッドレス / サービス');
+    $('#btnRestart').hidden = !(s.restartRequired && s.app.canRestart);
+    $('#appCard').hidden = !s.app.isApp;
+    $('#btnPick').hidden = !s.app.isApp;
+    renderCoverState(s.covers);
+  }
+  const kv = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
+  const coversLine = (c) => c.running ? `実行中 (${esc(c.phase)}) ${c.index}/${c.total}` : (c.lastSummary ? `前回: 生成 ${c.lastSummary.made} / スキップ ${c.lastSummary.skipped} / 失敗 ${c.lastSummary.failed}` : '待機中') + (c.queueLength ? ` · 監視キュー ${c.queueLength} 件` : '');
+
+  $('#btnRebuild').addEventListener('click', async () => {
+    $('#rebuildMsg').textContent = '再構築中...';
+    try { const r = await api('/index/rebuild', { method: 'POST' }); $('#rebuildMsg').textContent = `${r.count} 件 (${r.ms} ms)`; loadStatus(); }
+    catch (e) { $('#rebuildMsg').textContent = e.message; }
+  });
+
+  // ---- 設定
+  const form = $('#cfgForm');
+  let hasPass = false;
+  function setVal(name, v) { const el = form.elements[name]; if (!el) return; if (el.type === 'checkbox') el.checked = !!v; else el.value = v ?? ''; }
+  function getVal(name) { const el = form.elements[name]; return el.type === 'checkbox' ? el.checked : el.value; }
+  const num = (name) => { const v = parseInt(getVal(name), 10); return isNaN(v) ? 0 : v; };
+  const list = (name) => String(getVal(name)).split(',').map((s) => s.trim().replace(/^\./, '').toLowerCase()).filter(Boolean);
+
+  async function loadConfig() {
+    hideMsg($('#saveMsg'));
+    let r;
+    try { r = await api('/config'); } catch (e) { showMsg($('#saveMsg'), 'ng', e.message); return; }
+    const c = r.config;
+    hasPass = !!r.hasPass;
+    setVal('root', c.root); setVal('label', c.label); setVal('exts', c.exts.join(', '));
+    setVal('maxEntries', c.maxEntries); setVal('maxDepth', c.maxDepth); setVal('followSymlinks', c.followSymlinks);
+    setVal('port', c.port); setVal('bind', c.bind); setVal('coi', c.coi);
+    setVal('authUser', c.auth ? c.auth.user : ''); setVal('authPass', ''); setVal('authRealm', c.auth ? c.auth.realm : '');
+    form.elements.authPass.placeholder = hasPass ? '(変更しない場合は空のまま)' : '';
+    setVal('coversAuto', c.covers.auto); setVal('coversFormat', c.covers.format); setVal('coversQuality', c.covers.quality);
+    setVal('coversMaxWidth', c.covers.maxWidth); setVal('coversMaxHeight', c.covers.maxHeight); setVal('coversSort', c.covers.sort);
+    setVal('coversEpubCover', c.covers.epubCover); setVal('coversPdfDpi', c.covers.pdfDpi); setVal('coversMatchMtime', c.covers.matchMtime);
+    setVal('coversPassthrough', c.covers.passthrough); setVal('coverSuffix', c.coverSuffix); setVal('coverExts', c.coverExts.join(', '));
+    setVal('autoStart', status && status.app.autoStart);
+    $('#cfgPath').textContent = r.configPath;
+  }
+  function collectConfig() {
+    const user = String(getVal('authUser')).trim();
+    return {
+      root: String(getVal('root')).trim(), label: getVal('label'), exts: list('exts'),
+      maxEntries: num('maxEntries'), maxDepth: num('maxDepth'), followSymlinks: getVal('followSymlinks'),
+      port: num('port'), bind: getVal('bind'), coi: getVal('coi'),
+      auth: user ? { user, pass: getVal('authPass'), realm: getVal('authRealm') || 'Library' } : null,
+      coverSuffix: getVal('coverSuffix'), coverExts: list('coverExts'),
+      covers: {
+        auto: getVal('coversAuto'), format: getVal('coversFormat'), quality: num('coversQuality'),
+        maxWidth: num('coversMaxWidth'), maxHeight: num('coversMaxHeight'), sort: getVal('coversSort'),
+        epubCover: getVal('coversEpubCover'), pdfDpi: num('coversPdfDpi'), matchMtime: getVal('coversMatchMtime'),
+        passthrough: getVal('coversPassthrough'),
+      },
+      autoStart: getVal('autoStart'),
+    };
+  }
+  $('#btnSave').addEventListener('click', async () => {
+    hideMsg($('#saveMsg'));
+    const cfg = collectConfig();
+    if (cfg.auth && !cfg.auth.pass && !hasPass) { showMsg($('#saveMsg'), 'ng', 'パスワードを入力してください'); return; }
+    $('#btnSave').disabled = true;
+    try {
+      const r = await api('/config', { method: 'POST', body: { config: cfg } });
+      if (status && status.app.isApp && status.app.autoStart !== null && status.app.autoStart !== cfg.autoStart) {
+        await api('/autostart', { method: 'POST', body: { enabled: cfg.autoStart } });
+      }
+      let text = '保存しました。';
+      if (r.restartRequired) text += status && status.app.canRestart ? ' ポート / 待ち受けの変更は「再起動して反映」を押すと有効になります。' : ' ポート / 待ち受けの変更はサーバーの再起動後に有効になります。';
+      showMsg($('#saveMsg'), r.restartRequired ? 'warn' : 'ok', text);
+      await loadStatus();
+      await loadConfig();
+    } catch (e) {
+      showMsg($('#saveMsg'), 'ng', e.message);
+    } finally {
+      $('#btnSave').disabled = false;
+    }
+  });
+  $('#btnReload').addEventListener('click', loadConfig);
+  $('#btnPick').addEventListener('click', async () => {
+    try { const r = await api('/pick-folder', { method: 'POST' }); if (r.path) setVal('root', r.path); }
+    catch (e) { showMsg($('#saveMsg'), 'ng', e.message); }
+  });
+  $('#btnRestart').addEventListener('click', async () => {
+    showMsg($('#saveMsg'), 'warn', '再起動しています... 新しいポートの場合はウィンドウが自動で移動します。');
+    try { await api('/restart', { method: 'POST' }); } catch (e) { showMsg($('#saveMsg'), 'ng', e.message); }
+  });
+
+  // ---- 表紙
+  function renderCoverState(c) {
+    $('#covProg').max = Math.max(1, c.total || 1);
+    $('#covProg').value = c.running ? c.index : (c.total || 1);
+    $('#covCancel').disabled = !c.running;
+    ['covStale', 'covForce', 'covDry'].forEach((id) => { $('#' + id).disabled = c.running; });
+    let text;
+    if (c.running) text = `実行中 (${c.phase}) ${c.index} / ${c.total} — 生成 ${c.made} / スキップ ${c.skipped} / 失敗 ${c.failed}` + (c.current ? ` — ${c.current}` : '');
+    else if (c.lastError) text = '中断 / エラー: ' + c.lastError;
+    else if (c.lastSummary) text = `完了: 生成 ${c.lastSummary.made} / スキップ ${c.lastSummary.skipped} / 失敗 ${c.lastSummary.failed} (${(c.lastSummary.elapsed || '').replace(/^00:/, '')})` + (c.lastSummary.cancelled ? ' [中断]' : '');
+    else text = '待機中';
+    if (c.queueLength) text += ` · 監視キュー ${c.queueLength} 件`;
+    $('#covStat').textContent = text;
+    if (c.recent && !$('#covEvents').dataset.live) {
+      $('#covEvents').innerHTML = '';
+      c.recent.forEach(appendEvent);
+      $('#covEvents').dataset.live = '1';
+    }
+  }
+  function appendEvent(ev) {
+    const box = $('#covEvents');
+    const d = document.createElement('div');
+    d.className = ev.outcome;
+    const tag = { made: '生成', remade: '再生成', failed: 'NG', dryRun: 'dry', skipped: 'skip' }[String(ev.outcome).charAt(0).toLowerCase() + String(ev.outcome).slice(1)] || ev.outcome;
+    d.textContent = `[${tag}] ${ev.relPath} → ${ev.message}` + (ev.source ? `  (${ev.source})` : '');
+    box.appendChild(d);
+    while (box.childElementCount > 300) box.removeChild(box.firstChild);
+    box.scrollTop = box.scrollHeight;
+  }
+  async function runCovers(mode, dryRun) {
+    $('#covEvents').innerHTML = '';
+    try { await api('/covers/run', { method: 'POST', body: { mode, dryRun, filter: $('#covFilter').value } }); }
+    catch (e) { $('#covStat').textContent = e.message; }
+  }
+  $('#covStale').addEventListener('click', () => runCovers('stale', false));
+  $('#covForce').addEventListener('click', () => { if (confirm('既存の表紙をすべて作り直します。よろしいですか？')) runCovers('force', false); });
+  $('#covDry').addEventListener('click', () => runCovers('stale', true));
+  $('#covCancel').addEventListener('click', () => api('/covers/cancel', { method: 'POST' }).catch(() => {}));
+
+  // ---- SSE (表紙の進捗 + ログ)
+  let es = null;
+  function connectEvents() {
+    if (!token || es) return;
+    es = new EventSource('../__admin/covers/events?token=' + encodeURIComponent(token));
+    es.addEventListener('state', (e) => { renderCoverState(JSON.parse(e.data)); });
+    es.addEventListener('cover', (e) => {
+      const ev = JSON.parse(e.data);
+      if (ev.outcome !== 'skipped') appendEvent(ev);
+      if (ev.total) { $('#covProg').max = ev.total; $('#covProg').value = ev.index; }
+    });
+    es.addEventListener('log', (e) => { if ($('#tab-log').classList.contains('active')) appendLog(JSON.parse(e.data)); });
+    es.onerror = () => { es.close(); es = null; setTimeout(connectEvents, 3000); };
+  }
+
+  // ---- ログ
+  const lvl = { trace: 'dbg', debug: 'dbg', information: 'info', warning: 'warn', error: 'err', critical: 'crit' };
+  function appendLog(l) {
+    const box = $('#logBox');
+    const d = document.createElement('div');
+    d.className = lvl[String(l.level).toLowerCase()] || 'info';
+    d.textContent = `${fmtTime(l.time)} [${l.category}] ${l.message}` + (l.exception ? '\n' + l.exception : '');
+    box.appendChild(d);
+    while (box.childElementCount > 600) box.removeChild(box.firstChild);
+    box.scrollTop = box.scrollHeight;
+  }
+  async function loadLog() {
+    try { const r = await api('/log'); $('#logBox').innerHTML = ''; r.lines.forEach(appendLog); }
+    catch (e) { $('#logBox').textContent = e.message; }
+  }
+  $('#btnLogReload').addEventListener('click', loadLog);
+
+  // ---- 起動
+  loadStatus().then(() => { if ($('#tab-settings').classList.contains('active')) loadConfig(); });
+  connectEvents();
+  setInterval(loadStatus, 15000);
+})();
+</script>
+</body>
+</html>

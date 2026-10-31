@@ -13,6 +13,7 @@
 - `library.htaccess.example` — Basic 認証のサンプル (Apache / nginx)
 - `tools/generate_coverimages.php` — ライブラリの表紙画像 (サイドカー) を一括生成する CLI 専用スクリプト (詳細は「表紙生成ツール」)
 - `tools/generate_coverimages.py` — 同じものの Python 版 (Windows ではこちらの方が導入が楽。詳細は「Python 版」)
+- `windows/` — **Windows アプリ版ライブラリサーバー** (.NET 8。`library.php` 互換 API + 表紙自動生成 + トレイ常駐 + WebView2 ウィンドウ。詳細は「windows/」セクションと `windows/README.md`)
 - `vendor/` — ベンダー化された外部ライブラリ (CDN不要)
   - `pdfjs/pdf.min.mjs` `pdf.worker.min.mjs` — PDF.js v4.9.155
   - `pdfjs/cmaps/*.bcmap` — CJK (日中韓) 用の CMap データ (169 ファイル、~1.5MB)。フォント未埋め込み CJK PDF の文字解決に使用。on-demand ロード (PRECACHE 非対象 / 初回ネット使用時に `sw.js` の fetch ハンドラが自動キャッシュ)
@@ -658,6 +659,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
   - リストのアイコンは表紙があれば 🖼 / なければ 📄。ホバーで見られることの目印を兼ねる。**小さい絵文字どうしでは区別が付かない**ので、CSS で差を付けている: 表紙あり = `.lib-icon.cover` (青リング + 濃紺のチップ)、表紙なし = `.lib-icon.plain` (`grayscale(1)` + `opacity: 0.45`)。チップは 20×18px に収めてあり行の高さは変わらない
 - **利用可否の判定**: 起動時の probe はしない (Basic 認証のダイアログが起動直後に出てしまうため)。ヘッダーの `Library` ボタンは常時表示し、初回クリックで 404 / 503 / **JSON でないレスポンス** (PHP が動いていないサーバーが `library.php` のソースをそのまま 200 で返すケース) を踏んだら `libraryUnavailableAt` を localStorage に記録して24時間だけ UI を隠す。後から設置されれば自動的に復活する。dropzone の導線は「一度つながった実績がある」(`libraryAvailable`) ときだけ出す
 - **`?lib=<相対パス>`**: 起動時に自動オープン。**URL には書き戻さない** — `?lib=` が残っていると ESC 2回 (`location.reload()`) でファイルを閉じたつもりが再び開いてしまうため、`?share=1` と同様に `history.replaceState` で即座に取り除く。launchQueue / share_target が先に走った場合は `window.__libSkipAuto` で抑止する
+- **`?open=<同一オリジンの相対URL>`**: `?lib=` の隣にある自動オープン。Windows 版トレイアプリ (`windows/`) がファイル関連付けで受け取った root 外のファイルを、ループバック限定の一時 URL (`/__local/<token>`) 経由で開くためのもの。`new URL(target, location.href)` で解決して**他オリジンなら拒否**、`fetch` → `File` に包んで `libOpenDownloaded` に渡す (名前は `&name=` か `Content-Disposition` の `filename*`)。`?lib=` と同じく処理後すぐ URL から消し、`__libSkipAuto` を尊重する
 - **`O` キー**: ファイル未読み込みでも使うので、keydown ハンドラの `totalPages === 0` / `!pdfDoc` ガードより**前**に置く。モーダルが開いている間は Escape で閉じるだけにして、絞り込み入力を邪魔しない
 
 #### 仕様上の限界 (ドキュメントに明記済み)
@@ -675,12 +677,13 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 ## PWA / Service Worker
 
 ### `sw.js`
-- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v53`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v54`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
 - **`SHARE_CACHE`**: `share-stash-v1` — Web Share Target で受信したファイルを一時保存する専用キャッシュ (activate 時も削除対象外)
 - **`PRECACHE_URLS`**: インストール時に一括取得するリソース (HTML 2種、vendor/ 配下全ファイル、manifest、icons)。`fetch(url, { cache: 'reload' })` でブラウザキャッシュをバイパス
 - **`activate`**: `CACHE_NAME` と `SHARE_CACHE` 以外の旧キャッシュを削除し `self.clients.claim()`
 - **fetch 戦略**: 同一オリジン GET に対してのみ cache-first。キャッシュヒット時も `withCoiHeaders()` で COOP/COEP/CORP ヘッダーを付与してから返す。キャッシュミスはネットワーク取得＋成功時は自動キャッシュ
 - **`library.php` は除外 (必須)**: fetch ハンドラ冒頭で `return` して素通しする。`ignoreSearch: true` のせいで `?action=tree` と `?action=file` が同一キーに衝突し、かつ開いた本が全部キャッシュに溜まるため (詳細は「ライブラリ参照機能」)
+- **`/__` 始まりのパスも除外**: Windows 版サーバー (`windows/`) の管理画面 `/__app/`・管理 API `/__admin/`・一時ファイル配信 `/__local/` が対象。管理画面は exe の更新で中身が変わる (CACHE_NAME のバンプを伴わない) し、`/__local/` は開いた本そのもの
 - **`handleShareTarget(request)`**: `POST` + `comic-viewer.html` 宛リクエストを傍受。`formData.getAll('file')` したファイルを `SHARE_CACHE` に `/__share__/{timestamp}-{i}` キーで保存、meta.json にファイル名/MIME/サイズを記録、`./comic-viewer.html?share=1` へ 303 リダイレクト
 - **オフライン時**: キャッシュされていない同一オリジンリソースは 503 "Offline" を返す
 - **外部オリジン**: `respondWith` しないのでブラウザのデフォルト挙動 (PWAでは通常発生しない)
@@ -716,6 +719,29 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - ドキュメント型 + 右下に `Firefly_Gemini_icon_776910.png` を白キーで透過合成
 - maskable 版は safe zone (円形クロップ) を考慮して内側に配置
 
+## windows/ (Windows アプリ版ライブラリサーバー)
+`library.php` を PHP 不要の Windows アプリに置き換えたもの。.NET 8 (C#)。詳細な使い方は `windows/README.md`。
+
+### 構成
+- `windows/src/LibraryServer.Core` — 設定 (`LibraryConfig` = `library.config.json`、キーは PHP 版と同名)、索引 (`LibraryIndexBuilder` = `lib_walk` 相当)、`BasicAuth`、表紙生成 (`CoverGenerator` / `EpubAnalyzer` / `ArchiveSource` / `PdfRenderer` / `ImageOps`)。UI / HTTP 非依存
+- `windows/src/LibraryServer.Server` — Kestrel ホスト (`LibraryHost`)、`/library.php` 互換 API (`LibraryApi`)、管理 API (`AdminApi`、`/__admin/*`)、管理画面 (`wwwroot/__app/admin.html` / `app.html`)、表紙の自動生成 (`CoverAutoService`)、表紙 CLI (`CoverCli`)
+- `windows/src/LibraryServer.Host` — ヘッドレス exe (`--headless` / `--service` / `covers` サブコマンド)。Program.cs だけ
+- `windows/src/LibraryServer.App` — トレイアプリ (WinForms `NotifyIcon` + WebView2 1 枚)。UI は全部 HTML (`app.html` がコミック / PDF / 設定の iframe を切り替える)
+- `windows/tests/LibraryServer.Tests` — xunit。API 互換 (TestServer)、パス検証、表紙生成 (PDF は手書きの最小 PDF を PDFium で描く)
+
+### 守ること
+- **API のルートは `/library.php` のまま**。`LIBRARY_API` 定数・`sw.js` の素通し判定を無改修で使うため。レスポンスの形 (`tree` の `{path,size,mtime,cover?}`、`file` の Range / `Content-Disposition`、`cover` の ETag / 304、未設定時の 503) は PHP 版に合わせてあり、`ApiTests` が固定している
+- **`file` / `cover` の `path` は索引 (`IndexSnapshot.ByKey`) にある物しか解決しない**。文字列から `File.Open` しないことで `..` / ドット始まり / 対象外拡張子に加え、Windows 固有の 8.3 短縮名・代替データストリーム・デバイス名 (`CON`) をまとめて 404 にしている。キーは NFC + 大小無視
+- **ビューア一式はリポジトリのルートから埋め込む** (`LibraryServer.Server.csproj` の `EmbeddedResource ... Link="wwwroot\..."` + `ManifestEmbeddedFileProvider`)。`docs/webapp/` のようなコピーは作らない。exe の隣に `wwwroot/` があればそちらが優先 (開発用)
+- **管理画面・管理 API・ローカルファイル配信は `/__` 始まり** (`/__app/` `/__admin/` `/__local/`)。`sw.js` は `/__[a-z]` を素通しする (v54 で追加)。以前 `admin.html` をルートに置いていたとき、SW の `ignoreSearch` キャッシュで**古い管理画面が exe を更新しても出続けた**ため。管理 API はループバック + 起動時乱数トークン (`X-Admin-Token` / `?token=`) が必須、`/__app/` `/__local/` はループバック以外 404
+- **`?open=<同一オリジン相対URL>`** を両ビューアの `?lib=` の隣に追加した (トレイアプリのファイル関連付けで root 外のファイルを `/__local/<token>` 経由で開く)。他オリジンは拒否、処理後は URL から消す。片方を直したらもう片方にも当てること
+- **トレイアプリは `Application.Run` の前に `WindowsFormsSynchronizationContext` を明示的にインストールする** (`TrayApp` コンストラクタ)。無いと `await` の継続がスレッドプールに流れ、`MainForm` がメッセージループの無いスレッドに作られて「応答なし」になる (実測。ウィンドウは出るが `Shown` が来ない)
+- **`WebApplicationOptions.ApplicationName` は Server アセンブリ名に固定**。既定 (エントリアセンブリ名) だと Hosting がその名前の HostingStartup アセンブリを探して `crit` ログを出す
+- **`[assembly: SupportedOSPlatform("windows")]` を全プロジェクトに置く** (PDFtoImage の CA1416 を黙らせる。Core だけに置くと参照側で警告が数百出る)
+- **テストの `ApiFixture` は `Covers.Auto = false`**。既定 true のままだと起動時の自動生成がテスト用フォルダに表紙を書いて「表紙無しは 404」のテストが壊れる
+- 配布は `dotnet publish -c Release -r win-x64 --self-contained -p:PublishSingleFile=true` (`Directory.Build.props` が Release で圧縮 + `libSkiaSharp.pdb` (89MB) 等を除外。App 約 90MB / Host 約 60MB)。`.github/workflows/windows-build.yml` がタグ `win-v*` で Release に zip を付ける
+- 表紙の決め方・命名・スキップ条件は `tools/generate_coverimages.{php,py}` と揃える (3 実装目)。`CoverGeneratorTests` が規則を固定している
+
 ## docs/webapp/
 GitHub Pages 配信用の同期コピー。ルートと同じ構成 (HTML / sw.js / manifest / vendor / icons) を持つ。
 ルートに変更を加えたら docs/webapp/ にも同期が必要。**HTML の中身は完全に同一なので、単純にファイルをコピーすればよい** (差分を再適用する必要はない):
@@ -723,7 +749,7 @@ GitHub Pages 配信用の同期コピー。ルートと同じ構成 (HTML / sw.j
 - Google Analytics の gtag ブロックは**リポジトリには含めない**。`.github/workflows/jekyll-gh-pages.yml` が Pages のビルド時に `<head>` へ注入する (既に `googletagmanager.com` / `gtag(` があればスキップするガード付き)。HTML に手で書き足さないこと
 - gtag が残っているのは `v1/` / `docs/webapp/v1/` の旧版スナップショットだけ
 
-`library.php` / `library.config*.php` / `tools/` は **docs/webapp/ にコピーしない**。GitHub Pages では PHP が動かず、置いてもソースがそのまま配信されるだけ。置かなければ 404 になり、クライアント側が「未設置」と判定して Library の UI を自動的に隠す。
+`library.php` / `library.config*.php` / `tools/` / `windows/` は **docs/webapp/ にコピーしない**。GitHub Pages では PHP が動かず、置いてもソースがそのまま配信されるだけ。置かなければ 404 になり、クライアント側が「未設置」と判定して Library の UI を自動的に隠す。
 
 ## 開発規約
 - Vanilla JS のみ、フレームワーク不使用

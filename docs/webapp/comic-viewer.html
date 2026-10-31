@@ -5874,6 +5874,36 @@ document.getElementById('libReload').addEventListener('click', async () => {
   } catch (err) { showToast(err.message, 4000); }
 });
 
+// ---- ?open=<同一オリジンの相対URL> による自動オープン ----
+// Windows 版トレイアプリ (windows/) がファイル関連付けで受け取った root 外のファイルを、
+// ループバック限定の一時 URL (/__local/<token>) 経由で開くためのもの。他オリジンの URL は受け付けない。
+// ?lib= と同じく、処理後すぐ URL から取り除く (ESC 2回で閉じたあと再び開かないように)。
+(async () => {
+  const sp = new URLSearchParams(location.search);
+  const target = sp.get('open');
+  if (!target || window.__libSkipAuto) return;
+  history.replaceState(null, '', location.pathname);
+  let u;
+  try { u = new URL(target, location.href); } catch (e) { return; }
+  if (u.origin !== location.origin) { showToast('open= には同一オリジンの URL だけ指定できます', 4000); return; }
+  try {
+    const res = await fetch(u.href, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    let name = sp.get('name') || '';
+    if (!name) {
+      const m = /filename\*=UTF-8''([^;]+)/i.exec(res.headers.get('Content-Disposition') || '');
+      if (m) { try { name = decodeURIComponent(m[1]); } catch (e) {} }
+    }
+    if (!name) name = decodeURIComponent(u.pathname.split('/').pop() || 'file');
+    const lastModified = Date.parse(res.headers.get('Last-Modified') || '') || Date.now();
+    await libOpenDownloaded(new File([blob], name, { lastModified }));
+  } catch (err) {
+    console.error('[open]', err);
+    showToast(`ファイルを開けません: ${err.message}`, 4000);
+  }
+})();
+
 // ---- ?lib=<相対パス> による自動オープン ----
 // URL には書き戻さない: ?lib= が残っていると ESC 2回 (location.reload) でファイルを
 // 閉じたつもりが再び開いてしまうため、share=1 と同様に処理後すぐ URL から取り除く。

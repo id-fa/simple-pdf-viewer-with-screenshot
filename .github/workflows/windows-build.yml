@@ -1,0 +1,51 @@
+# windows/ (Library Server for Windows) のビルド・テスト・配布物作成。
+# - push / PR で windows/ 以下が変わったらビルドとテスト
+# - タグ win-v* を push すると単一 exe を zip にして Release に添付
+name: Windows app
+
+on:
+  push:
+    branches: ["main"]
+    paths: ["windows/**", "comic-viewer.html", "pdf-viewer.html", "sw.js", "manifest.webmanifest", "vendor/**", "icons/**", ".github/workflows/windows-build.yml"]
+    tags: ["win-v*"]
+  pull_request:
+    paths: ["windows/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Test
+        working-directory: windows
+        run: dotnet test LibraryServer.sln -c Release --nologo
+
+      - name: Publish (single-file, self-contained)
+        working-directory: windows
+        run: |
+          dotnet publish src/LibraryServer.App/LibraryServer.App.csproj  -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o publish/LibraryServer --nologo
+          dotnet publish src/LibraryServer.Host/LibraryServer.Host.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o publish/LibraryServer --nologo
+          Copy-Item README.md publish/LibraryServer/README.md
+          Copy-Item ../LICENSE publish/LibraryServer/LICENSE
+          Compress-Archive -Path publish/LibraryServer/* -DestinationPath publish/LibraryServer-win-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LibraryServer-win-x64
+          path: windows/publish/LibraryServer-win-x64.zip
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/win-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: windows/publish/LibraryServer-win-x64.zip
+          generate_release_notes: true

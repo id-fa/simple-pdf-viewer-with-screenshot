@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pdf-viewer-v53';
+const CACHE_NAME = 'pdf-viewer-v54';
 const SHARE_CACHE = 'share-stash-v1';
 const PRECACHE_URLS = [
   './',
@@ -93,6 +93,9 @@ self.addEventListener('fetch', (event) => {
   //      library.php という同一キーに衝突する (一覧を要求したのに本の中身が返る)
   //   2. 開いた本が丸ごと Cache Storage に永久保存されて容量が際限なく増える
   if (url.pathname.endsWith('/library.php')) return;
+  // Windows 版サーバー (windows/) の管理画面・管理 API・ローカルファイル配信 (/__app/ /__admin/ /__local/) も同様に素通し。
+  // 管理画面は exe の更新で中身が変わる (CACHE_NAME のバンプを伴わない) し、/__local/ は開いた本そのもの
+  if (/\/__[a-z]/.test(url.pathname)) return;
 
   event.respondWith((async () => {
     const cache = await caches.open(CACHE_NAME);

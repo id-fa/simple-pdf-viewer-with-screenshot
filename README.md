@@ -387,6 +387,12 @@ python tools/generate_coverimages.py --config=cover.json
 - しおりを有効にしていると、一覧に既読ページのバッジ (`p.42`) が出ます。しおりは「ファイル名 + サイズ」で識別するので、同じファイルをローカルから開いたときのしおりとそのまま共有されます / With bookmarks enabled, rows show a read-progress badge; bookmarks are keyed by name + size, so they are shared with the same file opened locally
 - 転送が途中で切れた場合は Range リクエストで受信済みの続きから再開します / Interrupted transfers resume from where they stopped via Range requests
 
+**Windows アプリ版 / Windows app (no PHP required)**
+
+Windows では PHP を入れなくても、`windows/` の **Library Server** (トレイ常駐の単一 exe) で同じことができます。`library.php` と同じ API を提供するのでビューア / PWA はそのまま使え、表紙画像は**自動生成**されます (PDF / EPUB / 書庫、外部コマンド不要)。設定はウィンドウ内の画面から行え、ウィンドウ内でそのまま読むこともできます。→ [windows/README.md](windows/README.md)
+
+On Windows you can skip PHP entirely: `windows/` contains **Library Server**, a single tray-resident executable that serves the same API as `library.php` (the viewer / PWA work unchanged), generates cover images automatically and has a built-in settings window and viewer. See [windows/README.md](windows/README.md).
+
 **制限事項 / Limitations**
 
 - 参照できるのは設定した `root` 以下だけです (シンボリックリンク経由の脱出も `realpath` で塞いでいます) / Only files under the configured `root` are reachable; symlink escapes are blocked via `realpath`
