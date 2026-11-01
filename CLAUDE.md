@@ -309,6 +309,15 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - `getScale()` の Fit 計算時: 90°/270° では幅と高さを入れ替えてフィット計算
 - 表示 (`renderView()`): レンダリング後に `rotateCanvas()` を適用
 - エクスポート (`exportPageCanvas()`): レンダリング後に `rotateCanvas()` を適用 → 見開き結合保存にも反映
+- **見開き結合回転 (`90° 2P` / `180° 2P` / `270° 2P`、両ビューア共通)**: Spread の 2 ページを **1 枚に繋げてから** 回す。縦持ちのタブレットで見開きを 90° 回して上下に積む用途
+  - プルダウンの値は `90s` / `180s` / `270s` (末尾 `s`)。`getRotation()` は `parseInt` なので角度はそのまま取れ、`isJoinedRotation()` (`value.endsWith('s')`) で結合かどうかを見る。**Single / Scroll / 見開きの単独ページ (表紙・余った最終ページ) では通常のページ単位回転として動く** (フォールバックに専用コード無し)
+  - `joinCanvases(a, b)` — 2 枚を隙間なく左右に繋げる (a が左、上端揃え)。高 DPI 描画の `style.width/height` も合算して引き継ぐ。b は a のピクセル密度に合わせて描く
+  - `renderView()` の `pages.length === 2 && isJoinedRotation()` 分岐: `getSpreadPages()` は表示順 (R2L なら [大, 小]) なのでそのまま左から繋げる → `rotateCanvas()`。`.spread-container` は作らず `.page-container` 1 つ + 2 段ラベル (`2-3` / `2-3 / 100`) にして見開きと同じ高さを保つ (`fitChrome()` の前提)。繋げる前のページ canvas と回転前の結合 canvas は画面に出さないので即 `releaseCanvasList()`
+  - `getScale()` の Fit: `forSpread && isJoinedRotation()` なら結合後の寸法 (幅 2W × 高さ H、**ページ間の隙間なし**) を 90°/270° で入れ替えて収める (`--spread-gap` は引かない)
+  - エクスポート: `exportSpreadCanvas(p1, p2)` に集約 (`saveCurrent` の見開き / `saveSpread` の非 Scroll)。通常はページごとに回してから繋ぎ、結合回転では回転前 (`exportPageCanvasRaw()`) を繋げてから 1 回だけ回す。`Save p{N}` (単ページ保存) はページ単位回転のまま
+  - pdf-viewer.html のテキストレイヤー: 結合前の画像と同じ大きさの `.text-layer-joined` 枠を `positionRotatedLayer()` で 1 回だけ回し、その中に各ページの `buildTextLayer(pn, scale, 0, 0, 0)` (回転 0) を左から並べる。`buildTextLayer` の第 5 引数 `deg` が回転の上書き
+  - comic-viewer.html: 両ページがアニメ画像のときは Play バッジが 2 つ付くので `.gif-badge + .gif-badge` で右にずらす
+- **`.hiddenCanvasElement` を非表示にする CSS (pdf-viewer.html)**: PDF.js の TextLayer が文字計測用に `<body>` 直下へ置く canvas。`pdf_viewer.css` を読んでいないのでインライン要素として約 21px の行ボックスを作り、Text を一度 ON にした後は Fit でビューアが画面いっぱいのときに縦スクロールの余地が残っていた (Single でも再現)。公式 CSS と同じ `display: none` を当てている
 
 ### 高品質縮小 (HQ モード)
 - **Pica.js** ベース (デフォルト): Lanczos3 フィルタ + 組み込み unsharp mask で高品質縮小

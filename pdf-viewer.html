@@ -211,6 +211,10 @@ body.seek-visible .toast { bottom: 60px; }
 .text-layer span::selection { background: rgba(0, 80, 255, 0.3); }
 .text-layer .highlight { background: rgba(255, 220, 0, 0.35); border-radius: 1px; }
 .text-layer .current-match { background: rgba(255, 120, 0, 0.55); }
+.text-layer-joined { position: absolute; left: 0; top: 0; z-index: 1; }
+/* PDF.js の TextLayer が文字計測用に body 直下へ置く canvas (pdf_viewer.css と同じ指定)。
+   指定が無いとインライン要素として 1 行分 (約 21px) の行ボックスを作り、Fit でビューアが画面いっぱいのときに縦スクロールの余地が残る */
+.hiddenCanvasElement { position: absolute; top: 0; left: 0; width: 0; height: 0; display: none; }
 
 /* Search bar */
 .search-bar { position: sticky; top: 49px; z-index: 99; background: #16213e; border-bottom: 1px solid #0f3460; padding: 6px 16px; display: none; align-items: center; gap: 8px; transition: top 0.3s; }
@@ -413,11 +417,14 @@ body.seek-visible .toast { bottom: 60px; }
       <option value="3">300%</option>
       <option value="fit" selected>Fit</option>
     </select>
-    <select id="rotateSelect" title="回転角度 / Rotation angle">
+    <select id="rotateSelect" title="回転角度 (2P = 見開きを1枚に繋げてから回転) / Rotation angle (2P = rotate the spread as one image)">
       <option value="0">0°</option>
       <option value="90">90°</option>
       <option value="180">180°</option>
       <option value="270">270°</option>
+      <option value="90s">90° 2P</option>
+      <option value="180s">180° 2P</option>
+      <option value="270s">270° 2P</option>
     </select>
     <div class="filter-wrap">
       <button id="filterBtn" title="色調補正フィルター / Color adjustment filters">Filter</button>
@@ -1549,6 +1556,30 @@ function rotateCanvas(srcCanvas) {
   return rc;
 }
 
+// 見開き結合回転 (rotateSelect の "90° 2P" 等、値の末尾が 's'): Spread の 2 ページを 1 枚に繋げてから回す。
+// 単ページ / Scroll / 見開きの単独ページ (表紙・余った最終ページ) では通常のページ単位回転として扱う
+// (角度は parseInt で同じ値が取れるので getRotation() はそのまま使える)
+function isJoinedRotation() { return rotateSelect.value.endsWith('s'); }
+
+// 2 つの canvas を隙間なく左右に繋げた canvas を返す (a が左、上端揃え)。
+// 高 DPI 描画の CSS サイズ (style.width/height) も合算して引き継ぐ。出力倍率が違う場合に備えて
+// b は a のピクセル密度に合わせて描く (エクスポート用の canvas は style が無いので等倍)
+function joinCanvases(a, b) {
+  const ca = canvasCssSize(a), cb = canvasCssSize(b);
+  const r = a.width / ca.width;
+  const out = document.createElement('canvas');
+  out.width = Math.round((ca.width + cb.width) * r);
+  out.height = Math.round(Math.max(ca.height, cb.height) * r);
+  if (a.style.width || b.style.width) {
+    out.style.width = (ca.width + cb.width) + 'px';
+    out.style.height = Math.max(ca.height, cb.height) + 'px';
+  }
+  const ctx = out.getContext('2d');
+  ctx.drawImage(a, 0, 0);
+  ctx.drawImage(b, a.width, 0, Math.round(cb.width * r), Math.round(cb.height * r));
+  return out;
+}
+
 // canvas の backing store を即時解放する (GC 待ちにせず GPU/canvas メモリを手放す)。
 // PWA standalone は canvas メモリ予算が厳しく、解放しないとページ送りで累積して
 // やがて canvas 確保に失敗し「黒画面」になるため、差し替え前に明示的に縮退させる。
@@ -1628,6 +1659,12 @@ function getScale(page, forSpread) {
     // その端数分だけはみ出して 1px の縦スクロールが残るので、切り上げた値を使う
     const headerH = isUIHidden() ? 0 : Math.ceil(header.getBoundingClientRect().height);
     const maxH = chrome.viewportH - headerH - chrome.vertical;
+    if (forSpread && isJoinedRotation()) {
+      // 見開き結合回転: 繋げた画像 (幅 2W × 高さ H、ページ間の隙間なし) を回したものが収まる倍率
+      const jw = isRotated ? vp.height : vp.width * 2;
+      const jh = isRotated ? vp.width * 2 : vp.height;
+      return Math.min(maxW / jw, maxH / jh, 3);
+    }
     const pageW = forSpread ? (maxW - chrome.spreadGap) / 2 : maxW;
     return Math.min(pageW / docW, maxH / docH, 3);
   }
@@ -1890,7 +1927,48 @@ async function renderView(num) {
     const oldCanvases = [...viewer.querySelectorAll('canvas')];
     const newNodes = [];
 
-    if (pages.length === 2) {
+    if (pages.length === 2 && isJoinedRotation()) {
+      // 見開き結合回転: 2 ページを 1 枚に繋げてから回す (pages は表示順なので左からそのまま並べる)。
+      // ラベルは通常の見開きと同じ 2 段構成にして表示エリアの高さを揃える (fitChrome() の前提)
+      const container = document.createElement('div');
+      container.className = 'page-container';
+      const firstPage = await pdfDoc.getPage(pages[0]);
+      const scale = getScale(firstPage, true);
+      const raws = [];
+      for (const pn of pages) raws.push(await renderPageToCanvas(pn, scale, true));
+      const cssSizes = raws.map(canvasCssSize);
+      const joined = joinCanvases(raws[0], raws[1]);
+      const joinedSize = canvasCssSize(joined);
+      const canvas = rotateCanvas(joined);
+      container.appendChild(canvas);
+      // 繋げる前のページ canvas と回転前の結合 canvas は画面に出さないので即解放する
+      releaseCanvasList(raws);
+      if (canvas !== joined) releaseCanvasList([joined]);
+      if (textMode) {
+        // 回転前の結合画像と同じ大きさの枠を 1 回だけ回し、その中に各ページのテキストレイヤーを回転なしで並べる
+        const wrap = document.createElement('div');
+        wrap.className = 'text-layer-joined';
+        wrap.style.width = joinedSize.width + 'px';
+        wrap.style.height = joinedSize.height + 'px';
+        positionRotatedLayer(wrap, getRotation(), joinedSize.width, joinedSize.height);
+        let x = 0;
+        for (let i = 0; i < pages.length; i++) {
+          const tl = await buildTextLayer(pages[i], scale, 0, 0, 0);
+          if (tl) { tl.style.left = x + 'px'; wrap.appendChild(tl); }
+          x += cssSizes[i].width;
+        }
+        container.appendChild(wrap);
+      }
+      const sortedPages = [...pages].sort((a, b) => a - b);
+      const label = document.createElement('div');
+      label.className = 'page-label';
+      label.textContent = `${sortedPages[0]}-${sortedPages[1]}`;
+      container.appendChild(label);
+      const overallLabel = document.createElement('div');
+      overallLabel.className = 'spread-label';
+      overallLabel.textContent = `${sortedPages[0]}-${sortedPages[1]} / ${totalPages}`;
+      newNodes.push(container, overallLabel);
+    } else if (pages.length === 2) {
       // Spread view - two pages
       const spreadWrap = document.createElement('div');
       spreadWrap.className = 'spread-container';
@@ -2124,9 +2202,22 @@ function saveCanvas(canvas, name) {
   }, mime, quality);
 }
 
+// エクスポート用の回転前 canvas (固定 2x スケール)
+async function exportPageCanvasRaw(pageNum) {
+  return renderPageToCanvas(pageNum, 2);
+}
+
 async function exportPageCanvas(pageNum) {
-  const canvas = await renderPageToCanvas(pageNum, 2);
-  return rotateCanvas(canvas);
+  return rotateCanvas(await exportPageCanvasRaw(pageNum));
+}
+
+// 見開き (p1 < p2) を 1 枚に結合したエクスポート用 canvas。綴じ方向に従って並べる。
+// 回転は通常はページごとに掛けてから繋ぎ、見開き結合回転 ("90° 2P" 等) では繋げた後に 1 回だけ掛ける
+async function exportSpreadCanvas(p1, p2) {
+  const joined = isJoinedRotation();
+  const [c1, c2] = await Promise.all([p1, p2].map(p => joined ? exportPageCanvasRaw(p) : exportPageCanvas(p)));
+  const merged = isR2L() ? joinCanvases(c2, c1) : joinCanvases(c1, c2);
+  return joined ? rotateCanvas(merged) : merged;
 }
 
 async function saveCurrent() {
@@ -2136,20 +2227,7 @@ async function saveCurrent() {
   if (pages.length === 2) {
     // In spread view, save both pages as a merged image
     const sorted = [...pages].sort((a, b) => a - b);
-    const [c1, c2] = await Promise.all(sorted.map(p => exportPageCanvas(p)));
-    const w = c1.width + c2.width;
-    const h = Math.max(c1.height, c2.height);
-    const merged = document.createElement('canvas');
-    merged.width = w;
-    merged.height = h;
-    const ctx = merged.getContext('2d');
-    if (isR2L()) {
-      ctx.drawImage(c2, 0, 0);
-      ctx.drawImage(c1, c2.width, 0);
-    } else {
-      ctx.drawImage(c1, 0, 0);
-      ctx.drawImage(c2, c1.width, 0);
-    }
+    const merged = await exportSpreadCanvas(sorted[0], sorted[1]);
     const p1 = String(sorted[0]).padStart(pad, '0');
     const p2 = String(sorted[1]).padStart(pad, '0');
     saveCanvas(merged, `${baseName()}_${p1}-${p2}`);
@@ -2185,29 +2263,20 @@ async function saveSpread() {
     p2 = sorted[1];
   }
 
-  const [c1, c2] = await Promise.all([exportPageCanvas(p1), exportPageCanvas(p2)]);
-  const merged = document.createElement('canvas');
-  const ctx = merged.getContext('2d');
+  let merged;
   if (isScrollMode()) {
     // Scroll mode: vertically concatenate (p1 on top, p2 on bottom)
+    const [c1, c2] = await Promise.all([exportPageCanvas(p1), exportPageCanvas(p2)]);
     const w = Math.max(c1.width, c2.width);
     const h = c1.height + c2.height;
+    merged = document.createElement('canvas');
     merged.width = w;
     merged.height = h;
+    const ctx = merged.getContext('2d');
     ctx.drawImage(c1, (w - c1.width) / 2, 0);
     ctx.drawImage(c2, (w - c2.width) / 2, c1.height);
   } else {
-    const w = c1.width + c2.width;
-    const h = Math.max(c1.height, c2.height);
-    merged.width = w;
-    merged.height = h;
-    if (isR2L()) {
-      ctx.drawImage(c2, 0, 0);
-      ctx.drawImage(c1, c2.width, 0);
-    } else {
-      ctx.drawImage(c1, 0, 0);
-      ctx.drawImage(c2, c1.width, 0);
-    }
+    merged = await exportSpreadCanvas(p1, p2);
   }
   const s1 = String(p1).padStart(pad, '0');
   const s2 = String(p2).padStart(pad, '0');
@@ -3204,7 +3273,27 @@ async function getPageTextData(pageNum) {
   return pageTextCache[pageNum];
 }
 
-async function buildTextLayer(pageNum, scale, canvasW, canvasH) {
+// 回転した canvas に重ねるレイヤーの位置と transform。左上原点で回し、回転後の矩形が (0,0) に来るようにずらす
+function positionRotatedLayer(div, deg, w, h) {
+  div.style.position = 'absolute';
+  div.style.transformOrigin = '0 0';
+  if (deg === 90) {
+    div.style.left = h + 'px'; div.style.top = '0';
+    div.style.transform = 'rotate(90deg)';
+  } else if (deg === 180) {
+    div.style.left = w + 'px'; div.style.top = h + 'px';
+    div.style.transform = 'rotate(180deg)';
+  } else if (deg === 270) {
+    div.style.left = '0'; div.style.top = w + 'px';
+    div.style.transform = 'rotate(270deg)';
+  } else {
+    div.style.left = '0'; div.style.top = '0';
+    div.style.transform = '';
+  }
+}
+
+// deg: レイヤーに掛ける回転。見開き結合回転では枠ごと回すので各ページは 0 で作る
+async function buildTextLayer(pageNum, scale, canvasW, canvasH, deg = getRotation()) {
   try {
     if (!pdfjsLib.TextLayer) return null;
     const page = await pdfDoc.getPage(pageNum);
@@ -3232,21 +3321,7 @@ async function buildTextLayer(pageNum, scale, canvasW, canvasH) {
     div.style.height = h + 'px';
 
     // Apply rotation
-    const deg = getRotation();
-    div.style.position = 'absolute';
-    div.style.transformOrigin = '0 0';
-    if (deg === 90) {
-      div.style.left = h + 'px'; div.style.top = '0';
-      div.style.transform = 'rotate(90deg)';
-    } else if (deg === 180) {
-      div.style.left = w + 'px'; div.style.top = h + 'px';
-      div.style.transform = 'rotate(180deg)';
-    } else if (deg === 270) {
-      div.style.left = '0'; div.style.top = w + 'px';
-      div.style.transform = 'rotate(270deg)';
-    } else {
-      div.style.left = '0'; div.style.top = '0';
-    }
+    positionRotatedLayer(div, deg, w, h);
 
     applyHighlights(pageNum, div);
     return div;
