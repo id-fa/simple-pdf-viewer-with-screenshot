@@ -163,10 +163,14 @@ body.seek-visible .toast, body.seek-visible .busy { bottom: 60px; }
 .sidebar-tab { flex: 1; padding: 6px 4px; font-size: 12px; text-align: center; cursor: pointer; background: transparent; border: none; color: #888; border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s; }
 .sidebar-tab:hover { color: #ccc; }
 .sidebar-tab.active { color: #e0e0e0; border-bottom-color: #4a9eff; }
+.sidebar-close { flex: 0 0 auto; width: 26px; padding: 0; font-size: 18px; line-height: 1; cursor: pointer; background: transparent; border: none; border-left: 1px solid #333; color: #888; transition: color 0.15s; }
+.sidebar-close:hover { color: #e0e0e0; }
+@media (hover: none) { .sidebar-close { width: 32px; } }
 .sidebar-panel { flex: 1; overflow-y: auto; display: none; padding: 8px; }
 .sidebar-panel.active { display: block; }
 /* TOC タブが出ると3タブになり 160px 幅では窮屈なので詰める */
 .sidebar-tabs.has-toc .sidebar-tab { font-size: 11px; padding: 6px 2px; }
+.sidebar-tabs.has-toc .sidebar-close { width: 22px; }
 
 /* EPUB TOC */
 .toc-item { display: flex; gap: 4px; align-items: baseline; padding: 4px 4px; font-size: 12px; color: #bbb; cursor: pointer; border-radius: 4px; border-left: 2px solid transparent; }
@@ -1352,7 +1356,7 @@ function initSidebarBookmarks() {
   tocTab.title = 'EPUB 目次を表示 / Show EPUB table of contents';
   tocTab.hidden = true; // EPUB 構造解析で目次が取れたときだけ出す
   tocTab.addEventListener('click', () => switchSidebarTab('toc'));
-  tabBar.append(bmTab, thTab, tocTab);
+  tabBar.append(bmTab, thTab, tocTab, makeSidebarCloseBtn());
   sidebar.appendChild(tabBar);
   sidebarTabBar = tabBar;
 
@@ -4390,9 +4394,9 @@ document.addEventListener('keydown', e => {
     if (epubToc.length === 0 && epubDocs.length === 0) { showToast('目次がありません (E キーで EPUB 構造解析)', 3000); return; }
     const tocOpen = sidebar.classList.contains('open') && tocPanel.classList.contains('active');
     if (tocOpen) {
-      sidebar.classList.remove('open');
+      setSidebarOpen(false);
     } else {
-      sidebar.classList.add('open');
+      setSidebarOpen(true);
       switchSidebarTab('toc');
       updateTocActive();
     }
@@ -4521,11 +4525,25 @@ viewer.addEventListener('wheel', e => {
 // (Left/right zones navigate, center zone toggles UI — see below)
 
 // ---- Thumbnail sidebar ----
-thumbToggle.addEventListener('click', () => {
-  sidebar.classList.toggle('open');
+// サイドバーの開閉はここに集約する (Thumbs ボタン / タブバー右端の × / T キー)。
+// × はヘッダーを隠した状態 (スマートフォンで Thumbs ボタンが無い) でも閉じられるようにサイドバー側に置く
+function setSidebarOpen(open) {
+  if (sidebar.classList.contains('open') === open) return;
+  sidebar.classList.toggle('open', open);
   // Re-render with updated Fit size when sidebar state changes
   if (totalPages > 0 && scaleSelect.value === 'fit') renderView(currentPage);
-});
+}
+function makeSidebarCloseBtn() {
+  const btn = document.createElement('button');
+  btn.className = 'sidebar-close';
+  btn.type = 'button';
+  btn.textContent = '×';
+  btn.title = 'サイドバーを閉じる / Close sidebar';
+  btn.setAttribute('aria-label', 'Close sidebar');
+  btn.addEventListener('click', () => setSidebarOpen(false));
+  return btn;
+}
+thumbToggle.addEventListener('click', () => setSidebarOpen(!sidebar.classList.contains('open')));
 
 // ---- UI hide/show toggle ----
 const header = document.querySelector('.header');

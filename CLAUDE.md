@@ -434,6 +434,8 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - 管理機能 (Bookmarksタブ下部): Clear this book / Clear all / Export JSON / Import JSON
 - comic-viewer.html の二重アーカイブ時は外側+内側ファイル名を結合してハッシュ生成
 - サイドバーの `top` は ResizeObserver でヘッダー高さに追従
+- **サイドバーの開閉は `setSidebarOpen(open)` に集約** (ヘッダーの Thumbs ボタン / タブバー右端の `×` (`.sidebar-close`) / comic の T キー)。Fit のときは開閉に合わせて `renderView` し直す
+- **タブバー右端の `×` はサイドバー側に置く**: サイドバーは `position: fixed` のオーバーレイで、閉じる手段がヘッダーの Thumbs ボタンだけだと、H キーや中央タップで UI を隠した後にキーボードの無いスマートフォンから閉じられない (ユーザー報告)。幅はタブバー 160px に収めるため 26px (`@media (hover: none)` で 32px、TOC タブが出る `.has-toc` では 22px)。TOC 込みで 36px にすると 7px あふれる
 
 ### パスワード保護ファイル対応
 - **PDF** (両ビューア共通): PDF.js の `onPassword` コールバックでパスワード入力ダイアログを表示
@@ -694,7 +696,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 ## PWA / Service Worker
 
 ### `sw.js`
-- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v56`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v57`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
 - **`SHARE_CACHE`**: `share-stash-v1` — Web Share Target で受信したファイルを一時保存する専用キャッシュ (activate 時も削除対象外)
 - **`PRECACHE_URLS`**: インストール時に一括取得するリソース (HTML 2種、vendor/ 配下全ファイル、manifest、icons)。`fetch(url, { cache: 'reload' })` でブラウザキャッシュをバイパス
 - **`activate`**: `CACHE_NAME` と `SHARE_CACHE` 以外の旧キャッシュを削除し `self.clients.claim()`

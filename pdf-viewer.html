@@ -163,6 +163,9 @@ body.seek-visible .toast, body.seek-visible .busy { bottom: 60px; }
 .sidebar-tab { flex: 1; padding: 6px 4px; font-size: 12px; text-align: center; cursor: pointer; background: transparent; border: none; color: #888; border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s; }
 .sidebar-tab:hover { color: #ccc; }
 .sidebar-tab.active { color: #e0e0e0; border-bottom-color: #4a9eff; }
+.sidebar-close { flex: 0 0 auto; width: 26px; padding: 0; font-size: 18px; line-height: 1; cursor: pointer; background: transparent; border: none; border-left: 1px solid #333; color: #888; transition: color 0.15s; }
+.sidebar-close:hover { color: #e0e0e0; }
+@media (hover: none) { .sidebar-close { width: 32px; } }
 .sidebar-panel { flex: 1; overflow-y: auto; display: none; padding: 8px; }
 .sidebar-panel.active { display: block; }
 
@@ -1130,7 +1133,7 @@ function initSidebarBookmarks() {
   thTab.textContent = 'Thumbs';
   thTab.title = 'サムネイル一覧を表示 / Show thumbnails';
   thTab.addEventListener('click', () => switchSidebarTab('thumbs'));
-  tabBar.append(bmTab, thTab);
+  tabBar.append(bmTab, thTab, makeSidebarCloseBtn());
   sidebar.appendChild(tabBar);
 
   // Bookmarks panel
@@ -2799,10 +2802,25 @@ viewer.addEventListener('click', e => {
 });
 
 // Thumbnail sidebar toggle
-thumbToggle.addEventListener('click', () => {
-  sidebar.classList.toggle('open');
+// サイドバーの開閉はここに集約する (Thumbs ボタン / タブバー右端の × / T キー)。
+// × はヘッダーを隠した状態 (スマートフォンで Thumbs ボタンが無い) でも閉じられるようにサイドバー側に置く
+function setSidebarOpen(open) {
+  if (sidebar.classList.contains('open') === open) return;
+  sidebar.classList.toggle('open', open);
+  // Re-render with updated Fit size when sidebar state changes
   if (pdfDoc && scaleSelect.value === 'fit') renderView(currentPage);
-});
+}
+function makeSidebarCloseBtn() {
+  const btn = document.createElement('button');
+  btn.className = 'sidebar-close';
+  btn.type = 'button';
+  btn.textContent = '×';
+  btn.title = 'サイドバーを閉じる / Close sidebar';
+  btn.setAttribute('aria-label', 'Close sidebar');
+  btn.addEventListener('click', () => setSidebarOpen(false));
+  return btn;
+}
+thumbToggle.addEventListener('click', () => setSidebarOpen(!sidebar.classList.contains('open')));
 
 // ---- UI hide/show toggle ----
 const header = document.querySelector('.header');
