@@ -271,6 +271,14 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 - **終了時は必ず `setProgress(0)`**。進行ループは `try { ... } finally { setProgress(0) }` で囲み、途中で例外が出てもバーが残らないようにする (`saveAll` はあわせて `saveAllBtn.disabled` も finally で戻す)
 - `setProgress()` 自体も 0〜100 にクランプし、`NaN`/`Infinity` (例: `totalPages === 0`) は 0 として扱う
 
+### 処理中インジケータ (`#busy`、両ビューア共通)
+- **用途**: ページ描画 (`renderView` / `renderScrollView` / `renderScrollPage`) とサムネイル生成 (`renderThumbnails`) の間、画面下中央に小さなスピナー + ラベル (`描画中...` / `サムネイル生成中 N/M`) を出す。スマートフォンでは HQ 切替直後の再描画 + 全サムネイル再生成に数秒かかり、その間ページ送りが効かない (`rendering` ガードで wheel が捨てられる / Pica の worker キューに並ぶ) ので「止まっていない」ことを示すのが目的 (ユーザー報告: VPN 経由のスマートフォンで HQ チェック直後に無反応になる)
+- **非モーダル** (`pointer-events: none`)。`loading-overlay` (展開中...) のような操作ブロックはしない。`.toast` と同じ z-index 300、`body.seek-visible` でシークバー分だけ上に逃がす
+- **一瞬で終わるときは出さない**: `busyBegin()` から `BUSY_SHOW_DELAY` (150ms) 経っても終わっていないときだけ `.show` を付ける。PC / LAN では通常これに掛からないので見た目は従来どおり。消すときも `BUSY_HIDE_DELAY` (120ms) 遅らせ、`drainPendingRender()` で連続する描画の合間にチラつかない
+- **API**: `busyBegin(label, prio = 1)` → id、`busyUpdate(id, label)`、`busyEnd(id)`。`busyJobs` (Map) に複数のジョブを同時に積めて、**prio が最大のもの (同点なら最後に始まったもの) のラベルを表示**する。メインビューの描画は 1、サムネイル生成は 0 なので、HQ 切替で両方が同時に走ってもページが出るまでは「描画中...」が見える。各呼び出し側は `try { ... } finally { busyEnd(busyJob) }` で必ず閉じる
+- `.loading-overlay` が出ている間は表示しない (初回展開中はオーバーレイに任せる)。show タイマー発火時に判定するだけなので、オーバーレイが消えた後の `busyUpdate` で改めて出る
+- **メインスレッドが同期処理で塞がっている間は CSS アニメーションも止まる**。効くのは非同期待ち (Pica worker / PDF.js worker / `yieldToMain()`) の間だけで、同期ループの体感を良くするものではない (「メインスレッド占有対策」参照)
+
 ### ミニマップ (Map チェックボックス)
 - **ON**: 右下に固定表示のミニマップを表示。全体の縮小画像＋赤枠で現在の表示エリアを示す
   - コンテンツが画面に収まっている場合は自動非表示 (スクロール不要時は表示しない)
@@ -686,7 +694,7 @@ EPUB はファイル名順が読み順と一致しないことが多いため、
 ## PWA / Service Worker
 
 ### `sw.js`
-- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v54`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
+- **`CACHE_NAME`**: バージョン文字列 (現在 `pdf-viewer-v56`)。**アセット更新時は必ず番号をインクリメント**してユーザーに新キャッシュを配信する
 - **`SHARE_CACHE`**: `share-stash-v1` — Web Share Target で受信したファイルを一時保存する専用キャッシュ (activate 時も削除対象外)
 - **`PRECACHE_URLS`**: インストール時に一括取得するリソース (HTML 2種、vendor/ 配下全ファイル、manifest、icons)。`fetch(url, { cache: 'reload' })` でブラウザキャッシュをバイパス
 - **`activate`**: `CACHE_NAME` と `SHARE_CACHE` 以外の旧キャッシュを削除し `self.clients.claim()`

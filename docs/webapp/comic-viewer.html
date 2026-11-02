@@ -120,6 +120,11 @@ label.check[hidden] { display: none; } /* display 指定があると hidden 属�
 .toast.show { opacity: 1; }
 .toast.clickable { pointer-events: auto; cursor: pointer; border-color: #e6a817; }
 .toast.clickable:hover { background: #1a2a4e; }
+/* 処理中インジケータ (描画 / サムネイル生成)。非モーダルで操作は妨げない。一定時間以上かかるときだけ出す (JS 側の BUSY_SHOW_DELAY) */
+.busy { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; background: rgba(22,33,62,0.92); border: 1px solid #0f3460; padding: 7px 14px; border-radius: 18px; font-size: 12px; white-space: nowrap; z-index: 300; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+.busy.show { opacity: 1; }
+.busy-spin { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.25); border-top-color: #4da3ff; border-radius: 50%; animation: busy-spin 0.8s linear infinite; }
+@keyframes busy-spin { to { transform: rotate(360deg); } }
 
 /* Minimap */
 .minimap { position: fixed; bottom: 16px; right: 16px; z-index: 250; background: rgba(0,0,0,0.85); border: 1px solid #444; border-radius: 6px; overflow: hidden; display: none; cursor: crosshair; box-shadow: 0 4px 16px rgba(0,0,0,0.6); }
@@ -148,7 +153,7 @@ label.check[hidden] { display: none; } /* display 指定があると hidden 属�
 .seek-preview-chapter { font-size: 11px; color: #9bc; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* シークバー表示中は右下/左下の浮動 UI をシークバーの上へ逃がす */
 body.seek-visible .minimap, body.seek-visible .annotation-fab { bottom: 60px; }
-body.seek-visible .toast { bottom: 60px; }
+body.seek-visible .toast, body.seek-visible .busy { bottom: 60px; }
 /* ホバーの無い端末 (スマートフォン等) では指で掴めるようトラックを高くする */
 @media (hover: none) { .seek-track { height: 36px; } }
 
@@ -610,6 +615,7 @@ body.seek-visible .toast { bottom: 60px; }
 <div class="lib-preview" id="libPreview" hidden><img id="libPreviewImg" alt=""><span class="cap" id="libPreviewCap"></span></div>
 
 <div class="toast" id="toast"></div>
+<div class="busy" id="busy" aria-live="polite"><span class="busy-spin"></span><span class="busy-text"></span></div>
 
 <div class="help-overlay" id="helpOverlay">
   <div class="help-modal">
@@ -834,6 +840,44 @@ const sidebar = document.getElementById('sidebar');
 const fileInfo = document.getElementById('fileInfo');
 const progressFill = document.getElementById('progressFill');
 const toast = document.getElementById('toast');
+
+// ---- 処理中インジケータ ----
+// renderView / renderScrollView / renderScrollPage / renderThumbnails の間、画面下中央に
+// 小さなスピナーを出す。スマートフォン等では HQ 切替直後の再描画 + 全サムネイル再生成に
+// 数秒かかり、その間ページ送りが効かない (rendering ガード / Pica のキュー待ち) ので
+// 「止まっていない」ことを示す。PC では一瞬で終わるので BUSY_SHOW_DELAY を超えたときだけ出し、
+// 連続する描画 (drainPendingRender) の合間で消えないよう BUSY_HIDE_DELAY だけ遅れて隠す。
+// モーダルの loading-overlay (展開中...) が出ている間は二重表示になるので出さない。
+const busyEl = document.getElementById('busy');
+const busyTextEl = busyEl.querySelector('.busy-text');
+const BUSY_SHOW_DELAY = 150;
+const BUSY_HIDE_DELAY = 120;
+const busyJobs = new Map(); // id -> { label, prio } (挿入順 = 開始順。prio が最大のもの、同点なら最後に始まったものを表示)
+let busyIdSeq = 0, busyShowTimer = null, busyHideTimer = null;
+function busyRefresh() {
+  if (busyJobs.size === 0) {
+    clearTimeout(busyShowTimer); busyShowTimer = null;
+    if (busyEl.classList.contains('show') && !busyHideTimer) {
+      busyHideTimer = setTimeout(() => { busyHideTimer = null; busyEl.classList.remove('show'); }, BUSY_HIDE_DELAY);
+    }
+    return;
+  }
+  clearTimeout(busyHideTimer); busyHideTimer = null;
+  let top = null;
+  for (const j of busyJobs.values()) if (!top || j.prio >= top.prio) top = j;
+  busyTextEl.textContent = top.label;
+  if (!busyEl.classList.contains('show') && !busyShowTimer) {
+    busyShowTimer = setTimeout(() => {
+      busyShowTimer = null;
+      if (busyJobs.size > 0 && !document.querySelector('.loading-overlay')) busyEl.classList.add('show');
+    }, BUSY_SHOW_DELAY);
+  }
+}
+// prio: メインビューの描画 (1) をサムネイル生成 (0) より優先する。HQ 切替では両方が同時に走るが、
+// ユーザーが待っているのはページの方なので、ページが出るまでは「描画中」を見せる
+function busyBegin(label, prio = 1) { const id = ++busyIdSeq; busyJobs.set(id, { label, prio }); busyRefresh(); return id; }
+function busyUpdate(id, label) { const j = busyJobs.get(id); if (j) { j.label = label; busyRefresh(); } }
+function busyEnd(id) { if (busyJobs.delete(id)) busyRefresh(); }
 const annotationFab = document.getElementById('annotationFab');
 const annotationBadge = document.getElementById('annotationBadge');
 const annotationOverlay = document.getElementById('annotationOverlay');
@@ -3104,6 +3148,7 @@ let scrollRendered = new Set();
 async function renderScrollView(jumpTo) {
   if (totalPages === 0) return;
   rendering = true;
+  const busyJob = busyBegin('描画中...');
   try {
     releaseCanvases(viewer);
     viewer.innerHTML = '';
@@ -3156,21 +3201,27 @@ async function renderScrollView(jumpTo) {
     }
   } finally {
     rendering = false;
+    busyEnd(busyJob);
     drainPendingRender();
   }
 }
 
 async function renderScrollPage(pageNum, container) {
   scrollRendered.add(pageNum);
-  const rawCanvas = await renderPageToCanvas(pageNum);
-  const canvas = rotateCanvas(rawCanvas);
-  const size = canvasCssSize(canvas);
-  container.style.width = size.width + 'px';
-  container.style.height = size.height + 'px';
-  container.style.background = '';
-  addGifBadge(container, pageNum);
-  const label = container.querySelector('.page-label');
-  container.insertBefore(canvas, label);
+  const busyJob = busyBegin('描画中...');
+  try {
+    const rawCanvas = await renderPageToCanvas(pageNum);
+    const canvas = rotateCanvas(rawCanvas);
+    const size = canvasCssSize(canvas);
+    container.style.width = size.width + 'px';
+    container.style.height = size.height + 'px';
+    container.style.background = '';
+    addGifBadge(container, pageNum);
+    const label = container.querySelector('.page-label');
+    container.insertBefore(canvas, label);
+  } finally {
+    busyEnd(busyJob);
+  }
 }
 
 function updateScrollCurrentPage() {
@@ -3218,6 +3269,7 @@ async function renderView(num) {
   }
   if (scrollObserver) { scrollObserver.disconnect(); scrollObserver = null; }
   rendering = true;
+  const busyJob = busyBegin('描画中...');
   try {
     currentPage = canonicalPage(num);
     pageInput.value = currentPage;
@@ -3354,6 +3406,7 @@ async function renderView(num) {
     updateSeekbar();
   } finally {
     rendering = false;
+    busyEnd(busyJob);
     drainPendingRender();
   }
 }
@@ -3361,7 +3414,10 @@ async function renderView(num) {
 async function renderThumbnails() {
   if (!thumbsContainer) return;
   thumbsContainer.innerHTML = '';
+  const busyJob = busyBegin('サムネイル生成中...', 0);
+  try {
   for (let i = 1; i <= totalPages; i++) {
+    busyUpdate(busyJob, `サムネイル生成中 ${i}/${totalPages}`);
     await yieldToMain();
     const dims = await getPageDimensions(i);
     const scale = 140 / dims.width;
@@ -3378,6 +3434,9 @@ async function renderThumbnails() {
     div.appendChild(numLabel);
     div.addEventListener('click', () => renderView(i));
     thumbsContainer.appendChild(div);
+  }
+  } finally {
+    busyEnd(busyJob);
   }
   updateBookmarkMarkers();
 }
